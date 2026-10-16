@@ -15,15 +15,14 @@ const COLORS = {
 
 const PROGRESS_COLORS = ["#0052cc", "#c03a2b", "#0e7c3e", "#f2a900", "#585f6b", "#0066cc", "#d22f27", "#36b37e"];
 
-function StatRow({ label, value, sub, color, pct }: { label: string; value: string | number; sub?: string; color: string; pct: number }) {
+function StatRow({ label, value, color, pct }: { label: string; value: string | number; color: string; pct: number }) {
   return (
-    <div className="flex items-center gap-2 mb-1.5">
-      <span className="w-24 flex-shrink-0 text-xs font-medium text-jira-text">{label}</span>
-      <span className="w-10 text-right text-xs font-bold text-jira-text">{value}</span>
+    <div className="flex items-center gap-3 mb-1.5 min-h-6">
+      <span className="w-[150px] shrink-0 whitespace-nowrap text-[10px] text-jira-text-muted">{label}</span>
       <div className="flex-1 h-1.5 bg-jira-bg/50 rounded overflow-hidden">
         <div className={`h-full rounded`} style={{ width: `${pct}%`, backgroundColor: color }} />
       </div>
-      {sub && <span className="ml-2 text-[10px] text-jira-text-light">{sub}</span>}
+      <span className="w-12 text-right text-xs text-jira-text">{value}</span>
     </div>
   );
 }
@@ -31,7 +30,7 @@ function StatRow({ label, value, sub, color, pct }: { label: string; value: stri
 function DeliveryChart({ labels, planned, committed, done, carried }: { labels: string[]; planned: number[]; committed: number[]; done: number[]; carried: number[] }) {
   return (
     <div className="bg-white border border-jira-border rounded-lg p-3">
-      <h3 className="text-xs font-bold text-jira-text mb-2 uppercase tracking-wider">
+      <h3 className="text-sm font-bold text-jira-text mb-2 uppercase tracking-wider">
         Sprint Delivery Overview
       </h3>
       <div className="h-36 overflow-x-auto min-w-0">
@@ -78,7 +77,7 @@ function VelocityChart() {
   return (
     <div className="mt-2 bg-white border border-jira-border rounded-lg p-3 flex flex-col">
       <div className="flex items-center justify-between mb-2">
-        <h3 className="text-xs font-bold text-jira-text uppercase tracking-wider">Team Velocity</h3>
+        <h3 className="text-sm font-bold text-jira-text uppercase tracking-wider">Team Velocity</h3>
         <div className={`flex items-center gap-1 text-xs font-bold ${rising ? "text-jira-green" : falling ? "text-jira-red" : "text-jira-text-muted"}`}>
           <span className={`w-2 h-2 rounded-full ${rising ? "bg-jira-green animate-pulse" : falling ? "bg-jira-red animate-pulse" : "bg-jira-text-light"}`} />
           <span>{rising ? "Rising" : falling ? "Falling" : "Stable"} vs last sprint</span>
@@ -104,13 +103,15 @@ function VelocityChart() {
                 label: "Committed SP",
                 data: committedSP,
                 type: "line",
+                showLine: true,
                 borderColor: COLORS.committed,
                 borderWidth: 2,
-                borderDash: [5, 5],
-                pointRadius: 4,
+                borderDash: [6, 4],
+                pointRadius: 5,
                 pointBackgroundColor: COLORS.committed,
                 pointBorderColor: "#ffffff",
                 pointBorderWidth: 2,
+                pointStyle: "circle",
                 fill: false,
                 tension: 0,
                 yAxisID: "y",
@@ -163,19 +164,19 @@ export function VelocityGrid() {
       {/* Left: Totals analysis with inline progress bars */}
       <div className="md:col-span-6">
         <div className="bg-white border border-jira-border rounded-lg p-3">
-          <h3 className="text-xs font-bold text-jira-text mb-3 uppercase tracking-wider">
-            Sprint Totals Analysis
+          <h3 className="text-sm font-bold text-jira-text mb-4 uppercase tracking-wider">
+            Sprint Delivery and Scope
           </h3>
           <div className="space-y-2">
             <StatRow label="Committed Stories" value={totalCommittedStories} color={PROGRESS_COLORS[0]} pct={100} />
-            <StatRow label="Completed Stories" value={totalCompletedStories} color={PROGRESS_COLORS[1]} pct={Math.round((totalCompletedStories / totalCommittedStories) * 100)} sub="done rate" />
-            <StatRow label="Carried Over Stories" value={totalCarriedStories} color={PROGRESS_COLORS[2]} pct={Math.round((totalCarriedStories / totalCommittedStories) * 100)} sub="carry rate" />
-            <StatRow label="Added During Sprint" value={totalAdded} color={PROGRESS_COLORS[3]} pct={50} sub="scope added" />
-            <StatRow label="Removed During Sprint" value={totalRemoved} color={PROGRESS_COLORS[4]} pct={30} sub="scope removed" />
-            <StatRow label="Committed Story Points" value={totalCommittedSP} color={PROGRESS_COLORS[5]} pct={100} sub="committed SP" />
-            <StatRow label="Completed Story Points" value={totalCompletedSP} color={PROGRESS_COLORS[6]} pct={Math.round((totalCompletedSP / totalCommittedSP) * 100)} sub="done rate" />
-            <StatRow label="Carried Over Story Points" value={totalCarriedSP} color={PROGRESS_COLORS[7]} pct={Math.round((totalCarriedSP / totalCommittedSP) * 100)} sub="carry rate" />
-            <StatRow label="Net Scope Change" value={netScopeChange} color={netScopeChange >= 0 ? "#0e7c3e" : "#c03a2b"} pct={50} sub="added minus removed" />
+            <StatRow label="Completed Stories" value={totalCompletedStories} color={PROGRESS_COLORS[1]} pct={Math.round((totalCompletedStories / totalCommittedStories) * 100)} />
+            <StatRow label="Carried Over Stories" value={totalCarriedStories} color={PROGRESS_COLORS[2]} pct={Math.round((totalCarriedStories / totalCommittedStories) * 100)} />
+            <StatRow label="Added During Sprint" value={totalAdded} color={PROGRESS_COLORS[3]} pct={50} />
+            <StatRow label="Removed During Sprint" value={totalRemoved} color={PROGRESS_COLORS[4]} pct={30} />
+            <StatRow label="Committed Story Points" value={totalCommittedSP} color={PROGRESS_COLORS[5]} pct={100} />
+            <StatRow label="Completed Story Points" value={totalCompletedSP} color={PROGRESS_COLORS[6]} pct={Math.round((totalCompletedSP / totalCommittedSP) * 100)} />
+            <StatRow label="Carried Over Story Points" value={totalCarriedSP} color={PROGRESS_COLORS[7]} pct={Math.round((totalCarriedSP / totalCommittedSP) * 100)} />
+            <StatRow label="Net Scope Change" value={netScopeChange} color={netScopeChange >= 0 ? "#0e7c3e" : "#c03a2b"} pct={50} />
           </div>
         </div>
       </div>
