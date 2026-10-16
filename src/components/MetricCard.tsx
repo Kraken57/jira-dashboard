@@ -24,14 +24,14 @@ const PredictabilityIcon = ({ className }: { className?: string }) => (
 const ICONS: Record<string, React.FC<{ className?: string }>> = {
   "Say/Do Ratio": SayDoIcon,
   "Sprint Carry Over": CarryIcon,
-  "Team Velocity": VelocityIcon,
+  "Team/Epic Velocity": VelocityIcon,
   "Feature Predictability": PredictabilityIcon,
 };
 
-const colorMap: Record<string, { bg: string; text: string; dot: string }> = {
-  blue: { bg: "bg-blue-50", text: "text-jira-blue", dot: "bg-jira-blue" },
-  green: { bg: "bg-green-50", text: "text-jira-green", dot: "bg-jira-green" },
-  red: { bg: "bg-red-50", text: "text-jira-red", dot: "bg-jira-red" },
+const colorMap: Record<string, { bg: string; text: string }> = {
+  blue: { bg: "bg-blue-50", text: "text-jira-blue" },
+  green: { bg: "bg-green-50", text: "text-jira-green" },
+  red: { bg: "bg-red-50", text: "text-jira-red" },
 };
 
 interface MetricCardProps {
@@ -52,15 +52,26 @@ export function MetricCard({ title, value, subtitle, trend, trendLabel, color }:
     <div className={`${c.bg} rounded-lg p-4 border border-jira-border/50`}>
       <div className="flex items-start justify-between mb-3">
         <h3 className="text-sm font-bold text-jira-text-muted uppercase tracking-wider">{title}</h3>
-        <span className={`w-2 h-2 rounded-full ${c.dot}`} />
       </div>
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center justify-between mb-3">
         <p className="text-2xl font-bold text-jira-text">{value}</p>
         {Icon && <Icon className={`w-7 h-7 ${c.text}`} />}
       </div>
       <p className="text-xs text-jira-text-muted mb-3">{subtitle}</p>
-      <div className={`flex items-center gap-1 text-xs font-bold ${isPositive ? "text-jira-green" : "text-jira-red"}`}>
-        <span className={`w-1.5 h-1.5 rounded-full ${isPositive ? "bg-jira-green" : "bg-jira-red"}`} />
+      <div className={`flex items-center gap-1.5 text-xs font-bold ${isPositive ? "text-jira-green" : "text-jira-red"}`}>
+        <svg
+          className={`w-3 h-3 ${isPositive ? "text-jira-green" : "text-jira-red"}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d={isPositive ? "M5 15l7-7 7 7" : "M5 9l7 7 7-7"}
+          />
+        </svg>
         <span>{isPositive ? "+" : ""}{trend}%</span>
         <span className="text-jira-text-muted">{trendLabel}</span>
       </div>

@@ -15,9 +15,6 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             </div>
             <span className="font-semibold text-jira-text text-sm tracking-tight">Jira dashboard</span>
           </div>
-          <div className="hidden md:flex items-center gap-6 text-xs text-jira-text-muted">
-            <span>Enterprise</span>
-          </div>
         </div>
       </nav>
 

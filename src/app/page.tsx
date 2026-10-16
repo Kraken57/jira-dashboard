@@ -51,7 +51,7 @@ export default function DashboardPage() {
             Enterprise Sprint Performance
           </h1>
           <p className="text-sm text-jira-text-muted mt-1">
-            End of Sprint Summary and Delivery Insights
+            Track sprint health, delivery metrics, and team velocity across all pods.
           </p>
         </div>
 

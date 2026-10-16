@@ -87,7 +87,7 @@ export const EXECUTIVE_METRICS: MetricCard[] = [
     color: "red",
   },
   {
-    title: "Team Velocity",
+    title: "Team/Epic Velocity",
     value: "34 pts",
     subtitle: "Avg story points per sprint",
     trend: 3,
