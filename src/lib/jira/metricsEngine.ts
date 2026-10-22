@@ -21,30 +21,58 @@ import {
 } from "./types";
 
 const DONE_STATUSES = new Set(["Done", "Released", "Accepted"]);
-const SPRINT_NAMES = [
-  "2026-Q3 Iteration 1",
-  "2026-Q3 Iteration 2",
-  "2026-Q3 Iteration 3",
-  "2026-Q3 Iteration 4",
-];
 
-const POD_METADATA: PodOption[] = [
-  { id: "all", key: "ALL", name: "All Pods", sub: "5 pods • 9 teams" },
-  { id: "CRM", key: "CRM", name: "Customer Relationship Management", sub: "2 teams" },
-  { id: "DTP", key: "DTP", name: "Data Technology Platform", sub: "2 teams" },
-  { id: "ERP", key: "ERP", name: "Enterprise Resource Planning", sub: "2 teams" },
-  { id: "SEC", key: "SEC", name: "Security Engineering", sub: "1 team" },
-  { id: "SRG", key: "SRG", name: "Service Reliability Group", sub: "2 teams" },
-];
+/**
+ * Derive sprint names from the actual data so the dashboard works with any
+ * Jira project/board without code changes.
+ */
+function deriveSprintNames(items: JiraWorkItem[]): string[] {
+  const names = new Set<string>();
+  for (const item of items) {
+    for (const s of item.sprints || []) {
+      if (s && typeof s === "string") names.add(s.trim());
+    }
+  }
+  return Array.from(names).sort();
+}
 
-const QUARTER_METADATA: QuarterOption[] = [
-  { id: "all", name: "All Quarters", sub: "Full Portfolio" },
-  { id: "CY26 PI.1", name: "CY26 PI.1", sub: "Quarter 1" },
-  { id: "CY26 PI.2", name: "CY26 PI.2", sub: "Quarter 2" },
-  { id: "CY26 PI.3", name: "CY26 PI.3", sub: "Quarter 3" },
-  { id: "CY26 PI.4", name: "CY26 PI.4", sub: "Quarter 4" },
-  { id: "CY27 PI.1", name: "CY27 PI.1", sub: "Next Year Q1" },
-];
+function sprintDisplayName(name: string): string {
+  // "2026-Q3 Iteration 1" -> "Iteration 1"
+  return name.replace(/^\d{4}-Q\d+\s*/i, "") || name;
+}
+
+function derivePods(items: JiraWorkItem[]): PodOption[] {
+  const map = new Map<string, { name: string; count: number }>();
+  for (const item of items) {
+    const key = item.podKey || "UNKNOWN";
+    if (!map.has(key)) {
+      map.set(key, { name: item.podName || key, count: 0 });
+    }
+    map.get(key)!.count++;
+  }
+
+  const pods: PodOption[] = [
+    { id: "all", key: "ALL", name: "All Pods", sub: `${map.size} pods` },
+  ];
+  for (const [key, val] of Array.from(map.entries()).sort()) {
+    pods.push({ id: key, key, name: val.name, sub: `${val.count} issues` });
+  }
+  return pods;
+}
+
+function deriveQuarters(items: JiraWorkItem[]): QuarterOption[] {
+  const set = new Set<string>();
+  for (const item of items) {
+    if (item.quarter && item.quarter !== "All") set.add(item.quarter);
+  }
+  const quarters: QuarterOption[] = [
+    { id: "all", name: "All Quarters", sub: "Full Portfolio" },
+  ];
+  for (const q of Array.from(set).sort()) {
+    quarters.push({ id: q, name: q });
+  }
+  return quarters;
+}
 
 function matchesSprint(itemSprints: string[] | undefined | null, target: string): boolean {
   if (target === "all") return true;
@@ -104,7 +132,8 @@ export function computeDashboardData(
   };
 
   // 4. Calculate Sprint Chart Series
-  const sprintStats = SPRINT_NAMES.map((sprintName) => {
+  const sprintNames = deriveSprintNames(items);
+  const sprintStats = sprintNames.map((sprintName) => {
     const sprintItems = scopedItems.filter((it) => matchesSprint(it.sprints, sprintName));
     let sprintCommittedSP = 0;
     let sprintDoneSP = 0;
@@ -459,17 +488,17 @@ export function computeDashboardData(
 
   // Sprints filter list
   const sprints: SprintOption[] = [
-    { id: "all", name: "All Sprints", sub: "All 4 Iterations" },
-    ...SPRINT_NAMES.map((name, i) => ({
+    { id: "all", name: "All Sprints", sub: `All ${sprintNames.length} sprints` },
+    ...sprintNames.map((name, i) => ({
       id: name,
-      name: name.replace("2026-Q3 ", "").replace("2026-", ""),
+      name: sprintDisplayName(name),
       sub: `Sprint ${i + 1}`,
     })),
   ];
 
   return {
-    pods: POD_METADATA,
-    quarters: QUARTER_METADATA,
+    pods: derivePods(items),
+    quarters: deriveQuarters(items),
     sprints,
     metrics,
     velocity,

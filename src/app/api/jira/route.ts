@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDashboardData } from "@/lib/jira/jiraService";
 
+/**
+ * Localhost / standalone mode only.
+ * Serves real Jira data to the browser using the credentials in .env.local.
+ *
+ * In the Forge build this route is swapped for a static stub by
+ * scripts/build-forge.mjs, because Forge Custom UI needs a static export and
+ * the frontend talks to the Forge backend over the bridge instead.
+ */
+export const dynamic = "force-dynamic";
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -33,4 +43,3 @@ export async function GET(request: NextRequest) {
     );
   }
 }
-

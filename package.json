@@ -5,10 +5,13 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:forge": "node scripts/build-forge.mjs",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "discover:fields": "node scripts/discover-fields.mjs"
   },
   "dependencies": {
+    "@forge/bridge": "^3.0.0",
     "chart.js": "^4.5.1",
     "next": "16.4.2",
     "react": "19.3.0",

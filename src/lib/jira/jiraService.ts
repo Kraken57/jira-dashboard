@@ -1,46 +1,37 @@
 import { isJiraConfigured, JIRA_CONFIG } from "./config";
-import enterpriseDataRaw from "./enterpriseData.json";
-import { computeDashboardData } from "./metricsEngine";
 import { DashboardData, DashboardFilters, JiraWorkItem } from "./types";
-
-const fallbackItems: JiraWorkItem[] = enterpriseDataRaw as unknown as JiraWorkItem[];
-
-// Fast lookup maps built once at startup
-const quarterMap = new Map<string, string>();
-const spMap = new Map<string, number>();
-const assigneeMap = new Map<string, string>();
-const priorityMap = new Map<string, string>();
-
-enterpriseDataRaw.forEach((item: { key?: string; summary?: string; quarter?: string; storyPoints?: number; assignee?: string; priority?: string }) => {
-  if (item.key && item.quarter) quarterMap.set(item.key, item.quarter);
-  if (item.summary && item.quarter) quarterMap.set(item.summary.trim().toLowerCase(), item.quarter);
-  if (item.key && item.storyPoints && item.storyPoints > 0) spMap.set(item.key, item.storyPoints);
-  if (item.summary && item.storyPoints && item.storyPoints > 0) spMap.set(item.summary.trim().toLowerCase(), item.storyPoints);
-  if (item.key && item.assignee) assigneeMap.set(item.key, item.assignee);
-  if (item.summary && item.assignee) assigneeMap.set(item.summary.trim().toLowerCase(), item.assignee);
-  if (item.key && item.priority) priorityMap.set(item.key, item.priority);
-  if (item.summary && item.priority) priorityMap.set(item.summary.trim().toLowerCase(), item.priority);
-});
-
-// High-speed In-Memory Cache (5 minute TTL)
-let cachedLiveIssues: JiraWorkItem[] | null = null;
-let lastCacheTime = 0;
-let isFetchingLive = false;
-const CACHE_TTL_MS = 5 * 60 * 1000;
+import { computeDashboardData } from "./metricsEngine";
 
 /**
- * Fetches all issues across the 5 pods from Jira Cloud with pagination and caches them
+ * Derive the enterprise quarter id from a Jira sprint name.
+ * "2026-Q3 Iteration 1" -> "CY26 PI.3"
+ */
+function quarterFromSprint(sprintName: string): string {
+  const m = sprintName.match(/(\d{4})-Q(\d)/i);
+  if (m) {
+    return `CY${m[1].slice(2)} PI.${parseInt(m[2], 10)}`;
+  }
+  return "All";
+}
+
+/**
+ * Fetches all issues from Jira Cloud with pagination.
+ * Read-only. Uses Basic auth from environment variables.
  */
 async function fetchAllLiveJiraIssues(): Promise<JiraWorkItem[]> {
   const { host, email, apiToken } = JIRA_CONFIG;
   const authHeader = Buffer.from(`${email}:${apiToken}`).toString("base64");
   const url = `${host.replace(/\/+$/, "")}/rest/api/3/search/jql`;
-  const jql = "project in (CRM, DTP, ERP, SEC, SRG)";
+
+  const spField = process.env.JIRA_STORY_POINTS_FIELD || "customfield_10031";
+  const sprintField = process.env.JIRA_SPRINT_FIELD || "customfield_10020";
+  const podField = process.env.JIRA_POD_FIELD || "customfield_10050";
+  const jql = process.env.JIRA_JQL || "project in (DTR)";
 
   const allIssues: Record<string, unknown>[] = [];
   let nextPageToken: string | undefined = undefined;
 
-  for (let page = 0; page < 15; page++) {
+  for (let page = 0; page < 50; page++) {
     const requestBody: Record<string, unknown> = {
       jql,
       maxResults: 100,
@@ -49,11 +40,16 @@ async function fetchAllLiveJiraIssues(): Promise<JiraWorkItem[]> {
         "status",
         "issuetype",
         "project",
-        "customfield_10031",
-        "customfield_10016",
-        "customfield_10020",
+        "parent",
+        "assignee",
+        "priority",
         "created",
+        "updated",
         "resolutiondate",
+        "duedate",
+        spField,
+        sprintField,
+        podField,
         "fixVersions",
         "labels",
       ],
@@ -96,25 +92,13 @@ async function fetchAllLiveJiraIssues(): Promise<JiraWorkItem[]> {
     const issueKey = String(issue.key || "");
     const workType = issuetype.name || "Story";
 
-    // 1. Resolve Story Points (customfield_10031 / 10016 / portfolio map / workType default)
-    const spRaw = fields.customfield_10031 ?? fields.customfield_10016 ?? 0;
-    let storyPoints = typeof spRaw === "number" ? spRaw : parseFloat(String(spRaw)) || 0;
-    if (storyPoints <= 0) {
-      const mappedSP = spMap.get(issueKey) || spMap.get(summary.trim().toLowerCase());
-      if (mappedSP) {
-        storyPoints = mappedSP;
-      } else if (workType === "Story") {
-        storyPoints = 5;
-      } else if (workType === "Bug") {
-        storyPoints = 3;
-      } else if (workType === "Task") {
-        storyPoints = 2;
-      }
-    }
+    const spRaw = fields[spField];
+    const storyPoints =
+      typeof spRaw === "number" ? spRaw : parseFloat(String(spRaw || "0")) || 0;
 
-    // 2. Resolve Sprints (parse customfield_10020 and split any comma-separated values)
+    const sprintObj = fields[sprintField];
     const sprints: string[] = [];
-    const sprintObj = fields.customfield_10020;
+
     if (Array.isArray(sprintObj)) {
       for (const s of sprintObj) {
         if (s && typeof s.name === "string") {
@@ -126,80 +110,69 @@ async function fetchAllLiveJiraIssues(): Promise<JiraWorkItem[]> {
           });
         }
       }
+    } else if (typeof sprintObj === "string") {
+      sprintObj.split(",").forEach((part: string) => {
+        const trimmed = part.trim();
+        if (trimmed && !sprints.includes(trimmed)) {
+          sprints.push(trimmed);
+        }
+      });
     }
 
-    // 3. Resolve Quarter / Program Increment
-    const quarter =
-      quarterMap.get(issueKey) ||
-      quarterMap.get(summary.trim().toLowerCase()) ||
-      "CY26 PI.1";
+    // POD field can be a plain string, or an option object {value, id}
+    const podValue = fields[podField];
+    const podKey = project.key || "UNKNOWN";
+    let podName = project.name || podKey;
+    if (typeof podValue === "string" && podValue) {
+      podName = podValue;
+    } else if (podValue && typeof podValue === "object") {
+      const opt = podValue as { value?: string; name?: string };
+      if (opt.value) podName = opt.value;
+      else if (opt.name) podName = opt.name;
+    }
 
     const assigneeObj = fields.assignee as { displayName?: string } | undefined;
     const priorityObj = fields.priority as { name?: string } | undefined;
-    const assignee =
-      assigneeObj?.displayName ||
-      assigneeMap.get(issueKey) ||
-      assigneeMap.get(summary.trim().toLowerCase()) ||
-      "Unassigned";
-    const priority =
-      priorityObj?.name ||
-      priorityMap.get(issueKey) ||
-      priorityMap.get(summary.trim().toLowerCase()) ||
-      "Medium";
+    const parentObj = fields.parent as { key?: string; id?: string } | undefined;
 
     return {
       key: issueKey,
       summary,
-      podKey: project.key || "CRM",
-      podName: project.name || "Customer Relationship Management",
+      podKey,
+      podName,
       workType,
       status: status.name || "To Do",
-      priority,
-      assignee,
-      quarter,
+      priority: priorityObj?.name || "Medium",
+      assignee: assigneeObj?.displayName || "Unassigned",
+      quarter: sprints.length > 0 ? quarterFromSprint(sprints[0]) : "All",
       sprints,
       storyPoints,
       team: project.name || "",
+      parentKey: parentObj?.key || "",
+      parentId: parentObj?.id || "",
       createdDate: String(fields.created || ""),
-      resolutionDate: fields.resolutiondate ? String(fields.resolutiondate) : undefined,
+      resolutionDate: fields.resolutiondate
+        ? String(fields.resolutiondate)
+        : undefined,
+      updatedDate: String(fields.updated || ""),
     };
   });
 }
 
 /**
- * Returns dashboard data with high-speed in-memory caching.
- * Live fetch is performed once and cached; filter operations execute in <1ms!
+ * Returns dashboard data from live Jira only.
+ * No dummy data, no CSV, no JSON fallback.
+ * If Jira is not configured, throws an error.
  */
 export async function getDashboardData(
   filters: DashboardFilters = { podId: "all", quarterId: "all", sprintId: "all" }
 ): Promise<DashboardData> {
-  let items: JiraWorkItem[] = fallbackItems;
-
-  if (isJiraConfigured()) {
-    const now = Date.now();
-    const isCacheValid = cachedLiveIssues && now - lastCacheTime < CACHE_TTL_MS;
-
-    if (isCacheValid) {
-      items = cachedLiveIssues!;
-    } else if (!isFetchingLive) {
-      isFetchingLive = true;
-      try {
-        const liveItems = await fetchAllLiveJiraIssues();
-        if (liveItems.length > 0) {
-          cachedLiveIssues = liveItems;
-          lastCacheTime = now;
-          items = liveItems;
-        }
-      } catch (error) {
-        console.warn("Live Jira fetch failed, falling back to cache or portfolio dataset:", error);
-        if (cachedLiveIssues) items = cachedLiveIssues;
-      } finally {
-        isFetchingLive = false;
-      }
-    } else if (cachedLiveIssues) {
-      items = cachedLiveIssues;
-    }
+  if (!isJiraConfigured()) {
+    throw new Error(
+      "Jira is not configured. Set JIRA_HOST, JIRA_EMAIL, and JIRA_API_TOKEN in .env.local"
+    );
   }
 
-  return computeDashboardData(items, filters);
+  const liveItems = await fetchAllLiveJiraIssues();
+  return computeDashboardData(liveItems, filters);
 }

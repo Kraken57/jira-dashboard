@@ -31,7 +31,9 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # env files (can opt-in for committing if needed)
-.env.local
+.env
+.env.*
+!.env.example
 
 # vercel
 .vercel
@@ -40,4 +42,16 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# forge
 forge/node_modules
+forge/.next
+forge/out
+
+# pnpm
+.pnpm-store
+
+# windows
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+*.lnk
