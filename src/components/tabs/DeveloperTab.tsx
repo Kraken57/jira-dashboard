@@ -5,9 +5,14 @@ import { DeveloperStat } from "@/lib/jira/types";
 interface DeveloperTabProps {
   developers: DeveloperStat[];
   podName: string;
+  developerFilter?: string;
 }
 
-export function DeveloperTab({ developers, podName }: DeveloperTabProps) {
+export function DeveloperTab({ developers: allDevelopers, podName, developerFilter }: DeveloperTabProps) {
+  const developers =
+    developerFilter && developerFilter !== "all"
+      ? allDevelopers.filter((d) => d.name === developerFilter)
+      : allDevelopers;
   const totalDevs = developers.length;
   const totalDelivered = developers.reduce((acc, d) => acc + d.deliveredSP, 0);
   const avgSP = totalDevs > 0 ? (totalDelivered / totalDevs).toFixed(1) : 0;

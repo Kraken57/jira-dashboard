@@ -26,10 +26,25 @@ ChartJS.register(
 interface TrendsTabProps {
   data: TrendsData;
   podName: string;
+  windowSize?: number;
 }
 
-export function TrendsTab({ data, podName }: TrendsTabProps) {
-  const { velocityTrend, cumulativeThroughput } = data;
+export function TrendsTab({ data, podName, windowSize }: TrendsTabProps) {
+  const take = <T,>(arr: T[]) =>
+    windowSize && windowSize > 0 ? arr.slice(-windowSize) : arr;
+
+  const velocityTrend = {
+    ...data.velocityTrend,
+    labels: take(data.velocityTrend.labels),
+    velocity: take(data.velocityTrend.velocity),
+    movingAvg: take(data.velocityTrend.movingAvg),
+  };
+  const cumulativeThroughput = {
+    ...data.cumulativeThroughput,
+    labels: take(data.cumulativeThroughput.labels),
+    totalIssues: take(data.cumulativeThroughput.totalIssues),
+    completedIssues: take(data.cumulativeThroughput.completedIssues),
+  };
 
   const velocities = velocityTrend.velocity;
   const peakVelocity = velocities.length > 0 ? Math.max(...velocities) : 0;

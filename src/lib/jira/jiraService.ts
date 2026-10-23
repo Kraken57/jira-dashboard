@@ -170,7 +170,10 @@ async function fetchAllLiveJiraIssues(): Promise<{
       status: status.name || "To Do",
       priority: priorityObj?.name || "Medium",
       assignee: assigneeObj?.displayName || "Unassigned",
-      quarter: sprints.length > 0 ? quarterFromSprint(sprints[0]) : "All",
+      quarter:
+        sprints.length > 0
+          ? quarterFromSprint(sprints[sprints.length - 1])
+          : "All",
       sprints,
       storyPoints,
       team: project.name || "",

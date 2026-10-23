@@ -7,14 +7,19 @@ interface DiagnosisTabProps {
   data: DiagnosisData;
   podName: string;
   jiraDomain?: string;
+  statusFilter?: string;
 }
 
-export function DiagnosisTab({ data, podName, jiraDomain }: DiagnosisTabProps) {
+export function DiagnosisTab({ data, podName, jiraDomain, statusFilter }: DiagnosisTabProps) {
   const [selectedContributor, setSelectedContributor] = useState<string | null>(null);
 
-  const filteredIssues = selectedContributor
-    ? data.unfinishedIssues.filter((i) => i.assignee === selectedContributor)
-    : data.unfinishedIssues;
+  const byStatus =
+    statusFilter && statusFilter !== "all"
+      ? data.unfinishedIssues.filter((i) => i.status === statusFilter)
+      : data.unfinishedIssues;
+  const contributorIssues = selectedContributor
+    ? byStatus.filter((i) => i.assignee === selectedContributor)
+    : [];
 
   return (
     <div className="space-y-6">
@@ -55,15 +60,6 @@ export function DiagnosisTab({ data, podName, jiraDomain }: DiagnosisTabProps) {
               Identify which developers carry unfinished story points and examine the underlying reasons
             </p>
           </div>
-          {selectedContributor && (
-            <button
-              type="button"
-              onClick={() => setSelectedContributor(null)}
-              className="text-xs text-jira-blue hover:underline font-semibold self-start sm:self-auto"
-            >
-              ✕ Clear Filter (Showing {selectedContributor})
-            </button>
-          )}
         </div>
 
         <div className="overflow-x-auto">
@@ -117,28 +113,13 @@ export function DiagnosisTab({ data, podName, jiraDomain }: DiagnosisTabProps) {
                         </span>
                       </td>
                       <td className="px-6 py-3 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setSelectedContributor(isSelected ? null : c.name)
-                            }
-                            className={`px-2.5 py-1 text-xs rounded font-semibold transition-colors ${
-                              isSelected
-                                ? "bg-jira-blue text-white"
-                                : "bg-jira-bg text-jira-blue hover:bg-jira-blue-bg border border-jira-border"
-                            }`}
-                          >
-                            {isSelected ? "Selected" : "View Issues"}
-                          </button>
-                          <a
-                            href={`mailto:${c.name.toLowerCase().replace(/\s+/g, ".")}@example.com?subject=Sprint%20Follow-up%20-%20${encodeURIComponent(podName)}`}
-                            className="px-2 py-1 text-xs rounded text-jira-text-muted hover:text-jira-text hover:bg-jira-bg border border-jira-border transition-colors"
-                            title={`Contact ${c.name}`}
-                          >
-                            Contact
-                          </a>
-                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedContributor(c.name)}
+                          className="px-2.5 py-1 text-xs rounded font-semibold bg-jira-bg text-jira-blue hover:bg-jira-blue-bg border border-jira-border transition-colors"
+                        >
+                          View Issues
+                        </button>
                       </td>
                     </tr>
                   );
@@ -154,16 +135,14 @@ export function DiagnosisTab({ data, podName, jiraDomain }: DiagnosisTabProps) {
         <div className="px-6 py-4 border-b border-jira-border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <div>
             <h3 className="text-sm font-bold text-jira-text uppercase tracking-wider">
-              {selectedContributor
-                ? `Unfinished Work Items for ${selectedContributor}`
-                : "All Unresolved & Carried-Over Issues"}
+              All Unresolved & Carried-Over Issues
             </h3>
             <p className="text-xs text-jira-text-muted mt-0.5">
               Click any issue key to open directly in Jira Cloud and review blockers
             </p>
           </div>
           <span className="text-xs font-semibold px-2.5 py-1 bg-jira-bg rounded text-jira-text-muted border border-jira-border self-start sm:self-auto">
-            {filteredIssues.length} issues causing slippage
+            {byStatus.length} issues causing slippage
           </span>
         </div>
 
@@ -181,14 +160,14 @@ export function DiagnosisTab({ data, podName, jiraDomain }: DiagnosisTabProps) {
               </tr>
             </thead>
             <tbody className="divide-y divide-jira-border/60">
-              {filteredIssues.length === 0 ? (
+              {byStatus.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-6 py-8 text-center text-jira-text-muted">
                     No unfinished issues found for this selection.
                   </td>
                 </tr>
               ) : (
-                filteredIssues.map((issue) => (
+                byStatus.map((issue) => (
                   <tr key={issue.key} className="hover:bg-jira-bg/30 transition-colors">
                     <td className="px-5 py-3 font-semibold text-xs whitespace-nowrap">
                       <a
@@ -265,6 +244,88 @@ export function DiagnosisTab({ data, podName, jiraDomain }: DiagnosisTabProps) {
           </table>
         </div>
       </div>
+
+      {/* Contributor issues modal — no page jump, no scroll */}
+      {selectedContributor && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setSelectedContributor(null)}
+        >
+          <div
+            className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[80vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-jira-border">
+              <div>
+                <h3 className="text-sm font-bold text-jira-text uppercase tracking-wider">
+                  Unfinished Items · {selectedContributor}
+                </h3>
+                <p className="text-xs text-jira-text-muted mt-0.5">
+                  {contributorIssues.length} open item(s) · {podName}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedContributor(null)}
+                className="text-jira-text-muted hover:text-jira-text text-lg leading-none px-2"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="overflow-y-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-jira-bg text-jira-text-muted text-xs uppercase border-b border-jira-border font-semibold sticky top-0">
+                  <tr>
+                    <th className="px-5 py-2.5">Key</th>
+                    <th className="px-5 py-2.5">Summary</th>
+                    <th className="px-5 py-2.5 text-center">SP</th>
+                    <th className="px-5 py-2.5">Status</th>
+                    <th className="px-5 py-2.5">Reason</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-jira-border/60">
+                  {contributorIssues.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-5 py-8 text-center text-jira-text-muted">
+                        No unfinished items for this contributor.
+                      </td>
+                    </tr>
+                  ) : (
+                    contributorIssues.map((issue) => (
+                      <tr key={issue.key} className="hover:bg-jira-bg/30">
+                        <td className="px-5 py-2.5 font-semibold text-xs whitespace-nowrap">
+                          {jiraDomain ? (
+                            <a
+                              href={`${jiraDomain}/browse/${issue.key}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-jira-blue hover:underline"
+                            >
+                              {issue.key}
+                            </a>
+                          ) : (
+                            issue.key
+                          )}
+                        </td>
+                        <td className="px-5 py-2.5 text-xs text-jira-text">
+                          <p className="line-clamp-1">{issue.summary}</p>
+                          <p className="text-[11px] text-jira-text-light mt-0.5">
+                            {issue.podName} • {issue.sprint}
+                          </p>
+                        </td>
+                        <td className="px-5 py-2.5 text-center text-xs font-bold">{issue.storyPoints}</td>
+                        <td className="px-5 py-2.5 text-xs whitespace-nowrap">{issue.status}</td>
+                        <td className="px-5 py-2.5 text-xs text-jira-text-muted">{issue.reason}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

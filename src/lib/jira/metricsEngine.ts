@@ -107,16 +107,25 @@ function derivePods(items: JiraWorkItem[]): PodOption[] {
   return pods;
 }
 
+function quarterSortKey(q: string): number {
+  const m = q.match(/CY(\d{2})\s*PI\.?\s*(\d+)/i);
+  return m ? Number(m[1]) * 100 + Number(m[2]) : 9999;
+}
+
 function deriveQuarters(items: JiraWorkItem[]): QuarterOption[] {
-  const set = new Set<string>();
+  const counts = new Map<string, number>();
   for (const item of items) {
-    if (item.quarter && item.quarter !== "All") set.add(item.quarter);
+    if (item.quarter && item.quarter !== "All") {
+      counts.set(item.quarter, (counts.get(item.quarter) || 0) + 1);
+    }
   }
   const quarters: QuarterOption[] = [
-    { id: "all", name: "All Quarters", sub: "Full Portfolio" },
+    { id: "all", name: "All Quarters", sub: "Full portfolio" },
   ];
-  for (const q of Array.from(set).sort()) {
-    quarters.push({ id: q, name: q });
+  for (const q of Array.from(counts.keys()).sort(
+    (a, b) => quarterSortKey(a) - quarterSortKey(b)
+  )) {
+    quarters.push({ id: q, name: q, sub: `${counts.get(q)} issues` });
   }
   return quarters;
 }
@@ -182,7 +191,7 @@ export function computeDashboardData(
   // 4. Sprint window: only sprints that actually have work in the current
   //    pod/quarter scope, ordered chronologically, limited to the latest few.
   const sprintCountMap = new Map<string, number>();
-  for (const it of scopedItems) {
+  for (const it of activeItems) {
     for (const s of it.sprints || []) {
       const name = s.trim();
       if (!name) continue;
@@ -233,12 +242,15 @@ export function computeDashboardData(
     revealedFuture = upcoming[0] || null;
   }
 
-  const windowNames = observedSprints
-    .filter((name) => !isUpcoming(name) || name === revealedFuture)
-    .slice(-SPRINT_WINDOW);
+  const windowNames =
+    sprintId !== "all"
+      ? [sprintId]
+      : observedSprints
+          .filter((name) => !isUpcoming(name) || name === revealedFuture)
+          .slice(-SPRINT_WINDOW);
 
   const sprintStats = windowNames.map((sprintName) => {
-    const sprintItems = scopedItems.filter((it) =>
+    const sprintItems = activeItems.filter((it) =>
       matchesSprint(it.sprints, sprintName)
     );
     let committedSP = 0;
@@ -303,47 +315,55 @@ export function computeDashboardData(
     trendStatus,
   };
 
-  // 6. Executive KPI Metrics — sprint-level definitions.
-  // Velocity = SP completed in the sprint.
+  // 6. Executive KPI Metrics — aggregate over every sprint in the current
+  //    selection. For "All Sprints" use the de-duplicated scope totals so an
+  //    item carried across sprints is only counted once.
+  // Velocity = SP completed in the period.
   // Say-Do   = completed committed SP / committed SP.
   // Spillover= spilled-over committed SP / committed SP.
   // Predictability = completed committed SP / planned SP.
-  // Cards report the selected sprint, or the latest sprint for "all".
+  const isAllSprints = sprintId === "all";
   const lastSprint = sprintStats[sprintStats.length - 1];
-  const focusSprint =
-    sprintId !== "all"
-      ? sprintStats.find((s) => matchesSprint([s.fullName], sprintId)) || lastSprint
-      : lastSprint;
-  const focusIndex = focusSprint ? sprintStats.indexOf(focusSprint) : -1;
-  const prevFocus = focusIndex > 0 ? sprintStats[focusIndex - 1] : undefined;
+  const prevSprint = sprintStats[sprintStats.length - 2];
+
+  const scopeCommittedSP = isAllSprints
+    ? summary.totalStoryPoints
+    : lastSprint?.committed ?? 0;
+  const scopeDoneSP = isAllSprints
+    ? summary.completedStoryPoints
+    : lastSprint?.done ?? 0;
+  const scopeCarriedSP = isAllSprints
+    ? Math.max(summary.totalStoryPoints - summary.completedStoryPoints, 0)
+    : lastSprint?.carried ?? 0;
+
+  const sayDoRatio = scopeCommittedSP > 0
+    ? Math.round((scopeDoneSP / scopeCommittedSP) * 100)
+    : 0;
+  const carryOver = scopeCommittedSP > 0
+    ? Math.round((scopeCarriedSP / scopeCommittedSP) * 100)
+    : 0;
+  const currentVelocity = scopeDoneSP;
 
   const sayDoOf = (s: typeof lastSprint | undefined) =>
     s && s.committed > 0 ? (s.done / s.committed) * 100 : 0;
-  const spilloverOf = (s: typeof lastSprint | undefined) =>
-    s && s.committed > 0 ? (s.carried / s.committed) * 100 : 0;
 
-  const sayDoRatio = Math.round(sayDoOf(focusSprint));
-  const carryOver = Math.round(spilloverOf(focusSprint));
-  const currentVelocity = focusSprint?.done ?? 0;
-
-  const sayDoTrend = focusSprint && prevFocus
-    ? Math.round(sayDoOf(focusSprint) - sayDoOf(prevFocus))
+  const sayDoTrend = !isAllSprints && lastSprint && prevSprint
+    ? Math.round(sayDoOf(lastSprint) - sayDoOf(prevSprint))
     : 0;
-  const carryTrend = focusSprint && prevFocus
-    ? Math.round(spilloverOf(focusSprint) - spilloverOf(prevFocus))
+  const carryTrend = !isAllSprints && lastSprint && prevSprint
+    ? Math.round(
+        (lastSprint.committed > 0 ? (lastSprint.carried / lastSprint.committed) * 100 : 0) -
+          (prevSprint.committed > 0 ? (prevSprint.carried / prevSprint.committed) * 100 : 0)
+      )
     : 0;
-  const velocityTrendPct = focusSprint && prevFocus
-    ? pctChange(focusSprint.done, prevFocus.done)
+  const velocityTrendPct = !isAllSprints && lastSprint && prevSprint
+    ? pctChange(lastSprint.done, prevSprint.done)
     : 0;
 
-  // Predictability across the plotted window: delivered / planned SP.
-  const windowPlanned = sprintStats.reduce((a, s) => a + s.planned, 0);
-  const windowDelivered = sprintStats.reduce((a, s) => a + s.done, 0);
-  const predictabilityScore =
-    windowPlanned > 0 ? Math.round((windowDelivered / windowPlanned) * 100) : 0;
-  const predictabilityTrend = focusSprint && prevFocus
-    ? Math.round(sayDoOf(focusSprint) - sayDoOf(prevFocus))
+  const predictabilityScore = scopeCommittedSP > 0
+    ? Math.round((scopeDoneSP / scopeCommittedSP) * 100)
     : 0;
+  const predictabilityTrend = sayDoTrend;
 
   const trendLabelFor = (delta: number) =>
     delta === 0 ? "no change vs last sprint" : "vs last sprint";
@@ -372,7 +392,10 @@ export function computeDashboardData(
     {
       title: "Team/Epic Velocity",
       value: `${currentVelocity} pts`,
-      subtitle: "SP completed in latest sprint",
+      subtitle:
+        sprintId === "all"
+          ? `SP completed across ${windowNames.length} sprints`
+          : "SP completed in selected sprint",
       trend: velocityTrendPct,
       trendLabel: trendLabelFor(velocityTrendPct),
       color: "blue",
@@ -546,7 +569,7 @@ export function computeDashboardData(
   // 10. Predictability Details
   const predictability: PredictabilityData = {
     score: predictabilityScore,
-    varianceSP: Math.abs(windowPlanned - windowDelivered),
+    varianceSP: Math.abs(scopeCommittedSP - scopeDoneSP),
     epicsOnSchedule: predictabilityScore,
     history: sprintStats.map((s) => ({
       sprint: s.name,
@@ -715,13 +738,25 @@ export function computeDashboardData(
     isDone: DONE_STATUSES.has(it.status),
   }));
 
+  // Sprint → team mapping, so the sprint filter shows whose sprint it is.
+  const sprintTeams = new Map<string, Set<string>>();
+  activeItems.forEach((it) => {
+    const team = it.team || it.podName;
+    (it.sprints || []).forEach((s) => {
+      const key = s.trim();
+      if (!key) return;
+      if (!sprintTeams.has(key)) sprintTeams.set(key, new Set());
+      sprintTeams.get(key)!.add(team);
+    });
+  });
+
   // Sprints filter list — only sprints that have work and are inside the plot window.
   const sprints: SprintOption[] = [
     { id: "all", name: "All Sprints", sub: `Latest ${windowNames.length} sprints` },
     ...windowNames.map((name, i) => ({
       id: name,
       name: sprintDisplayName(name),
-      sub: `Sprint ${i + 1}`,
+      sub: Array.from(sprintTeams.get(name) || []).join(", ") || `Sprint ${i + 1}`,
     })),
   ];
 

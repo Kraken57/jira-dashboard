@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { Dropdown } from "@/components/Dropdown";
 import { TabBar } from "@/components/TabBar";
 import { MetricCard } from "@/components/MetricCard";
 import { VelocityGrid } from "@/components/VelocityGrid";
+import { TabFilters, FilterKey, FilterState, FilterOption } from "@/components/TabFilters";
 import { fetchDashboardData } from "@/lib/api";
-import { DashboardData } from "@/lib/jira/types";
+import { DashboardData, SprintOption } from "@/lib/jira/types";
 import { PodTab } from "@/components/tabs/PodTab";
 import { DeveloperTab } from "@/components/tabs/DeveloperTab";
 import { SprintAnalysisTab } from "@/components/tabs/SprintAnalysisTab";
@@ -29,56 +29,61 @@ const TABS = [
   { id: "issues", label: "Issues" },
 ];
 
+// Pod / Quarter / Sprint are shared across tabs (a selection carries over).
+// Each tab adds only the extra filters that make sense for it.
+const TAB_FILTERS: Record<string, FilterKey[]> = {
+  executive: ["pod", "quarter", "sprint"],
+  pod: ["pod", "quarter", "sprint"],
+  developer: ["pod", "quarter", "sprint", "developer"],
+  sprint: ["pod", "quarter", "sprint"],
+  quality: ["pod", "quarter", "sprint"],
+  predictability: ["pod", "quarter"],
+  diagnosis: ["pod", "quarter", "sprint", "status"],
+  trends: ["pod", "quarter", "window"],
+  issues: ["pod", "quarter", "sprint"],
+};
+
+const BASE_DEFAULT = { pod: "all", quarter: "all", sprint: "all" };
+const EXTRA_DEFAULT = { developer: "all", status: "all", window: "5" };
+
 export default function DashboardPage() {
-  const [selectedPod, setSelectedPod] = useState("all");
-  const [selectedQuarter, setSelectedQuarter] = useState("all");
-  const [selectedSprint, setSelectedSprint] = useState("all");
-
-  const [servicesOpen, setServicesOpen] = useState(false);
-  const [quartersOpen, setQuartersOpen] = useState(false);
-  const [sprintsOpen, setSprintsOpen] = useState(false);
-
   const [activeTab, setActiveTab] = useState("executive");
+  const [baseFilters, setBaseFilters] = useState(BASE_DEFAULT);
+  const [extraFilters, setExtraFilters] = useState<
+    Record<string, typeof EXTRA_DEFAULT>
+  >(() => Object.fromEntries(TABS.map((t) => [t.id, { ...EXTRA_DEFAULT }])));
+
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [sprintOptions, setSprintOptions] = useState<SprintOption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const servicesRef = useRef<HTMLDivElement>(null);
-  const quartersRef = useRef<HTMLDivElement>(null);
-  const sprintsRef = useRef<HTMLDivElement>(null);
+  const filterKeys = TAB_FILTERS[activeTab] || [];
+  const filters: FilterState = {
+    ...baseFilters,
+    ...extraFilters[activeTab],
+  };
+  // Tabs without a sprint filter always look at the whole window.
+  const effectiveSprint = filterKeys.includes("sprint")
+    ? baseFilters.sprint
+    : "all";
 
-  // Close dropdowns on click outside
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (servicesRef.current && !servicesRef.current.contains(e.target as Node)) {
-        setServicesOpen(false);
-      }
-      if (quartersRef.current && !quartersRef.current.contains(e.target as Node)) {
-        setQuartersOpen(false);
-      }
-      if (sprintsRef.current && !sprintsRef.current.contains(e.target as Node)) {
-        setSprintsOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  // Fetch dynamic Jira metrics when filters change
   useEffect(() => {
     let cancelled = false;
 
     async function loadData() {
       setIsLoading(true);
       try {
-        const data = await fetchDashboardData({
-          podId: selectedPod,
-          quarterId: selectedQuarter,
-          sprintId: selectedSprint,
-        });
-        if (!cancelled) {
-          setDashboardData(data);
-          setIsLoading(false);
-        }
+        const base = { podId: baseFilters.pod, quarterId: baseFilters.quarter };
+        const [data, allSprints] = await Promise.all([
+          fetchDashboardData({ ...base, sprintId: effectiveSprint }),
+          effectiveSprint === "all"
+            ? Promise.resolve(null)
+            : fetchDashboardData({ ...base, sprintId: "all" }),
+        ]);
+        if (cancelled) return;
+        setDashboardData(data);
+        setSprintOptions((allSprints ?? data).sprints);
+        setIsLoading(false);
       } catch (err) {
         console.error("Failed to load dashboard data:", err);
         if (!cancelled) setIsLoading(false);
@@ -90,16 +95,59 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [selectedPod, selectedQuarter, selectedSprint]);
+  }, [baseFilters.pod, baseFilters.quarter, effectiveSprint]);
+
+  const updateFilter = (key: FilterKey, value: string) => {
+    if (key === "pod" || key === "quarter" || key === "sprint") {
+      setBaseFilters((prev) => ({
+        ...prev,
+        [key]: value,
+        ...(key === "pod" || key === "quarter" ? { sprint: "all" } : {}),
+      }));
+    } else {
+      setExtraFilters((prev) => ({
+        ...prev,
+        [activeTab]: { ...prev[activeTab], [key]: value },
+      }));
+    }
+  };
+
+  const resetFilters = () => {
+    setBaseFilters(BASE_DEFAULT);
+    setExtraFilters((prev) => ({
+      ...prev,
+      [activeTab]: { ...EXTRA_DEFAULT },
+    }));
+  };
 
   const pods = dashboardData?.pods || [];
-
   const quarters = dashboardData?.quarters || [];
-
-  const sprints = dashboardData?.sprints || [];
-
+  const sprints = sprintOptions.length ? sprintOptions : dashboardData?.sprints || [];
   const metrics = dashboardData?.metrics || [];
-  const selectedPodName = pods.find((p) => p.id === selectedPod)?.name || "All Pods";
+  const selectedPodName = pods.find((p) => p.id === baseFilters.pod)?.name || "All Pods";
+
+  const statuses = Array.from(
+    new Set((dashboardData?.diagnosis.unfinishedIssues || []).map((i) => i.status))
+  ).sort();
+
+  const filterOptions: Partial<Record<FilterKey, FilterOption[]>> = {
+    pod: pods.map((p) => ({ id: p.id, name: p.name, sub: p.sub })),
+    quarter: quarters.map((q) => ({ id: q.id, name: q.name, sub: q.sub })),
+    sprint: sprints.map((s) => ({ id: s.id, name: s.name, sub: s.sub })),
+    developer: [
+      { id: "all", name: "All Developers" },
+      ...(dashboardData?.developers || []).map((d) => ({ id: d.name, name: d.name })),
+    ],
+    status: [
+      { id: "all", name: "All Statuses" },
+      ...statuses.map((s) => ({ id: s, name: s })),
+    ],
+    window: [
+      { id: "3", name: "Last 3 sprints" },
+      { id: "5", name: "Last 5 sprints" },
+      { id: "8", name: "Last 8 sprints" },
+    ],
+  };
 
   return (
     <DashboardLayout>
@@ -124,78 +172,24 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Filter bar: Pods / Quarter / Sprints */}
-        <div className="bg-white border border-jira-border rounded-lg p-4 grid grid-cols-1 md:grid-cols-3 gap-4 shadow-sm">
-          <div className="min-w-0" ref={servicesRef}>
-            <Dropdown
-              label="Services / Pods"
-              items={pods.map((p) => ({ id: p.id, name: p.name, sub: p.sub }))}
-              onChange={(id) => {
-                setSelectedPod(id);
-                setServicesOpen(false);
-              }}
-              value={selectedPod}
-              open={servicesOpen}
-              onToggle={(open) => {
-                setServicesOpen(open);
-                if (open) {
-                  setQuartersOpen(false);
-                  setSprintsOpen(false);
-                }
-              }}
-            />
-          </div>
-
-          <div className="min-w-0" ref={quartersRef}>
-            <Dropdown
-              label="Quarter / PI"
-              items={quarters.map((q) => ({ id: q.id, name: q.name, sub: q.sub }))}
-              onChange={(id) => {
-                setSelectedQuarter(id);
-                setQuartersOpen(false);
-              }}
-              value={selectedQuarter}
-              open={quartersOpen}
-              onToggle={(open) => {
-                setQuartersOpen(open);
-                if (open) {
-                  setServicesOpen(false);
-                  setSprintsOpen(false);
-                }
-              }}
-            />
-          </div>
-
-          <div className="min-w-0" ref={sprintsRef}>
-            <Dropdown
-              label="Sprint"
-              items={sprints.map((s) => ({ id: s.id, name: s.name, sub: s.sub }))}
-              onChange={(id) => {
-                setSelectedSprint(id);
-                setSprintsOpen(false);
-              }}
-              value={selectedSprint}
-              open={sprintsOpen}
-              onToggle={(open) => {
-                setSprintsOpen(open);
-                if (open) {
-                  setServicesOpen(false);
-                  setQuartersOpen(false);
-                }
-              }}
-            />
-          </div>
-        </div>
-
         {/* Tab Navigation */}
         <TabBar tabs={TABS} active={activeTab} onChange={setActiveTab} />
+
+        {/* Per-tab filters (Pod/Quarter/Sprint carry over between tabs) */}
+        <TabFilters
+          keys={filterKeys}
+          title={TABS.find((t) => t.id === activeTab)?.label}
+          value={filters}
+          options={filterOptions}
+          onChange={updateFilter}
+          onReset={resetFilters}
+        />
 
         {/* Loading Indicator Overlay */}
         <div className={`transition-opacity duration-200 ${isLoading ? "opacity-60 pointer-events-none" : "opacity-100"}`}>
           {/* Executive Summary Tab */}
           {activeTab === "executive" && (
             <div className="space-y-6">
-              {/* Dynamic KPI Metric Cards */}
               <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {metrics.map((card) => (
                   <MetricCard
@@ -213,7 +207,6 @@ export default function DashboardPage() {
                 ))}
               </section>
 
-              {/* Dynamic Velocity & Delivery Charts */}
               {dashboardData && (
                 <VelocityGrid
                   velocity={dashboardData.velocity}
@@ -223,46 +216,47 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Pod View Tab */}
           {activeTab === "pod" && dashboardData && (
             <PodTab data={dashboardData} podName={selectedPodName} />
           )}
 
-          {/* Developer View Tab */}
           {activeTab === "developer" && dashboardData && (
-            <DeveloperTab developers={dashboardData.developers} podName={selectedPodName} />
+            <DeveloperTab
+              developers={dashboardData.developers}
+              podName={selectedPodName}
+              developerFilter={filters.developer}
+            />
           )}
 
-          {/* Sprint Analysis Tab */}
           {activeTab === "sprint" && dashboardData && (
             <SprintAnalysisTab data={dashboardData.sprintAnalysis} />
           )}
 
-          {/* Quality Tab */}
           {activeTab === "quality" && dashboardData && (
             <QualityTab data={dashboardData.quality} />
           )}
 
-          {/* Predictability Tab */}
           {activeTab === "predictability" && dashboardData && (
             <PredictabilityTab data={dashboardData.predictability} />
           )}
 
-          {/* Delivery Diagnosis Tab */}
           {activeTab === "diagnosis" && dashboardData && (
             <DiagnosisTab
               data={dashboardData.diagnosis}
               podName={selectedPodName}
               jiraDomain={dashboardData.jiraBaseUrl}
+              statusFilter={filters.status}
             />
           )}
 
-          {/* Trends Tab */}
           {activeTab === "trends" && dashboardData && (
-            <TrendsTab data={dashboardData.trends} podName={selectedPodName} />
+            <TrendsTab
+              data={dashboardData.trends}
+              podName={selectedPodName}
+              windowSize={Number(filters.window) || 5}
+            />
           )}
 
-          {/* Issues Tab */}
           {activeTab === "issues" && dashboardData && (
             <IssuesTab
               issues={dashboardData.issueList}

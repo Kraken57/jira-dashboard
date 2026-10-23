@@ -242,41 +242,41 @@ function calculateKPIs(items: any[], filters: any) {
       ? Math.round(((s.storyPoints - s.doneStoryPoints) / s.storyPoints) * 100)
       : 0;
 
-  // Sprint-level KPIs: focus on the selected sprint, or the latest for "all".
+  // Executive KPIs aggregate over the current selection using de-duplicated
+  // item totals (an item carried across sprints is counted once).
   const lastSprint = sprints[sprints.length - 1];
-  const focusSprint =
-    filters.sprintId && filters.sprintId !== "all"
-      ? sprints.find((s) => s.id === filters.sprintId) || lastSprint
-      : lastSprint;
-  const focusIndex = focusSprint ? sprints.indexOf(focusSprint) : -1;
-  const prevFocus = focusIndex > 0 ? sprints[focusIndex - 1] : undefined;
+  const prevSprint = sprints[sprints.length - 2];
 
-  const savedSayDo = sprintSayDo(focusSprint);
-  const savedCarry = sprintCarry(focusSprint);
-  const currentVelocity = focusSprint?.doneStoryPoints || 0;
+  const totalCommittedSP = totalStoryPoints;
+  const totalDoneSP = completedStoryPoints;
+  const totalCarriedSP = Math.max(totalCommittedSP - totalDoneSP, 0);
+
+  const savedSayDo =
+    totalCommittedSP > 0 ? Math.round((totalDoneSP / totalCommittedSP) * 100) : 0;
+  const savedCarry =
+    totalCommittedSP > 0 ? Math.round((totalCarriedSP / totalCommittedSP) * 100) : 0;
+  const currentVelocity = totalDoneSP;
 
   const sayDoTrend =
-    focusSprint && prevFocus ? sprintSayDo(focusSprint) - sprintSayDo(prevFocus) : 0;
+    lastSprint && prevSprint ? sprintSayDo(lastSprint) - sprintSayDo(prevSprint) : 0;
   const carryTrend =
-    focusSprint && prevFocus ? sprintCarry(focusSprint) - sprintCarry(prevFocus) : 0;
+    lastSprint && prevSprint ? sprintCarry(lastSprint) - sprintCarry(prevSprint) : 0;
   const velocityTrendPct =
-    focusSprint && prevFocus
-      ? prevFocus.doneStoryPoints > 0
+    lastSprint && prevSprint
+      ? prevSprint.doneStoryPoints > 0
         ? Math.round(
-            ((focusSprint.doneStoryPoints - prevFocus.doneStoryPoints) /
-              prevFocus.doneStoryPoints) *
+            ((lastSprint.doneStoryPoints - prevSprint.doneStoryPoints) /
+              prevSprint.doneStoryPoints) *
               100
           )
-        : focusSprint.doneStoryPoints > 0
+        : lastSprint.doneStoryPoints > 0
         ? 100
         : 0
       : 0;
 
-  // Predictability across the plotted window: delivered / planned SP.
-  const windowPlanned = sprints.reduce((a, s) => a + s.storyPoints, 0);
-  const windowDelivered = sprints.reduce((a, s) => a + s.doneStoryPoints, 0);
+  // Predictability across the selection: delivered / planned SP.
   const predictabilityScore =
-    windowPlanned > 0 ? Math.round((windowDelivered / windowPlanned) * 100) : 0;
+    totalCommittedSP > 0 ? Math.round((totalDoneSP / totalCommittedSP) * 100) : 0;
 
   const podsWithAll = [
     {
@@ -394,7 +394,7 @@ function calculateKPIs(items: any[], filters: any) {
     },
     predictability: {
       score: predictabilityScore,
-      varianceSP: Math.abs(windowPlanned - windowDelivered),
+      varianceSP: Math.abs(totalCommittedSP - totalDoneSP),
       epicsOnSchedule: predictabilityScore,
       history: sprints.map((s) => ({
         sprint: s.name,
