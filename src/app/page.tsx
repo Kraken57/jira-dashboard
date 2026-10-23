@@ -6,8 +6,9 @@ import { TabBar } from "@/components/TabBar";
 import { MetricCard } from "@/components/MetricCard";
 import { VelocityGrid } from "@/components/VelocityGrid";
 import { TabFilters, FilterKey, FilterState, FilterOption } from "@/components/TabFilters";
+import { IssuesModal } from "@/components/IssuesModal";
 import { fetchDashboardData } from "@/lib/api";
-import { DashboardData, SprintOption } from "@/lib/jira/types";
+import { DashboardData, SprintOption, IssueRow } from "@/lib/jira/types";
 import { PodTab } from "@/components/tabs/PodTab";
 import { DeveloperTab } from "@/components/tabs/DeveloperTab";
 import { SprintAnalysisTab } from "@/components/tabs/SprintAnalysisTab";
@@ -56,6 +57,11 @@ export default function DashboardPage() {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [sprintOptions, setSprintOptions] = useState<SprintOption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [issueModal, setIssueModal] = useState<{
+    title: string;
+    subtitle: string;
+    issues: IssueRow[];
+  } | null>(null);
 
   const filterKeys = TAB_FILTERS[activeTab] || [];
   const filters: FilterState = {
@@ -125,6 +131,48 @@ export default function DashboardPage() {
   const sprints = sprintOptions.length ? sprintOptions : dashboardData?.sprints || [];
   const metrics = dashboardData?.metrics || [];
   const selectedPodName = pods.find((p) => p.id === baseFilters.pod)?.name || "All Pods";
+  const selectedQuarterName =
+    quarters.find((q) => q.id === baseFilters.quarter)?.name || "All Quarters";
+  const selectedSprintName =
+    sprints.find((s) => s.id === baseFilters.sprint)?.name || "All Sprints";
+  const scopeLabel =
+    [
+      selectedPodName,
+      selectedQuarterName,
+      selectedSprintName,
+    ]
+      .filter((v) => !v.startsWith("All"))
+      .join(" · ") || "All work";
+
+  const openMetricCard = (card: DashboardData["metrics"][number]) => {
+    if (!dashboardData) return;
+    const all = dashboardData.issueList;
+    let issues = all;
+    let label = "All work items in the current filters";
+
+    switch (card.title) {
+      case "Sprint Carry Over":
+        issues = all.filter((i) => !i.isDone);
+        label = "Unfinished / spilled-over committed work";
+        break;
+      case "Team/Epic Velocity":
+        issues = all.filter((i) => i.isDone);
+        label = "Completed work items";
+        break;
+      case "Say/Do Ratio":
+        label = "Committed work items (done vs open)";
+        break;
+      case "Feature Predictability":
+        label = "Planned work items (delivered vs open)";
+        break;
+    }
+
+    setIssueModal({
+      title: card.title,
+      subtitle: `${label} · ${scopeLabel}`,
+      issues,
+    });
+  };
 
   const statuses = Array.from(
     new Set((dashboardData?.diagnosis.unfinishedIssues || []).map((i) => i.status))
@@ -195,14 +243,7 @@ export default function DashboardPage() {
                   <MetricCard
                     key={card.title}
                     {...card}
-                    onOpen={
-                      card.drilldownTab
-                        ? () => {
-                            setActiveTab(card.drilldownTab!);
-                            window.scrollTo({ top: 0, behavior: "smooth" });
-                          }
-                        : undefined
-                    }
+                    onOpen={() => openMetricCard(card)}
                   />
                 ))}
               </section>
@@ -225,15 +266,25 @@ export default function DashboardPage() {
               developers={dashboardData.developers}
               podName={selectedPodName}
               developerFilter={filters.developer}
+              issues={dashboardData.issueList}
+              jiraDomain={dashboardData.jiraBaseUrl}
             />
           )}
 
           {activeTab === "sprint" && dashboardData && (
-            <SprintAnalysisTab data={dashboardData.sprintAnalysis} />
+            <SprintAnalysisTab
+              data={dashboardData.sprintAnalysis}
+              issues={dashboardData.issueList}
+              jiraDomain={dashboardData.jiraBaseUrl}
+            />
           )}
 
           {activeTab === "quality" && dashboardData && (
-            <QualityTab data={dashboardData.quality} />
+            <QualityTab
+              data={dashboardData.quality}
+              issues={dashboardData.issueList}
+              jiraDomain={dashboardData.jiraBaseUrl}
+            />
           )}
 
           {activeTab === "predictability" && dashboardData && (
@@ -265,6 +316,16 @@ export default function DashboardPage() {
             />
           )}
         </div>
+
+        {issueModal && dashboardData && (
+          <IssuesModal
+            title={issueModal.title}
+            subtitle={issueModal.subtitle}
+            issues={issueModal.issues}
+            jiraDomain={dashboardData.jiraBaseUrl}
+            onClose={() => setIssueModal(null)}
+          />
+        )}
       </div>
     </DashboardLayout>
   );

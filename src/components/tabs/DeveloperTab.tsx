@@ -1,14 +1,24 @@
 "use client";
 
-import { DeveloperStat } from "@/lib/jira/types";
+import { useState } from "react";
+import { DeveloperStat, IssueRow } from "@/lib/jira/types";
+import { IssuesModal } from "@/components/IssuesModal";
 
 interface DeveloperTabProps {
   developers: DeveloperStat[];
   podName: string;
   developerFilter?: string;
+  issues?: IssueRow[];
+  jiraDomain?: string;
 }
 
-export function DeveloperTab({ developers: allDevelopers, podName, developerFilter }: DeveloperTabProps) {
+export function DeveloperTab({
+  developers: allDevelopers,
+  podName,
+  developerFilter,
+  issues = [],
+  jiraDomain,
+}: DeveloperTabProps) {
   const developers =
     developerFilter && developerFilter !== "all"
       ? allDevelopers.filter((d) => d.name === developerFilter)
@@ -17,31 +27,78 @@ export function DeveloperTab({ developers: allDevelopers, podName, developerFilt
   const totalDelivered = developers.reduce((acc, d) => acc + d.deliveredSP, 0);
   const avgSP = totalDevs > 0 ? (totalDelivered / totalDevs).toFixed(1) : 0;
   const topDev = developers[0]?.name || "None";
+  const scopedIssues =
+    developerFilter && developerFilter !== "all"
+      ? issues.filter((i) => i.assignee === developerFilter)
+      : issues;
+
+  const [modal, setModal] = useState<{
+    title: string;
+    subtitle: string;
+    issues: IssueRow[];
+  } | null>(null);
+
+  const open = (title: string, subtitle: string, list: IssueRow[]) =>
+    setModal({ title, subtitle, issues: list });
 
   return (
     <div className="space-y-6">
       {/* KPI Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white border border-jira-border rounded-lg p-4 shadow-sm">
+        <button
+          type="button"
+          onClick={() => open("Active Developers", `${podName} · all assigned work items`, scopedIssues)}
+          className="text-left bg-white border border-jira-border rounded-lg p-4 shadow-sm hover:border-jira-blue/50 transition"
+        >
           <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Active Developers</p>
           <p className="text-2xl font-bold text-jira-text mt-1">{totalDevs}</p>
           <p className="text-xs text-jira-text-light mt-1">Contributing in {podName}</p>
-        </div>
-        <div className="bg-white border border-jira-border rounded-lg p-4 shadow-sm">
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            open(
+              "Avg SP / Developer",
+              `${podName} · completed work items`,
+              scopedIssues.filter((i) => i.isDone)
+            )
+          }
+          className="text-left bg-white border border-jira-border rounded-lg p-4 shadow-sm hover:border-jira-blue/50 transition"
+        >
           <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Avg SP / Developer</p>
           <p className="text-2xl font-bold text-jira-blue mt-1">{avgSP} pts</p>
           <p className="text-xs text-jira-text-light mt-1">Delivered this period</p>
-        </div>
-        <div className="bg-white border border-jira-border rounded-lg p-4 shadow-sm">
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            open(
+              "Total Delivered",
+              `${podName} · completed work items`,
+              scopedIssues.filter((i) => i.isDone)
+            )
+          }
+          className="text-left bg-white border border-jira-border rounded-lg p-4 shadow-sm hover:border-jira-green/50 transition"
+        >
           <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Total Delivered</p>
           <p className="text-2xl font-bold text-jira-green mt-1">{totalDelivered} SP</p>
           <p className="text-xs text-jira-text-light mt-1">Completed story points</p>
-        </div>
-        <div className="bg-white border border-jira-border rounded-lg p-4 shadow-sm">
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            open(
+              `Top Contributor · ${topDev}`,
+              `${podName} · work items assigned to ${topDev}`,
+              issues.filter((i) => i.assignee === topDev)
+            )
+          }
+          className="text-left bg-white border border-jira-border rounded-lg p-4 shadow-sm hover:border-jira-blue/50 transition"
+        >
           <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Top Contributor</p>
           <p className="text-2xl font-bold text-jira-text mt-1 truncate">{topDev}</p>
           <p className="text-xs text-jira-text-light mt-1">Highest story points delivered</p>
-        </div>
+        </button>
       </div>
 
       {/* Developer Contribution Table */}
@@ -69,7 +126,17 @@ export function DeveloperTab({ developers: allDevelopers, podName, developerFilt
             </thead>
             <tbody className="divide-y divide-jira-border/60">
               {developers.map((dev, idx) => (
-                <tr key={dev.name + idx} className="hover:bg-jira-bg/30 transition-colors">
+                <tr
+                  key={dev.name + idx}
+                  onClick={() =>
+                    open(
+                      `Work items · ${dev.name}`,
+                      `${dev.assignedIssues} assigned · ${dev.deliveredSP} SP delivered`,
+                      issues.filter((i) => i.assignee === dev.name)
+                    )
+                  }
+                  className="hover:bg-jira-bg/30 transition-colors cursor-pointer"
+                >
                   <td className="px-6 py-3 font-semibold text-jira-text flex items-center gap-2.5">
                     <span className="w-7 h-7 rounded-full bg-jira-blue-bg text-jira-blue flex items-center justify-center text-xs font-bold shrink-0">
                       {dev.name.split(" ").map((n) => n[0]).slice(0, 2).join("")}
@@ -99,6 +166,16 @@ export function DeveloperTab({ developers: allDevelopers, podName, developerFilt
           </table>
         </div>
       </div>
+
+      {modal && (
+        <IssuesModal
+          title={modal.title}
+          subtitle={modal.subtitle}
+          issues={modal.issues}
+          jiraDomain={jiraDomain}
+          onClose={() => setModal(null)}
+        />
+      )}
     </div>
   );
 }

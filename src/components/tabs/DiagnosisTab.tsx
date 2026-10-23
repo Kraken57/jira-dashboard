@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { DiagnosisData } from "@/lib/jira/types";
+import { DiagnosisData, IssueRow, UnfinishedIssue } from "@/lib/jira/types";
+import { IssuesModal } from "@/components/IssuesModal";
 
 interface DiagnosisTabProps {
   data: DiagnosisData;
@@ -12,6 +13,27 @@ interface DiagnosisTabProps {
 
 export function DiagnosisTab({ data, podName, jiraDomain, statusFilter }: DiagnosisTabProps) {
   const [selectedContributor, setSelectedContributor] = useState<string | null>(null);
+  const [cardModal, setCardModal] = useState<{
+    title: string;
+    subtitle: string;
+    issues: IssueRow[];
+  } | null>(null);
+
+  const asRows = (list: UnfinishedIssue[]): IssueRow[] =>
+    list.map((i) => ({
+      key: i.key,
+      summary: i.summary,
+      workType: i.workType,
+      status: i.status,
+      storyPoints: i.storyPoints,
+      podKey: "",
+      podName: i.podName,
+      sprint: i.sprint,
+      assignee: i.assignee,
+      priority: i.priority,
+      createdDate: "",
+      isDone: false,
+    }));
 
   const byStatus =
     statusFilter && statusFilter !== "all"
@@ -25,28 +47,70 @@ export function DiagnosisTab({ data, podName, jiraDomain, statusFilter }: Diagno
     <div className="space-y-6">
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white border border-jira-border rounded-lg p-4 shadow-sm">
+        <button
+          type="button"
+          onClick={() =>
+            setCardModal({
+              title: "Slippage Volume",
+              subtitle: `${data.slippageSP} SP · ${data.slippagePct}% of planned commitments`,
+              issues: asRows(byStatus),
+            })
+          }
+          className="text-left bg-white border border-jira-border rounded-lg p-4 shadow-sm hover:border-jira-red/50 transition"
+        >
           <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Slippage Volume</p>
           <p className="text-2xl font-bold text-jira-red mt-1">{data.slippageSP} SP</p>
           <p className="text-xs text-jira-text-light mt-1">{data.slippagePct}% of planned commitments</p>
-        </div>
-        <div className="bg-white border border-jira-border rounded-lg p-4 shadow-sm">
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            setCardModal({
+              title: `Primary Driver · ${data.primaryDriver}`,
+              subtitle: "Unfinished work items contributing to this driver",
+              issues: asRows(
+                byStatus.filter((i) => i.reason === data.primaryDriver)
+              ),
+            })
+          }
+          className="text-left bg-white border border-jira-border rounded-lg p-4 shadow-sm hover:border-jira-amber/50 transition"
+        >
           <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Primary Driver</p>
           <p className="text-xl font-bold text-jira-text mt-1 truncate" title={data.primaryDriver}>
             {data.primaryDriver}
           </p>
           <p className="text-xs text-jira-text-light mt-1">Main cause of sprint drag</p>
-        </div>
-        <div className="bg-white border border-jira-border rounded-lg p-4 shadow-sm">
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            setCardModal({
+              title: "Contributors with Spillover",
+              subtitle: `${data.atRiskContributorsCount} contributors carrying incomplete items`,
+              issues: asRows(byStatus),
+            })
+          }
+          className="text-left bg-white border border-jira-border rounded-lg p-4 shadow-sm hover:border-jira-amber/50 transition"
+        >
           <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Contributors with Spillover</p>
           <p className="text-2xl font-bold text-jira-amber mt-1">{data.atRiskContributorsCount}</p>
           <p className="text-xs text-jira-text-light mt-1">Developers carrying incomplete items</p>
-        </div>
-        <div className="bg-white border border-jira-border rounded-lg p-4 shadow-sm">
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            setCardModal({
+              title: "Unfinished Work Items",
+              subtitle: "Open issues needing resolution",
+              issues: asRows(byStatus),
+            })
+          }
+          className="text-left bg-white border border-jira-border rounded-lg p-4 shadow-sm hover:border-jira-blue/50 transition"
+        >
           <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Unfinished Work Items</p>
           <p className="text-2xl font-bold text-jira-text mt-1">{data.unfinishedIssues.length}</p>
           <p className="text-xs text-jira-text-light mt-1">Open issues needing resolution</p>
-        </div>
+        </button>
       </div>
 
       {/* Contributor Slippage Section */}
@@ -325,6 +389,16 @@ export function DiagnosisTab({ data, podName, jiraDomain, statusFilter }: Diagno
             </div>
           </div>
         </div>
+      )}
+
+      {cardModal && (
+        <IssuesModal
+          title={cardModal.title}
+          subtitle={cardModal.subtitle}
+          issues={cardModal.issues}
+          jiraDomain={jiraDomain}
+          onClose={() => setCardModal(null)}
+        />
       )}
     </div>
   );

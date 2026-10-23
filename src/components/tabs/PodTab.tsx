@@ -1,6 +1,8 @@
 "use client";
 
-import { DashboardData } from "@/lib/jira/types";
+import { useState } from "react";
+import { DashboardData, IssueRow } from "@/lib/jira/types";
+import { IssuesModal } from "@/components/IssuesModal";
 
 interface PodTabProps {
   data: DashboardData;
@@ -9,6 +11,15 @@ interface PodTabProps {
 
 export function PodTab({ data, podName }: PodTabProps) {
   const { summary, sprintAnalysis, quality } = data;
+  const issues = data.issueList;
+  const [modal, setModal] = useState<{
+    title: string;
+    subtitle: string;
+    issues: IssueRow[];
+  } | null>(null);
+
+  const open = (title: string, subtitle: string, list: IssueRow[]) =>
+    setModal({ title, subtitle, issues: list });
 
   return (
     <div className="space-y-6">
@@ -28,26 +39,48 @@ export function PodTab({ data, podName }: PodTabProps) {
 
         {/* 4 Pod Stat Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="p-4 bg-jira-bg rounded-lg border border-jira-border/50">
+          <button
+            type="button"
+            onClick={() => open("Total Work Items", `${podName} · all work items`, issues)}
+            className="text-left p-4 bg-jira-bg rounded-lg border border-jira-border/50 hover:border-jira-blue/50 hover:shadow-sm transition"
+          >
             <p className="text-xs uppercase text-jira-text-muted font-bold">Total Work Items</p>
             <p className="text-2xl font-bold text-jira-text mt-1">{summary.totalIssues}</p>
             <p className="text-[11px] text-jira-text-light mt-1">Scope in current filter</p>
-          </div>
-          <div className="p-4 bg-jira-bg rounded-lg border border-jira-border/50">
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              open("Completed (Done)", `${podName} · completed work items`, issues.filter((i) => i.isDone))
+            }
+            className="text-left p-4 bg-jira-bg rounded-lg border border-jira-border/50 hover:border-jira-green/50 hover:shadow-sm transition"
+          >
             <p className="text-xs uppercase text-jira-text-muted font-bold">Completed (Done)</p>
             <p className="text-2xl font-bold text-jira-green mt-1">{summary.completedIssues}</p>
             <p className="text-[11px] text-jira-text-light mt-1">{summary.completedStoryPoints} SP delivered</p>
-          </div>
-          <div className="p-4 bg-jira-bg rounded-lg border border-jira-border/50">
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              open("In Flight", `${podName} · unfinished work items`, issues.filter((i) => !i.isDone))
+            }
+            className="text-left p-4 bg-jira-bg rounded-lg border border-jira-border/50 hover:border-jira-blue/50 hover:shadow-sm transition"
+          >
             <p className="text-xs uppercase text-jira-text-muted font-bold">In Flight</p>
             <p className="text-2xl font-bold text-jira-blue mt-1">{summary.inProgressIssues}</p>
             <p className="text-[11px] text-jira-text-light mt-1">Currently being worked</p>
-          </div>
-          <div className="p-4 bg-jira-bg rounded-lg border border-jira-border/50">
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              open("Defects", `${podName} · bugs`, issues.filter((i) => i.workType === "Bug"))
+            }
+            className="text-left p-4 bg-jira-bg rounded-lg border border-jira-border/50 hover:border-jira-amber/50 hover:shadow-sm transition"
+          >
             <p className="text-xs uppercase text-jira-text-muted font-bold">Defect Density</p>
             <p className="text-2xl font-bold text-jira-amber mt-1">{quality.defectDensity}</p>
             <p className="text-[11px] text-jira-text-light mt-1">{quality.totalBugs} bugs · per 100 delivered SP</p>
-          </div>
+          </button>
         </div>
       </div>
 
@@ -62,7 +95,18 @@ export function PodTab({ data, podName }: PodTabProps) {
             {sprintAnalysis.workTypeBreakdown.map((wt) => {
               const pct = summary.totalIssues > 0 ? Math.round((wt.count / summary.totalIssues) * 100) : 0;
               return (
-                <div key={wt.type} className="space-y-1">
+                <button
+                  key={wt.type}
+                  type="button"
+                  onClick={() =>
+                    open(
+                      `${wt.type} items`,
+                      `${podName} · ${wt.count} items · ${wt.storyPoints} SP`,
+                      issues.filter((i) => i.workType === wt.type)
+                    )
+                  }
+                  className="w-full text-left space-y-1 rounded hover:bg-jira-bg/50 transition p-1"
+                >
                   <div className="flex items-center justify-between text-xs">
                     <span className="font-semibold text-jira-text">{wt.type}</span>
                     <span className="text-jira-text-muted">
@@ -77,7 +121,7 @@ export function PodTab({ data, podName }: PodTabProps) {
                       style={{ width: `${pct}%` }}
                     />
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
@@ -92,7 +136,18 @@ export function PodTab({ data, podName }: PodTabProps) {
             {sprintAnalysis.statusBreakdown.map((st) => {
               const pct = summary.totalIssues > 0 ? Math.round((st.count / summary.totalIssues) * 100) : 0;
               return (
-                <div key={st.status} className="space-y-1">
+                <button
+                  key={st.status}
+                  type="button"
+                  onClick={() =>
+                    open(
+                      st.status,
+                      `${podName} · ${st.count} items in ${st.status}`,
+                      issues.filter((i) => i.status === st.status)
+                    )
+                  }
+                  className="w-full text-left space-y-1 rounded hover:bg-jira-bg/50 transition p-1"
+                >
                   <div className="flex items-center justify-between text-xs">
                     <span className="font-semibold text-jira-text flex items-center gap-1.5">
                       <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: st.color }} />
@@ -105,13 +160,22 @@ export function PodTab({ data, podName }: PodTabProps) {
                   <div className="w-full bg-jira-bg h-2 rounded-full overflow-hidden">
                     <div className="h-2 rounded-full" style={{ width: `${pct}%`, backgroundColor: st.color }} />
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
         </div>
       </div>
+
+      {modal && (
+        <IssuesModal
+          title={modal.title}
+          subtitle={modal.subtitle}
+          issues={modal.issues}
+          jiraDomain={data.jiraBaseUrl}
+          onClose={() => setModal(null)}
+        />
+      )}
     </div>
   );
 }
-

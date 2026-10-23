@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Line } from "react-chartjs-2";
 import {
   Chart as ChartJS,
@@ -12,6 +13,7 @@ import {
   Filler,
 } from "chart.js";
 import { TrendsData } from "@/lib/jira/types";
+import { DetailModal } from "@/components/DetailModal";
 
 ChartJS.register(
   CategoryScale,
@@ -65,30 +67,48 @@ export function TrendsTab({ data, podName, windowSize }: TrendsTabProps) {
   const completionPct =
     totalTrackedIssues > 0 ? Math.round((totalCompletedIssues / totalTrackedIssues) * 100) : 0;
 
+  const [open, setOpen] = useState<"velocity" | "throughput" | null>(null);
+
   return (
     <div className="space-y-6">
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white border border-jira-border rounded-lg p-4 shadow-sm">
+        <button
+          type="button"
+          onClick={() => setOpen("velocity")}
+          className="text-left bg-white border border-jira-border rounded-lg p-4 shadow-sm hover:border-jira-blue/50 transition"
+        >
           <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Peak Velocity</p>
           <p className="text-2xl font-bold text-jira-text mt-1">{peakVelocity} SP</p>
           <p className="text-xs text-jira-text-light mt-1">Highest sprint output</p>
-        </div>
-        <div className="bg-white border border-jira-border rounded-lg p-4 shadow-sm">
+        </button>
+        <button
+          type="button"
+          onClick={() => setOpen("velocity")}
+          className="text-left bg-white border border-jira-border rounded-lg p-4 shadow-sm hover:border-jira-blue/50 transition"
+        >
           <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Rolling Velocity</p>
           <p className="text-2xl font-bold text-jira-blue mt-1">{avgMoving} SP</p>
           <p className="text-xs text-jira-text-light mt-1">Multi-sprint moving average</p>
-        </div>
-        <div className="bg-white border border-jira-border rounded-lg p-4 shadow-sm">
+        </button>
+        <button
+          type="button"
+          onClick={() => setOpen("throughput")}
+          className="text-left bg-white border border-jira-border rounded-lg p-4 shadow-sm hover:border-jira-green/50 transition"
+        >
           <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Cumulative Throughput</p>
           <p className="text-2xl font-bold text-jira-green mt-1">{totalCompletedIssues} Issues</p>
           <p className="text-xs text-jira-text-light mt-1">Shipped across recorded iterations</p>
-        </div>
-        <div className="bg-white border border-jira-border rounded-lg p-4 shadow-sm">
+        </button>
+        <button
+          type="button"
+          onClick={() => setOpen("throughput")}
+          className="text-left bg-white border border-jira-border rounded-lg p-4 shadow-sm hover:border-jira-green/50 transition"
+        >
           <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Throughput Momentum</p>
           <p className="text-2xl font-bold text-jira-text mt-1">{completionPct}%</p>
           <p className="text-xs text-jira-text-light mt-1">Cumulative delivery rate for {podName}</p>
-        </div>
+        </button>
       </div>
 
       {/* Charts Grid */}
@@ -236,6 +256,57 @@ export function TrendsTab({ data, podName, windowSize }: TrendsTabProps) {
           </div>
         </div>
       </div>
+
+      {open && (
+        <DetailModal
+          title={open === "velocity" ? "Velocity Trajectory" : "Cumulative Throughput"}
+          subtitle={`${podName} · ${velocityTrend.labels.length} sprints`}
+          onClose={() => setOpen(null)}
+        >
+          <table className="w-full text-left text-sm">
+            <thead className="bg-jira-bg text-jira-text-muted text-xs uppercase border-b border-jira-border font-semibold sticky top-0">
+              <tr>
+                <th className="px-5 py-2.5">Sprint</th>
+                {open === "velocity" ? (
+                  <>
+                    <th className="px-5 py-2.5 text-right">Velocity</th>
+                    <th className="px-5 py-2.5 text-right">Moving Avg</th>
+                  </>
+                ) : (
+                  <>
+                    <th className="px-5 py-2.5 text-right">Total Items</th>
+                    <th className="px-5 py-2.5 text-right">Completed</th>
+                  </>
+                )}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-jira-border/60">
+              {velocityTrend.labels.map((label, i) => (
+                <tr key={label}>
+                  <td className="px-5 py-2.5 text-xs font-semibold">{label}</td>
+                  {open === "velocity" ? (
+                    <>
+                      <td className="px-5 py-2.5 text-xs text-right">{velocityTrend.velocity[i]} SP</td>
+                      <td className="px-5 py-2.5 text-xs text-right text-jira-green">
+                        {velocityTrend.movingAvg[i]} SP
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td className="px-5 py-2.5 text-xs text-right">
+                        {cumulativeThroughput.totalIssues[i]}
+                      </td>
+                      <td className="px-5 py-2.5 text-xs text-right text-jira-green">
+                        {cumulativeThroughput.completedIssues[i]}
+                      </td>
+                    </>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </DetailModal>
+      )}
     </div>
   );
 }

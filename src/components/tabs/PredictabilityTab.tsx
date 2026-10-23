@@ -1,31 +1,47 @@
 "use client";
 
+import { useState } from "react";
 import { PredictabilityData } from "@/lib/jira/types";
+import { DetailModal } from "@/components/DetailModal";
 
 interface PredictabilityTabProps {
   data: PredictabilityData;
 }
 
 export function PredictabilityTab({ data }: PredictabilityTabProps) {
+  const [open, setOpen] = useState<string | null>(null);
+
   return (
     <div className="space-y-6">
       {/* KPI Row */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white border border-jira-border rounded-lg p-4 shadow-sm">
+        <button
+          type="button"
+          onClick={() => setOpen("Predictability Index")}
+          className="text-left bg-white border border-jira-border rounded-lg p-4 shadow-sm hover:border-jira-green/50 transition"
+        >
           <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Predictability Index</p>
           <p className="text-2xl font-bold text-jira-green mt-1">{data.score}%</p>
           <p className="text-xs text-jira-text-light mt-1">Consistency of delivered commitments</p>
-        </div>
-        <div className="bg-white border border-jira-border rounded-lg p-4 shadow-sm">
+        </button>
+        <button
+          type="button"
+          onClick={() => setOpen("Commitment Variance")}
+          className="text-left bg-white border border-jira-border rounded-lg p-4 shadow-sm hover:border-jira-blue/50 transition"
+        >
           <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Commitment Variance</p>
           <p className="text-2xl font-bold text-jira-blue mt-1">±{data.varianceSP} SP</p>
           <p className="text-xs text-jira-text-light mt-1">Deviation from sprint capacity forecast</p>
-        </div>
-        <div className="bg-white border border-jira-border rounded-lg p-4 shadow-sm">
+        </button>
+        <button
+          type="button"
+          onClick={() => setOpen("Feature Milestone Confidence")}
+          className="text-left bg-white border border-jira-border rounded-lg p-4 shadow-sm hover:border-jira-green/50 transition"
+        >
           <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Feature Milestone Confidence</p>
           <p className="text-2xl font-bold text-jira-green mt-1">{data.epicsOnSchedule}%</p>
           <p className="text-xs text-jira-text-light mt-1">Epics tracking for on-time release</p>
-        </div>
+        </button>
       </div>
 
       {/* Historical Predictability Comparison Table */}
@@ -75,7 +91,43 @@ export function PredictabilityTab({ data }: PredictabilityTabProps) {
           </table>
         </div>
       </div>
+
+      {open && (
+        <DetailModal
+          title={open}
+          subtitle="Iteration predictability track record for the current filters"
+          onClose={() => setOpen(null)}
+        >
+          <table className="w-full text-left text-sm">
+            <thead className="bg-jira-bg text-jira-text-muted text-xs uppercase border-b border-jira-border font-semibold sticky top-0">
+              <tr>
+                <th className="px-5 py-2.5">Iteration</th>
+                <th className="px-5 py-2.5 text-right">Planned</th>
+                <th className="px-5 py-2.5 text-right">Delivered</th>
+                <th className="px-5 py-2.5 text-right">Say/Do</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-jira-border/60">
+              {data.history.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="px-5 py-8 text-center text-jira-text-muted">
+                    No iteration history for this selection.
+                  </td>
+                </tr>
+              ) : (
+                data.history.map((row) => (
+                  <tr key={row.sprint}>
+                    <td className="px-5 py-2.5 text-xs font-semibold">{row.sprint}</td>
+                    <td className="px-5 py-2.5 text-xs text-right">{row.planned} SP</td>
+                    <td className="px-5 py-2.5 text-xs text-right">{row.delivered} SP</td>
+                    <td className="px-5 py-2.5 text-xs text-right font-bold">{row.sayDo}%</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </DetailModal>
+      )}
     </div>
   );
 }
-

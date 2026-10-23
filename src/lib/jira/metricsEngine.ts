@@ -723,7 +723,7 @@ export function computeDashboardData(
   };
 
   // 13. Issue Explorer List
-  const issueList: IssueRow[] = activeItems.slice(0, 150).map((it) => ({
+  const issueList: IssueRow[] = activeItems.map((it) => ({
     key: it.key,
     summary: it.summary,
     workType: it.workType,
