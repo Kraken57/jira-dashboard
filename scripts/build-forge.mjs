@@ -9,7 +9,7 @@
  * Usage: node scripts/build-forge.mjs
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, renameSync, writeFileSync, rmSync } from "node:fs";
+import { cpSync, existsSync, readFileSync, renameSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 const ROUTE = join(process.cwd(), "src", "app", "api", "jira", "route.ts");
@@ -57,7 +57,12 @@ try {
     FORGE_BUILD: "true",
   });
 
-  console.log("[build-forge] Done. Static bundle is in ./out");
+  const forgeOut = join(process.cwd(), "forge", "out");
+  console.log("[build-forge] Copying static bundle into forge/out ...");
+  rmSync(forgeOut, { recursive: true, force: true });
+  cpSync(join(process.cwd(), "out"), forgeOut, { recursive: true });
+
+  console.log("[build-forge] Done. Static bundle is in ./out and ./forge/out");
 } finally {  if (existsSync(BACKUP)) {
     rmSync(ROUTE, { force: true });
     renameSync(BACKUP, ROUTE);

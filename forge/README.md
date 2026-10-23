@@ -1,41 +1,76 @@
-# Atlassian Forge Deployment Guide
+# Atlassian Forge Deployment
 
-This directory contains the Atlassian Forge configuration and backend resolvers to host the **Enterprise Sprint Performance Dashboard** directly inside Jira Cloud.
+The dashboard runs as a Jira global page. The Next.js app is statically exported
+and served by Forge; the backend resolver calls Jira with `api.asApp()`.
 
-## Architecture
+## Prerequisites
 
-- **Frontend**: The root Next.js application, built and statically exported into `out/`.
-- **Backend Resolvers**: Located in `src/index.ts`, calling Jira Cloud REST APIs using `@forge/api` (asUser product fetch) and calculating metrics via the shared `metricsEngine`.
-- **Manifest**: `manifest.yml` exposes the dashboard as a `jira:globalPage` accessible across your entire Jira instance.
+- Node.js 20+ and pnpm
+- Forge CLI: `npm install -g @forge/cli`
+- A Jira Cloud site where you can install apps (site admin)
+- Login with the Atlassian account that owns app
+  `ari:cloud:ecosystem::app/1c8d1c77-a602-4c3a-85fd-b5abdea53e7c`
 
-## Deployment Steps
+## Build
 
-### 1. Install Forge CLI
+From the repository root:
+
 ```bash
-npm install -g @forge/cli
+pnpm install
+pnpm run build:forge
 ```
 
-### 2. Log in with your Atlassian API Token
+This writes the static export to `out/` and copies it to `forge/out/`.
+The manifest serves `forge/out/`.
+
+## Configure
+
 ```bash
+cd forge
 forge login
+forge variables set JIRA_HOST https://your-site.atlassian.net
+forge variables set JIRA_JQL "project in (ABC)"
+forge variables set JIRA_STORY_POINTS_FIELD customfield_10031
+forge variables set JIRA_SPRINT_FIELD customfield_10020
+forge variables set JIRA_POD_FIELD customfield_10050
+forge variables set JIRA_DONE_STATUSES "Done,Accepted,Released"
 ```
-*(Default email: `ahmad.saad@edulevel.ai`)*
 
-### 3. Build the Next.js Frontend
-From the root directory:
-```bash
-npm run build
-```
+No email/token variables are needed: Forge authenticates as the app. Variables
+are per environment; `forge deploy` and `forge install` default to `development`.
+Use `-e production` for production.
 
-### 4. Deploy to Forge
-From the `forge/` directory:
+## Deploy and install
+
 ```bash
+cd forge
+forge lint
 forge deploy
-```
-
-### 5. Install to your Jira Cloud Instance
-```bash
 forge install
 ```
-Select Jira Cloud, enter your site URL (e.g. `your-company.atlassian.net`), and grant permissions.
 
+Choose Jira Cloud and your site. The app appears as **Enterprise Delivery KPIs**
+in Jira's global navigation.
+
+For production:
+
+```bash
+forge variables set -e production JIRA_HOST https://your-site.atlassian.net
+# ...other variables with -e production
+forge deploy -e production
+forge install -e production
+```
+
+## Updating
+
+```bash
+git pull
+pnpm install
+pnpm run build:forge
+cd forge
+forge deploy
+forge install --upgrade
+```
+
+If Forge asks to approve a major version (for example after a scope change),
+approve it.

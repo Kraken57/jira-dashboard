@@ -955,9 +955,10 @@ Forge Custom UI requires a static bundle. `scripts/build-forge.mjs`:
 3. Runs `next build` with `FORGE_BUILD=true`, which sets `output: "export"` in
    `next.config.ts`.
 4. Writes the bundle to `./out`.
-5. Restores the original API route (even if the build fails).
+5. Copies the bundle to `./forge/out`.
+6. Restores the original API route (even if the build fails).
 
-The Forge manifest points `dashboard-ui` at `../out`.
+The Forge manifest points `dashboard-ui` and `admin-ui` at `out` (inside `forge/`).
 
 ### 13.2 Build
 
@@ -973,6 +974,7 @@ Set variables in the Forge environment (values live in Atlassian, not in git):
 
 ```bash
 cd forge
+forge login
 forge variables set JIRA_HOST https://your-site.atlassian.net
 forge variables set JIRA_JQL "project in (ABC)"
 forge variables set JIRA_STORY_POINTS_FIELD customfield_10031
@@ -980,6 +982,9 @@ forge variables set JIRA_SPRINT_FIELD customfield_10020
 forge variables set JIRA_POD_FIELD customfield_10050
 forge variables set JIRA_DONE_STATUSES "Done,Accepted,Released,Closed,Resolved"
 ```
+
+Variables are per environment. `forge deploy`/`forge install` default to the
+`development` environment. For production, add `-e production` to each command.
 
 `JIRA_HOST` is required for browse links. The resolver does **not** use email/token
 variables; Forge authenticates with `api.asApp()`.
@@ -991,10 +996,22 @@ You can also set the JQL and field ids at runtime through the admin resolver
 
 ```bash
 cd forge
-forge login
+forge lint
 forge deploy
 forge install
 ```
+
+For production:
+
+```bash
+forge variables set -e production JIRA_HOST https://your-site.atlassian.net
+# ...repeat the other variables with -e production
+forge deploy -e production
+forge install -e production
+```
+
+After later code changes: `pnpm run build:forge`, then `forge deploy` and
+`forge install --upgrade`.
 
 `forge install` lets you choose the Jira site and whether to install globally or per
 project. The app appears as the global page **Enterprise Delivery KPIs**.
@@ -1005,7 +1022,8 @@ project. The app appears as the global page **Enterprise Delivery KPIs**.
 - `jira:adminPage` → admin UI (also `../out`), resolver `admin-resolver`
 - triggers/consumers/scheduled functions for future sync work
 - `sql` module (MySQL) declared
-- scopes: read Jira work, users, sprints, boards, issue details, worklogs
+- runtime: `nodejs22.x`
+- scopes: read Jira work, users, sprints, boards, issue details, projects; `storage:app`
 
 The event/sync/admin/storage directories are present but are **not required** for the
 read-only dashboard. The SQL schema in `forge/sql/schema.sql` is optional and must be

@@ -25,20 +25,19 @@ modules:
   consumer:
     - key: jira-sync-consumer
       queue: jira-kpi-sync
-      resolver:
-        function: sync-worker
+      function: sync-worker
   function:
     - key: dashboard-resolver
-      handler: src/index.handler
+      handler: index.handler
     - key: admin-resolver
-      handler: src/admin.handler
+      handler: admin.handler
     - key: issue-event-handler
-      handler: src/events/issues.handler
+      handler: events/issues.handler
     - key: sync-orchestrator
-      handler: src/sync/orchestrator.handler
+      handler: sync/orchestrator.handler
       timeoutSeconds: 900
     - key: sync-worker
-      handler: src/sync/worker.handler
+      handler: sync/worker.handler
       timeoutSeconds: 900
   sql:
     - key: main
@@ -46,9 +45,9 @@ modules:
 
 resources:
   - key: dashboard-ui
-    path: ../out
+    path: out
   - key: admin-ui
-    path: ../out
+    path: out
 
 permissions:
   scopes:
@@ -57,7 +56,10 @@ permissions:
     - read:sprint:jira-software
     - read:board-scope:jira-software
     - read:issue-details:jira
-    - read:worklog:jira
+    - read:project:jira
+    - storage:app
 
 app:
   id: ari:cloud:ecosystem::app/1c8d1c77-a602-4c3a-85fd-b5abdea53e7c
+  runtime:
+    name: nodejs22.x
