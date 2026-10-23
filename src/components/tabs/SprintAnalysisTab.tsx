@@ -15,8 +15,8 @@ export function SprintAnalysisTab({ data }: SprintAnalysisTabProps) {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white border border-jira-border rounded-lg p-4 shadow-sm">
           <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Sprint Scope Churn</p>
-          <p className="text-2xl font-bold text-jira-amber mt-1">{data.scopeChurnPct}%</p>
-          <p className="text-xs text-jira-text-light mt-1">Scope added/removed post start</p>
+          <p className="text-2xl font-bold text-jira-amber mt-1">{data.scopeChurnPct > 0 ? `${data.scopeChurnPct}%` : "N/A"}</p>
+          <p className="text-xs text-jira-text-light mt-1">Requires issue changelog</p>
         </div>
         <div className="bg-white border border-jira-border rounded-lg p-4 shadow-sm">
           <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Planned Work Share</p>
@@ -25,8 +25,8 @@ export function SprintAnalysisTab({ data }: SprintAnalysisTabProps) {
         </div>
         <div className="bg-white border border-jira-border rounded-lg p-4 shadow-sm">
           <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Avg Cycle Time</p>
-          <p className="text-2xl font-bold text-jira-text mt-1">{data.avgCycleTimeDays} days</p>
-          <p className="text-xs text-jira-text-light mt-1">From In Progress to Done</p>
+          <p className="text-2xl font-bold text-jira-text mt-1">{data.avgCycleTimeDays > 0 ? `${data.avgCycleTimeDays} days` : "N/A"}</p>
+          <p className="text-xs text-jira-text-light mt-1">Requires In-Progress→Done history</p>
         </div>
         <div className="bg-white border border-jira-border rounded-lg p-4 shadow-sm">
           <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Avg Lead Time</p>

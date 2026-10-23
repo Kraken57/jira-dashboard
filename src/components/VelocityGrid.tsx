@@ -38,7 +38,10 @@ function VelocityChart({ data }: VelocityChartProps) {
   const { labels, completed, totalFinished, avgLastThree, trendStatus } = data;
   const rising = trendStatus === "rising";
   const falling = trendStatus === "falling";
-  const averageLine = labels.map(() => avgLastThree);
+  const averageLine = completed.map((_, i) => {
+    const window = completed.slice(Math.max(0, i - 2), i + 1);
+    return Number((window.reduce((a, b) => a + b, 0) / window.length).toFixed(1));
+  });
 
   return (
     <div className="bg-white border border-jira-border rounded-lg p-3 flex flex-col h-full shadow-sm">
@@ -79,7 +82,7 @@ function VelocityChart({ data }: VelocityChartProps) {
                 categoryPercentage: 0.7,
               },
               {
-                label: "3-sprint avg",
+                label: "3-sprint moving avg",
                 data: averageLine,
                 type: "line",
                 showLine: true,

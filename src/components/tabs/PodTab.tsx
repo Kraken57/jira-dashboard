@@ -45,8 +45,8 @@ export function PodTab({ data, podName }: PodTabProps) {
           </div>
           <div className="p-4 bg-jira-bg rounded-lg border border-jira-border/50">
             <p className="text-xs uppercase text-jira-text-muted font-bold">Defect Density</p>
-            <p className="text-2xl font-bold text-jira-amber mt-1">{quality.defectDensity}%</p>
-            <p className="text-[11px] text-jira-text-light mt-1">{quality.totalBugs} bugs reported</p>
+            <p className="text-2xl font-bold text-jira-amber mt-1">{quality.defectDensity}</p>
+            <p className="text-[11px] text-jira-text-light mt-1">{quality.totalBugs} bugs · per 100 delivered SP</p>
           </div>
         </div>
       </div>

@@ -303,49 +303,47 @@ export function computeDashboardData(
     trendStatus,
   };
 
-  // 6. Executive KPI Metrics — all derived from the actual items/sprints.
-  const totalCommitted = summary.totalStoryPoints;
-  const totalDone = summary.completedStoryPoints;
-  const sayDoRatio =
-    totalCommitted > 0 ? Math.round((totalDone / totalCommitted) * 100) : 0;
-  const carryOver =
-    totalCommitted > 0
-      ? Math.round(((totalCommitted - totalDone) / totalCommitted) * 100)
-      : 0;
-
+  // 6. Executive KPI Metrics — sprint-level definitions.
+  // Velocity = SP completed in the sprint.
+  // Say-Do   = completed committed SP / committed SP.
+  // Spillover= spilled-over committed SP / committed SP.
+  // Predictability = completed committed SP / planned SP.
+  // Cards report the selected sprint, or the latest sprint for "all".
   const lastSprint = sprintStats[sprintStats.length - 1];
-  const prevSprint = sprintStats[sprintStats.length - 2];
-  const sprintSayDo = (s: typeof lastSprint | undefined) =>
+  const focusSprint =
+    sprintId !== "all"
+      ? sprintStats.find((s) => matchesSprint([s.fullName], sprintId)) || lastSprint
+      : lastSprint;
+  const focusIndex = focusSprint ? sprintStats.indexOf(focusSprint) : -1;
+  const prevFocus = focusIndex > 0 ? sprintStats[focusIndex - 1] : undefined;
+
+  const sayDoOf = (s: typeof lastSprint | undefined) =>
     s && s.committed > 0 ? (s.done / s.committed) * 100 : 0;
-  const sprintCarry = (s: typeof lastSprint | undefined) =>
+  const spilloverOf = (s: typeof lastSprint | undefined) =>
     s && s.committed > 0 ? (s.carried / s.committed) * 100 : 0;
 
-  const sayDoTrend =
-    lastSprint && prevSprint
-      ? Math.round(sprintSayDo(lastSprint) - sprintSayDo(prevSprint))
-      : 0;
-  const carryTrend =
-    lastSprint && prevSprint
-      ? Math.round(sprintCarry(lastSprint) - sprintCarry(prevSprint))
-      : 0;
-  const velocityTrendPct =
-    lastSprint && prevSprint ? pctChange(lastSprint.done, prevSprint.done) : 0;
+  const sayDoRatio = Math.round(sayDoOf(focusSprint));
+  const carryOver = Math.round(spilloverOf(focusSprint));
+  const currentVelocity = focusSprint?.done ?? 0;
 
-  const currentVelocity =
-    sprintId !== "all"
-      ? summary.completedStoryPoints
-      : Math.round(avgLastThree);
-
-  const hittingSprints = sprintStats.filter(
-    (s) => s.committed > 0 && s.done / s.committed >= 0.9
-  ).length;
-  const predictabilityScore = sprintStats.length
-    ? Math.round((hittingSprints / sprintStats.length) * 100)
+  const sayDoTrend = focusSprint && prevFocus
+    ? Math.round(sayDoOf(focusSprint) - sayDoOf(prevFocus))
     : 0;
-  const predictabilityTrend =
-    lastSprint && prevSprint
-      ? Math.round(sprintSayDo(lastSprint) - sprintSayDo(prevSprint))
-      : 0;
+  const carryTrend = focusSprint && prevFocus
+    ? Math.round(spilloverOf(focusSprint) - spilloverOf(prevFocus))
+    : 0;
+  const velocityTrendPct = focusSprint && prevFocus
+    ? pctChange(focusSprint.done, prevFocus.done)
+    : 0;
+
+  // Predictability across the plotted window: delivered / planned SP.
+  const windowPlanned = sprintStats.reduce((a, s) => a + s.planned, 0);
+  const windowDelivered = sprintStats.reduce((a, s) => a + s.done, 0);
+  const predictabilityScore =
+    windowPlanned > 0 ? Math.round((windowDelivered / windowPlanned) * 100) : 0;
+  const predictabilityTrend = focusSprint && prevFocus
+    ? Math.round(sayDoOf(focusSprint) - sayDoOf(prevFocus))
+    : 0;
 
   const trendLabelFor = (delta: number) =>
     delta === 0 ? "no change vs last sprint" : "vs last sprint";
@@ -354,7 +352,7 @@ export function computeDashboardData(
     {
       title: "Say/Do Ratio",
       value: `${sayDoRatio}%`,
-      subtitle: "Completed SP vs committed SP",
+      subtitle: "Completed committed SP ÷ committed SP",
       trend: sayDoTrend,
       trendLabel: trendLabelFor(sayDoTrend),
       color: sayDoRatio >= 80 ? "green" : sayDoRatio >= 65 ? "blue" : "red",
@@ -364,7 +362,7 @@ export function computeDashboardData(
     {
       title: "Sprint Carry Over",
       value: `${carryOver}%`,
-      subtitle: "Unfinished SP carried to next sprint",
+      subtitle: "Spilled-over committed SP ÷ committed SP",
       trend: carryTrend,
       trendLabel: trendLabelFor(carryTrend),
       color: carryOver <= 18 ? "green" : carryOver <= 28 ? "blue" : "red",
@@ -374,7 +372,7 @@ export function computeDashboardData(
     {
       title: "Team/Epic Velocity",
       value: `${currentVelocity} pts`,
-      subtitle: "Avg done SP over last 3 sprints",
+      subtitle: "SP completed in latest sprint",
       trend: velocityTrendPct,
       trendLabel: trendLabelFor(velocityTrendPct),
       color: "blue",
@@ -384,7 +382,7 @@ export function computeDashboardData(
     {
       title: "Feature Predictability",
       value: `${predictabilityScore}%`,
-      subtitle: "Sprints hitting 90% of commitment",
+      subtitle: "Completed committed SP ÷ planned SP",
       trend: predictabilityTrend,
       trendLabel: trendLabelFor(predictabilityTrend),
       color: predictabilityScore >= 85 ? "green" : "blue",
@@ -444,7 +442,7 @@ export function computeDashboardData(
       resolvedDurations.push((resolved - created) / 86400000);
     }
   });
-  const avgResolutionDays = resolvedDurations.length
+  const avgLeadTimeDays = resolvedDurations.length
     ? Number(
         (
           resolvedDurations.reduce((a, b) => a + b, 0) /
@@ -453,28 +451,29 @@ export function computeDashboardData(
       )
     : 0;
 
-  // Planned vs unplanned: work created after the active sprint started counts
-  // as unplanned. Falls back to all-planned when no sprint dates are known.
+  // Planned vs unplanned: SP of work created after the active sprint started
+  // counts as unplanned. Falls back to all-planned when no sprint dates known.
   const activeSprintName = windowNames.find(
     (name) => sprintMeta[name]?.state === "active"
   );
   const activeStart = activeSprintName
     ? Date.parse(sprintMeta[activeSprintName]?.startDate || "")
     : NaN;
-  let plannedCount = 0;
-  let unplannedCount = 0;
+  let plannedSP = 0;
+  let unplannedSP = 0;
   if (!Number.isNaN(activeStart)) {
     activeItems.forEach((it) => {
       const created = Date.parse(it.createdDate || "");
-      if (!Number.isNaN(created) && created > activeStart) unplannedCount += 1;
-      else plannedCount += 1;
+      const sp = it.storyPoints || 0;
+      if (!Number.isNaN(created) && created > activeStart) unplannedSP += sp;
+      else plannedSP += sp;
     });
   } else {
-    plannedCount = activeItems.length;
+    plannedSP = activeItems.reduce((a, it) => a + (it.storyPoints || 0), 0);
   }
   const plannedWorkPct =
-    plannedCount + unplannedCount > 0
-      ? Math.round((plannedCount / (plannedCount + unplannedCount)) * 100)
+    plannedSP + unplannedSP > 0
+      ? Math.round((plannedSP / (plannedSP + unplannedSP)) * 100)
       : 0;
 
   const sprintAnalysis: SprintAnalysisData = {
@@ -482,8 +481,9 @@ export function computeDashboardData(
     scopeChurnPct: 0,
     plannedWorkPct,
     unplannedWorkPct: plannedWorkPct > 0 ? 100 - plannedWorkPct : 0,
-    avgCycleTimeDays: avgResolutionDays,
-    avgLeadTimeDays: avgResolutionDays,
+    // Cycle time needs In-Progress→Done transition history, unavailable here.
+    avgCycleTimeDays: 0,
+    avgLeadTimeDays,
     workTypeBreakdown: Array.from(typeMap.entries()).map(([type, stat]) => ({
       type,
       count: stat.count,
@@ -501,6 +501,20 @@ export function computeDashboardData(
   // 9. Quality Metrics — real bugs only (issue type Bug).
   const bugs = activeItems.filter((it) => it.workType === "Bug");
   const resolvedBugs = bugs.filter((it) => DONE_STATUSES.has(it.status));
+  const bugDurations: number[] = [];
+  resolvedBugs.forEach((it) => {
+    if (!it.createdDate || !it.resolutionDate) return;
+    const created = Date.parse(it.createdDate);
+    const resolved = Date.parse(it.resolutionDate);
+    if (!Number.isNaN(created) && !Number.isNaN(resolved) && resolved >= created) {
+      bugDurations.push((resolved - created) / 86400000);
+    }
+  });
+  const avgDefectResolutionDays = bugDurations.length
+    ? Number(
+        (bugDurations.reduce((a, b) => a + b, 0) / bugDurations.length).toFixed(1)
+      )
+    : 0;
   const priorityCountMap = new Map<string, number>();
   activeItems.forEach((it) => {
     const p = it.priority || "Medium";
@@ -508,9 +522,10 @@ export function computeDashboardData(
   });
 
   const quality: QualityData = {
+    // Confirmed defects per 100 delivered story points.
     defectDensity:
-      summary.totalStoryPoints > 0
-        ? Number(((bugs.length / summary.totalStoryPoints) * 100).toFixed(1))
+      summary.completedStoryPoints > 0
+        ? Number(((bugs.length / summary.completedStoryPoints) * 100).toFixed(1))
         : 0,
     totalBugs: bugs.length,
     resolvedBugs: resolvedBugs.length,
@@ -518,7 +533,7 @@ export function computeDashboardData(
       bugs.length > 0
         ? Math.round((resolvedBugs.length / bugs.length) * 100)
         : 0,
-    avgResolutionDays,
+    avgResolutionDays: avgDefectResolutionDays,
     priorityDistribution: Array.from(priorityCountMap.entries()).map(([priority, count]) => {
       let color = "#585f6b";
       if (priority === "Highest" || priority === "High") color = "#c03a2b";
@@ -531,13 +546,13 @@ export function computeDashboardData(
   // 10. Predictability Details
   const predictability: PredictabilityData = {
     score: predictabilityScore,
-    varianceSP: Math.abs(summary.totalStoryPoints - summary.completedStoryPoints),
+    varianceSP: Math.abs(windowPlanned - windowDelivered),
     epicsOnSchedule: predictabilityScore,
     history: sprintStats.map((s) => ({
       sprint: s.name,
       planned: s.planned,
       delivered: s.done,
-      sayDo: s.committed > 0 ? Math.min(Math.round((s.done / s.committed) * 100), 100) : 0,
+      sayDo: s.committed > 0 ? Math.round((s.done / s.committed) * 100) : 0,
     })),
   };
 

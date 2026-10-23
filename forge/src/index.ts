@@ -235,28 +235,48 @@ function calculateKPIs(items: any[], filters: any) {
       ? ("falling" as const)
       : ("stable" as const);
 
-  const savedSayDo = Math.round(sayDo * 100);
-  const savedCarry = Math.round(carryover * 100);
-  const lastSprint = sprints[sprints.length - 1];
-  const prevSprint = sprints[sprints.length - 2];
-  const sprintSayDo = (s?: typeof lastSprint) =>
+  const sprintSayDo = (s?: typeof allSprints[number]) =>
     s && s.storyPoints > 0 ? Math.round((s.doneStoryPoints / s.storyPoints) * 100) : 0;
-  const sprintCarry = (s?: typeof lastSprint) =>
+  const sprintCarry = (s?: typeof allSprints[number]) =>
     s && s.storyPoints > 0
       ? Math.round(((s.storyPoints - s.doneStoryPoints) / s.storyPoints) * 100)
       : 0;
+
+  // Sprint-level KPIs: focus on the selected sprint, or the latest for "all".
+  const lastSprint = sprints[sprints.length - 1];
+  const focusSprint =
+    filters.sprintId && filters.sprintId !== "all"
+      ? sprints.find((s) => s.id === filters.sprintId) || lastSprint
+      : lastSprint;
+  const focusIndex = focusSprint ? sprints.indexOf(focusSprint) : -1;
+  const prevFocus = focusIndex > 0 ? sprints[focusIndex - 1] : undefined;
+
+  const savedSayDo = sprintSayDo(focusSprint);
+  const savedCarry = sprintCarry(focusSprint);
+  const currentVelocity = focusSprint?.doneStoryPoints || 0;
+
   const sayDoTrend =
-    lastSprint && prevSprint ? sprintSayDo(lastSprint) - sprintSayDo(prevSprint) : 0;
+    focusSprint && prevFocus ? sprintSayDo(focusSprint) - sprintSayDo(prevFocus) : 0;
   const carryTrend =
-    lastSprint && prevSprint ? sprintCarry(lastSprint) - sprintCarry(prevSprint) : 0;
+    focusSprint && prevFocus ? sprintCarry(focusSprint) - sprintCarry(prevFocus) : 0;
   const velocityTrendPct =
-    prevDone > 0 ? Math.round(((lastDone - prevDone) / prevDone) * 100) : lastDone > 0 ? 100 : 0;
-  const hitting = sprints.filter(
-    (s) => s.storyPoints > 0 && s.doneStoryPoints / s.storyPoints >= 0.9
-  ).length;
-  const predictabilityScore = sprints.length
-    ? Math.round((hitting / sprints.length) * 100)
-    : 0;
+    focusSprint && prevFocus
+      ? prevFocus.doneStoryPoints > 0
+        ? Math.round(
+            ((focusSprint.doneStoryPoints - prevFocus.doneStoryPoints) /
+              prevFocus.doneStoryPoints) *
+              100
+          )
+        : focusSprint.doneStoryPoints > 0
+        ? 100
+        : 0
+      : 0;
+
+  // Predictability across the plotted window: delivered / planned SP.
+  const windowPlanned = sprints.reduce((a, s) => a + s.storyPoints, 0);
+  const windowDelivered = sprints.reduce((a, s) => a + s.doneStoryPoints, 0);
+  const predictabilityScore =
+    windowPlanned > 0 ? Math.round((windowDelivered / windowPlanned) * 100) : 0;
 
   const podsWithAll = [
     {
@@ -301,7 +321,7 @@ function calculateKPIs(items: any[], filters: any) {
       {
         title: "Say/Do Ratio",
         value: `${savedSayDo}%`,
-        subtitle: "Completed SP vs committed SP",
+        subtitle: "Completed committed SP ÷ committed SP",
         trend: sayDoTrend,
         trendLabel: sayDoTrend === 0 ? "no change vs last sprint" : "vs last sprint",
         color: savedSayDo >= 80 ? ("green" as const) : savedSayDo >= 65 ? ("blue" as const) : ("red" as const),
@@ -311,7 +331,7 @@ function calculateKPIs(items: any[], filters: any) {
       {
         title: "Sprint Carry Over",
         value: `${savedCarry}%`,
-        subtitle: "Unfinished SP carried to next sprint",
+        subtitle: "Spilled-over committed SP ÷ committed SP",
         trend: carryTrend,
         trendLabel: carryTrend === 0 ? "no change vs last sprint" : "vs last sprint",
         color: savedCarry <= 18 ? ("green" as const) : savedCarry <= 28 ? ("blue" as const) : ("red" as const),
@@ -320,8 +340,8 @@ function calculateKPIs(items: any[], filters: any) {
       },
       {
         title: "Team/Epic Velocity",
-        value: `${Math.round(avgLastThree)} pts`,
-        subtitle: "Avg done SP over last 3 sprints",
+        value: `${currentVelocity} pts`,
+        subtitle: "SP completed in latest sprint",
         trend: velocityTrendPct,
         trendLabel: velocityTrendPct === 0 ? "no change vs last sprint" : "vs last sprint",
         color: "blue" as const,
@@ -331,7 +351,7 @@ function calculateKPIs(items: any[], filters: any) {
       {
         title: "Feature Predictability",
         value: `${predictabilityScore}%`,
-        subtitle: "Sprints hitting 90% of commitment",
+        subtitle: "Completed committed SP ÷ planned SP",
         trend: sayDoTrend,
         trendLabel: sayDoTrend === 0 ? "no change vs last sprint" : "vs last sprint",
         color: predictabilityScore >= 85 ? ("green" as const) : ("blue" as const),
@@ -374,7 +394,7 @@ function calculateKPIs(items: any[], filters: any) {
     },
     predictability: {
       score: predictabilityScore,
-      varianceSP: Math.abs(totalStoryPoints - completedStoryPoints),
+      varianceSP: Math.abs(windowPlanned - windowDelivered),
       epicsOnSchedule: predictabilityScore,
       history: sprints.map((s) => ({
         sprint: s.name,
