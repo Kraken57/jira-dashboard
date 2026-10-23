@@ -57,7 +57,7 @@ export async function getCanonicalTimeboxes(): Promise<CanonicalTimebox[]> {
      FROM canonical_timebox
      ORDER BY program_increment, sequence_no`
   );
-  return (result.rows || []) as CanonicalTimebox[];
+  return (result.rows || []) as unknown as CanonicalTimebox[];
 }
 
 export async function upsertCanonicalTimebox(t: CanonicalTimebox): Promise<void> {
@@ -93,7 +93,7 @@ export async function getSprintMappings(): Promise<SprintMapping[]> {
      FROM jira_sprint js
      LEFT JOIN canonical_timebox ct ON js.timebox_id = ct.timebox_id`
   );
-  return (result.rows || []) as SprintMapping[];
+  return (result.rows || []) as unknown as SprintMapping[];
 }
 
 export async function upsertJiraSprint(

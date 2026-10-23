@@ -30,7 +30,7 @@ export class JiraClient {
   async requestJira(
     path: TemplateStringsArray,
     ...values: unknown[]
-  ): Promise<Response> {
+  ): Promise<any> {
     const caller = api.asApp();
     let lastError: unknown = null;
 
@@ -177,5 +177,3 @@ export class JiraClient {
     return response.json();
   }
 }
-
-export { JiraClient };

@@ -15,7 +15,7 @@ export async function handler(event: any) {
   const { issueKey, projectKey, fullRebuild = false } = (event.payload || {}) as Record<string, string | boolean>;
   console.log("[sync-worker] Processing", { issueKey, projectKey, fullRebuild });
 
-  const client = new JiraClient({ asApp: true });
+  const client = new JiraClient();
 
   try {
     const projects = await getProjectScope();
@@ -28,7 +28,7 @@ export async function handler(event: any) {
 
     const fields = await getRequiredFields();
 
-    const issues = await client.searchIssuesJql(jql, fields, 100, true);
+    const issues = await client.searchIssuesJql(jql, fields, 100);
 
     let recordsRead = 0;
     let recordsWritten = 0;
@@ -39,7 +39,7 @@ export async function handler(event: any) {
       recordsWritten++;
 
       try {
-        const changelog = await client.getChangelog(String(issue.id), true);
+        const changelog = await client.getChangelog(String(issue.id));
         await upsertChangelog(issue.id, changelog);
       } catch (err) {
         console.warn(`[sync-worker] Changelog fetch failed for ${issue.key}`, err);
@@ -107,9 +107,9 @@ async function upsertIssue(issue: any, client: JiraClient): Promise<void> {
   const spField = await getFieldMapping("storyPointsFieldId");
   const piField = await getFieldMapping("programIncrementFieldId");
 
-  const podValue = fields[podField] || null;
-  const spValue = fields[spField] || 0;
-  const piValue = fields[piField] || null;
+  const podValue = podField ? fields[podField] ?? null : null;
+  const spValue = spField ? fields[spField] ?? 0 : 0;
+  const piValue = piField ? fields[piField] ?? null : null;
 
   const storyPoints = typeof spValue === "number" ? spValue : parseFloat(String(spValue)) || 0;
 

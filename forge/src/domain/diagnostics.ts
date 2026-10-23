@@ -4,7 +4,7 @@
  * never_started, large_story, three_or_more_sprints, spike, parent_feature_not_approved,
  * added_after_commitment, removed_after_commitment, reopened_after_done, missing_story_points.
  */
-import { query } from "../storage/db";
+import { query, execute } from "../storage/db";
 
 export interface MissedWorkSignal {
   issue_id: number;

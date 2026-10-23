@@ -4,18 +4,18 @@
  * Discovers projects/boards/sprints, enqueues sync work into the async queue.
  */
 import api from "@forge/api";
-import { JiraClient } from "./api/jiraClient";
-import { getProjectScope } from "./config/configRepository";
-import { setConfig } from "./config/configRepository";
-import { upsertJiraSprint } from "./domain/timeboxMapping";
-import { mapSprintsToTimeboxes, getCanonicalTimeboxes } from "./domain/timeboxMapping";
+import { JiraClient } from "../api/jiraClient";
+import { getProjectScope } from "../config/configRepository";
+import { setConfig } from "../config/configRepository";
+import { upsertJiraSprint } from "../domain/timeboxMapping";
+import { mapSprintsToTimeboxes, getCanonicalTimeboxes } from "../domain/timeboxMapping";
 
 const CALC_VERSION = "1.0.0";
 
 export async function handler(event: any) {
   console.log("[sync-orchestrator] Starting incremental reconciliation", new Date().toISOString());
 
-  const client = new JiraClient({ asApp: true, maxRetries: 3 });
+  const client = new JiraClient({ maxRetries: 3 });
 
   try {
     // Record sync start
@@ -31,11 +31,11 @@ export async function handler(event: any) {
     }
 
     // 2. Discover boards and sprints
-    const boards = await client.getBoards(true);
+    const boards = await client.getBoards();
     const allSprints: any[] = [];
     for (const board of boards) {
       try {
-        const sprints = await client.getSprintsForBoard(board.id, true);
+        const sprints = await client.getSprintsForBoard(board.id);
         allSprints.push(...sprints);
       } catch (err) {
         console.warn(`[sync-orchestrator] Failed to fetch sprints for board ${board.id}`, err);

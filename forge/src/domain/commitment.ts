@@ -71,7 +71,7 @@ export async function getCommitmentSnapshots(
      WHERE jira_sprint_id = ?`,
     jiraSprintId
   );
-  return (result.rows || []) as CommitmentSnapshotInput[];
+  return (result.rows || []) as unknown as CommitmentSnapshotInput[];
 }
 
 export function computeCommitmentAt(
@@ -90,5 +90,5 @@ export async function getAllCommitmentSnapshots(): Promise<CommitmentSnapshotInp
            snapshot_at, snapshot_source
      FROM sprint_commitment_snapshot`
   );
-  return (result.rows || []) as CommitmentSnapshotInput[];
+  return (result.rows || []) as unknown as CommitmentSnapshotInput[];
 }

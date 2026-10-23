@@ -4,13 +4,26 @@ import { computeDashboardData } from "./metricsEngine";
 
 /**
  * Derive the enterprise quarter id from a Jira sprint name.
- * "2026-Q3 Iteration 1" -> "CY26 PI.3"
+ * Handles the different naming conventions used across Jira sites:
+ *   "2026-Q3 Iteration 1"          -> "CY26 PI.3"
+ *   "DTR 2026 - Q4 - Iteration 2"  -> "CY26 PI.4"
+ *   "CY26 PI.3 Sprint 1"           -> "CY26 PI.3"
  */
-function quarterFromSprint(sprintName: string): string {
-  const m = sprintName.match(/(\d{4})-Q(\d)/i);
-  if (m) {
-    return `CY${m[1].slice(2)} PI.${parseInt(m[2], 10)}`;
+export function quarterFromSprint(sprintName: string): string {
+  if (!sprintName) return "All";
+
+  // Year + quarter: "2026-Q3", "2026 - Q4", "2026 Q3"
+  const yq = sprintName.match(/(\d{4})\s*-\s*Q\s*(\d)/i);
+  if (yq) {
+    return `CY${yq[1].slice(2)} PI.${parseInt(yq[2], 10)}`;
   }
+
+  // Program increment style: "CY26 PI.3", "CY26 PI3"
+  const pi = sprintName.match(/CY(\d{2})\s*PI\.?\s*(\d)/i);
+  if (pi) {
+    return `CY${pi[1]} PI.${parseInt(pi[2], 10)}`;
+  }
+
   return "All";
 }
 

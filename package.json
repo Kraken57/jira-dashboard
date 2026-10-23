@@ -8,7 +8,8 @@
     "build:forge": "node scripts/build-forge.mjs",
     "start": "next start",
     "lint": "eslint",
-    "discover:fields": "node scripts/discover-fields.mjs"
+    "discover:fields": "node scripts/discover-fields.mjs",
+    "probe": "node scripts/probe.mjs"
   },
   "dependencies": {
     "@forge/bridge": "^3.0.0",

@@ -3,8 +3,7 @@
  * Marks affected issues/parents/PODs/timeboxes dirty and enqueues compact work.
  * Does NOT perform large API traversals inside the handler.
  */
-import api from "@forge/api";
-import { sql } from "@forge/api";
+import { execute } from "../storage/db";
 
 export async function handler(event: any) {
   const { issue, webhook } = event || {};
@@ -20,20 +19,28 @@ export async function handler(event: any) {
 
   try {
     // Mark the issue as dirty for re-sync
-    await sql`
-      INSERT INTO dirty_entity (entity_type, entity_id, reason, queued_at)
-      VALUES ('issue', ${String(issueId)}, ${eventType}, ${new Date().toISOString()})
-      ON DUPLICATE KEY UPDATE reason = VALUES(reason), queued_at = VALUES(queued_at)
-    `;
+    await execute(
+      `INSERT INTO dirty_entity (entity_type, entity_id, reason, queued_at)
+       VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE reason = VALUES(reason), queued_at = VALUES(queued_at)`,
+      "issue",
+      String(issueId),
+      eventType,
+      new Date().toISOString()
+    );
 
     // If issue has a parent, mark parent dirty too
     const parentId = issue?.fields?.parent?.id;
     if (parentId) {
-      await sql`
-        INSERT INTO dirty_entity (entity_type, entity_id, reason, queued_at)
-        VALUES ('issue', ${String(parentId)}, 'parent_of_${eventType}', ${new Date().toISOString()})
-        ON DUPLICATE KEY UPDATE reason = VALUES(reason), queued_at = VALUES(queued_at)
-      `;
+      await execute(
+        `INSERT INTO dirty_entity (entity_type, entity_id, reason, queued_at)
+         VALUES (?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE reason = VALUES(reason), queued_at = VALUES(queued_at)`,
+        "issue",
+        String(parentId),
+        `parent_of_${eventType}`,
+        new Date().toISOString()
+      );
     }
 
     // Enqueue compact work to the async queue via the consumer

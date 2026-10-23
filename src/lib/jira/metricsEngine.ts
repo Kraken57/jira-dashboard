@@ -20,7 +20,17 @@ import {
   VelocityChartData,
 } from "./types";
 
-const DONE_STATUSES = new Set(["Done", "Released", "Accepted"]);
+/**
+ * Statuses that count as "delivered". Jira workflow status names differ per
+ * site, so they are administrator-configurable via JIRA_DONE_STATUSES.
+ * Format: comma-separated list, e.g. "Done,Accepted,Released,Closed".
+ */
+export const DONE_STATUSES = new Set(
+  (process.env.JIRA_DONE_STATUSES || "Done,Accepted,Released,Closed,Resolved")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+);
 
 /**
  * Derive sprint names from the actual data so the dashboard works with any
@@ -37,8 +47,15 @@ function deriveSprintNames(items: JiraWorkItem[]): string[] {
 }
 
 function sprintDisplayName(name: string): string {
-  // "2026-Q3 Iteration 1" -> "Iteration 1"
-  return name.replace(/^\d{4}-Q\d+\s*/i, "") || name;
+  // "2026-Q3 Iteration 1"             -> "Iteration 1"
+  // "DTR 2026 - Q4 - Iteration 2"     -> "Iteration 2"
+  // "CY26 PI.3 Sprint 1"              -> "Sprint 1"
+  const stripped = name
+    .replace(/^(?:[A-Za-z0-9]+\s+)?\d{4}\s*-\s*Q\d+\s*(?:-\s*)?/i, "")
+    .replace(/^(?:[A-Za-z0-9]+\s+)?\d{4}\s*-\s*Q\d+\s+/i, "")
+    .replace(/^(?:CY)?\d{2}\s+PI\.?\d+\s*(?:-\s*)?/i, "")
+    .trim();
+  return stripped || name;
 }
 
 function derivePods(items: JiraWorkItem[]): PodOption[] {

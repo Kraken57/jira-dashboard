@@ -12,6 +12,44 @@ const resolver = new Resolver();
 const jiraClient = new JiraClient();
 
 /**
+ * Statuses that count as "delivered". Configurable per Jira site via
+ * JIRA_DONE_STATUSES (comma-separated). Set it with `forge env` / the
+ * environment variables section of the Forge developer console.
+ */
+const DONE_STATUSES = new Set(
+  (process.env.JIRA_DONE_STATUSES || "Done,Accepted,Released,Closed,Resolved")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+);
+
+function isDoneStatus(status: string): boolean {
+  return DONE_STATUSES.has(status);
+}
+
+/**
+ * Derive the enterprise quarter id from a Jira sprint name.
+ *   "2026-Q3 Iteration 1"          -> "CY26 PI.3"
+ *   "DTR 2026 - Q4 - Iteration 2"  -> "CY26 PI.4"
+ *   "CY26 PI.3 Sprint 1"           -> "CY26 PI.3"
+ */
+function quarterFromSprint(sprintName: string): string {
+  if (!sprintName) return "All";
+
+  const yq = sprintName.match(/(\d{4})\s*-\s*Q\s*(\d)/i);
+  if (yq) {
+    return `CY${yq[1].slice(2)} PI.${parseInt(yq[2], 10)}`;
+  }
+
+  const pi = sprintName.match(/CY(\d{2})\s*PI\.?\s*(\d)/i);
+  if (pi) {
+    return `CY${pi[1]} PI.${parseInt(pi[2], 10)}`;
+  }
+
+  return "All";
+}
+
+/**
  * Read field configuration from Forge key-value storage.
  * Falls back to sensible defaults if not configured by admin.
  */
@@ -30,9 +68,9 @@ async function getFieldConfig(): Promise<{
 
   return {
     jql: (jql as string) || "project in (DTR)",
-    storyPointsField: (spField as string) || "customfield_10031",
+    storyPointsField: (spField as string) || "customfield_10078",
     sprintField: (sprintField as string) || "customfield_10020",
-    podField: (podField as string) || "customfield_10050",
+    podField: (podField as string) || "customfield_10001",
   };
 }
 
@@ -92,7 +130,7 @@ function mapIssueToWorkItem(
     status: status.name || "To Do",
     priority: priorityObj?.name || "Medium",
     assignee: assigneeObj?.displayName || "Unassigned",
-    quarter: sprints[0] || "All",
+      quarter: sprints.length > 0 ? quarterFromSprint(sprints[0]) : "All",
     sprints,
     storyPoints,
     team: project.name || "",
@@ -113,14 +151,9 @@ function calculateKPIs(items: any[], filters: any) {
     (sum, i) => sum + (i.storyPoints || 0),
     0
   );
-  const completedIssues = items.filter(
-    (i) => i.status.toLowerCase() === "done" || i.status.toLowerCase() === "closed"
-  ).length;
+  const completedIssues = items.filter((i) => isDoneStatus(i.status)).length;
   const completedStoryPoints = items
-    .filter(
-      (i) =>
-        i.status.toLowerCase() === "done" || i.status.toLowerCase() === "closed"
-    )
+    .filter((i) => isDoneStatus(i.status))
     .reduce((sum, i) => sum + (i.storyPoints || 0), 0);
 
   const sayDo = totalStoryPoints > 0 ? completedStoryPoints / totalStoryPoints : 0;
@@ -137,7 +170,7 @@ function calculateKPIs(items: any[], filters: any) {
     const p = podMap.get(pod)!;
     p.count++;
     p.sp += item.storyPoints || 0;
-    if (item.status.toLowerCase() === "done" || item.status.toLowerCase() === "closed") {
+    if (isDoneStatus(item.status)) {
       p.doneSp += item.storyPoints || 0;
     }
   }
@@ -168,6 +201,8 @@ function calculateKPIs(items: any[], filters: any) {
     name,
     issueCount: val.count,
     storyPoints: val.sp,
+    count: val.count,
+    sp: val.sp,
   }));
 
   return {

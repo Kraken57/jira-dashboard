@@ -207,7 +207,7 @@ export async function getPodTimeboxKPI(
   );
   const rows = result.rows || [];
   if (rows.length === 0) return null;
-  return rows[0] as PodTimeboxKPI;
+  return rows[0] as unknown as PodTimeboxKPI;
 }
 
 export async function getEnterpriseKPI(timeboxId: string): Promise<EnterpriseKPI | null> {

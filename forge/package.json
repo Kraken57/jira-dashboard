@@ -6,7 +6,8 @@
   "scripts": {
     "deploy": "forge deploy",
     "install-app": "forge install",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@forge/api": "^5.1.0",
