@@ -33,16 +33,25 @@ function run(cmd, args, env) {
   const result = spawnSync(cmd, args, {
     stdio: "inherit",
     env: { ...process.env, ...env },
-    shell: process.platform === "win32",
   });
+  if (result.error) {
+    throw result.error;
+  }
   if (result.status !== 0) {
-    process.exit(result.status ?? 1);
+    throw new Error(`Command failed with exit code ${result.status ?? 1}`);
   }
 }
 
 if (!existsSync(ROUTE)) {
   console.error(`Route file not found: ${ROUTE}`);
   process.exit(1);
+}
+
+// Recover from an interrupted build that left the static stub in place.
+if (existsSync(BACKUP)) {
+  console.log("[build-forge] Recovering original /api/jira route...");
+  rmSync(ROUTE, { force: true });
+  renameSync(BACKUP, ROUTE);
 }
 
 const original = readFileSync(ROUTE, "utf8");
