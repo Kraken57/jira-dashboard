@@ -1,5 +1,8 @@
 # 05 - Jira Cloud API Integration Guide
 
+> **Historical snapshot.** For current behavior, setup, and metrics, read
+> [`08-complete-system-guide.md`](08-complete-system-guide.md) first.
+
 This document explains the technical details of connecting to Atlassian Jira Cloud REST APIs.
 
 ---

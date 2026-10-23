@@ -9,6 +9,7 @@ import {
   IssueRow,
   JiraWorkItem,
   MetricCardData,
+  MetricInsight,
   PodOption,
   PredictabilityData,
   QualityData,
@@ -249,10 +250,8 @@ export function computeDashboardData(
           .filter((name) => !isUpcoming(name) || name === revealedFuture)
           .slice(-SPRINT_WINDOW);
 
-  const sprintStats = windowNames.map((sprintName) => {
-    const sprintItems = activeItems.filter((it) =>
-      matchesSprint(it.sprints, sprintName)
-    );
+  const buildSprintStat = (sprintName: string, pool: JiraWorkItem[]) => {
+    const sprintItems = pool.filter((it) => matchesSprint(it.sprints, sprintName));
     let committedSP = 0;
     let doneSP = 0;
     let carriedSP = 0;
@@ -281,7 +280,11 @@ export function computeDashboardData(
       issueCount,
       doneCount,
     };
-  });
+  };
+
+  const sprintStats = windowNames.map((sprintName) =>
+    buildSprintStat(sprintName, activeItems)
+  );
 
   // 5. Delivery and Velocity Datasets
   const delivery: DeliveryChartData = {
@@ -324,7 +327,30 @@ export function computeDashboardData(
   // Predictability = completed committed SP / planned SP.
   const isAllSprints = sprintId === "all";
   const lastSprint = sprintStats[sprintStats.length - 1];
-  const prevSprint = sprintStats[sprintStats.length - 2];
+
+  // Trend comparison uses the latest plotted sprint vs the one before it, even
+  // when the cards aggregate the whole selection. This keeps the delta useful
+  // instead of always showing 0 for "All Sprints".
+  const currentCompareName =
+    sprintId === "all" ? lastSprint?.fullName : sprintId;
+  let compareIndex = currentCompareName
+    ? observedSprints.findIndex((name) => name === currentCompareName)
+    : -1;
+  if (compareIndex < 0 && currentCompareName) {
+    compareIndex = observedSprints.findIndex((name) =>
+      matchesSprint([name], currentCompareName)
+    );
+  }
+  const compareNames =
+    compareIndex >= 0
+      ? observedSprints.slice(Math.max(0, compareIndex - 2), compareIndex + 1)
+      : [];
+  const compareStats = compareNames.map((name) =>
+    buildSprintStat(name, scopedItems)
+  );
+  const currentCompare = compareStats[compareStats.length - 1];
+  const prevCompare = compareStats[compareStats.length - 2];
+  const hasComparison = Boolean(currentCompare && prevCompare);
 
   const scopeCommittedSP = isAllSprints
     ? summary.totalStoryPoints
@@ -344,21 +370,23 @@ export function computeDashboardData(
     : 0;
   const currentVelocity = scopeDoneSP;
 
-  const sayDoOf = (s: typeof lastSprint | undefined) =>
+  const sayDoOf = (s: typeof currentCompare | undefined) =>
     s && s.committed > 0 ? (s.done / s.committed) * 100 : 0;
+  const carryOf = (s: typeof currentCompare | undefined) =>
+    s && s.committed > 0 ? (s.carried / s.committed) * 100 : 0;
 
-  const sayDoTrend = !isAllSprints && lastSprint && prevSprint
-    ? Math.round(sayDoOf(lastSprint) - sayDoOf(prevSprint))
-    : 0;
-  const carryTrend = !isAllSprints && lastSprint && prevSprint
-    ? Math.round(
-        (lastSprint.committed > 0 ? (lastSprint.carried / lastSprint.committed) * 100 : 0) -
-          (prevSprint.committed > 0 ? (prevSprint.carried / prevSprint.committed) * 100 : 0)
-      )
-    : 0;
-  const velocityTrendPct = !isAllSprints && lastSprint && prevSprint
-    ? pctChange(lastSprint.done, prevSprint.done)
-    : 0;
+  const sayDoTrend =
+    hasComparison && currentCompare && prevCompare
+      ? Math.round(sayDoOf(currentCompare) - sayDoOf(prevCompare))
+      : 0;
+  const carryTrend =
+    hasComparison && currentCompare && prevCompare
+      ? Math.round(carryOf(currentCompare) - carryOf(prevCompare))
+      : 0;
+  const velocityTrendPct =
+    hasComparison && currentCompare && prevCompare
+      ? pctChange(currentCompare.done, prevCompare.done)
+      : 0;
 
   const predictabilityScore = scopeCommittedSP > 0
     ? Math.round((scopeDoneSP / scopeCommittedSP) * 100)
@@ -366,7 +394,11 @@ export function computeDashboardData(
   const predictabilityTrend = sayDoTrend;
 
   const trendLabelFor = (delta: number) =>
-    delta === 0 ? "no change vs last sprint" : "vs last sprint";
+    !prevCompare || !currentCompare
+      ? "no previous sprint"
+      : delta === 0
+      ? `no change vs ${prevCompare.name}`
+      : `${currentCompare.name} vs ${prevCompare.name}`;
 
   const metrics: MetricCardData[] = [
     {
@@ -375,6 +407,7 @@ export function computeDashboardData(
       subtitle: "Completed committed SP ÷ committed SP",
       trend: sayDoTrend,
       trendLabel: trendLabelFor(sayDoTrend),
+      trendUnit: "pp",
       color: sayDoRatio >= 80 ? "green" : sayDoRatio >= 65 ? "blue" : "red",
       trendGood: "up",
       drilldownTab: "diagnosis",
@@ -385,6 +418,7 @@ export function computeDashboardData(
       subtitle: "Spilled-over committed SP ÷ committed SP",
       trend: carryTrend,
       trendLabel: trendLabelFor(carryTrend),
+      trendUnit: "pp",
       color: carryOver <= 18 ? "green" : carryOver <= 28 ? "blue" : "red",
       trendGood: "down",
       drilldownTab: "diagnosis",
@@ -398,6 +432,7 @@ export function computeDashboardData(
           : "SP completed in selected sprint",
       trend: velocityTrendPct,
       trendLabel: trendLabelFor(velocityTrendPct),
+      trendUnit: "%",
       color: "blue",
       trendGood: "up",
       drilldownTab: "trends",
@@ -408,6 +443,7 @@ export function computeDashboardData(
       subtitle: "Completed committed SP ÷ planned SP",
       trend: predictabilityTrend,
       trendLabel: trendLabelFor(predictabilityTrend),
+      trendUnit: "pp",
       color: predictabilityScore >= 85 ? "green" : "blue",
       trendGood: "up",
       drilldownTab: "predictability",
@@ -656,7 +692,7 @@ export function computeDashboardData(
   });
 
   const contributors: ContributorSlippage[] = Array.from(contributorSlippageMap.entries())
-    .filter(([_, stat]) => stat.incompleteSP > 0)
+    .filter(([, stat]) => stat.incompleteSP > 0)
     .map(([name, stat]) => {
       let topReason = "In-Progress Delay";
       let topCount = 0;
@@ -679,7 +715,6 @@ export function computeDashboardData(
     .sort((a, b) => b.incompleteSP - a.incompleteSP);
 
   const unfinishedIssues: UnfinishedIssue[] = unfinishedItems
-    .slice(0, 150)
     .map((it) => ({
       key: it.key,
       summary: it.summary,
@@ -720,6 +755,165 @@ export function computeDashboardData(
     atRiskContributorsCount: contributors.length,
     contributors,
     unfinishedIssues,
+  };
+
+  // 12b. Plain-language explanations for the executive KPI popups.
+  const fmt = (n: number) => n.toLocaleString("en-US");
+  const sayDoPercent = (s: typeof currentCompare) =>
+    s && s.committed > 0 ? Math.round((s.done / s.committed) * 100) : 0;
+  const carryPercent = (s: typeof currentCompare) =>
+    s && s.committed > 0 ? Math.round((s.carried / s.committed) * 100) : 0;
+  const trendBase = hasComparison && currentCompare && prevCompare
+    ? {
+        currentLabel: currentCompare.name,
+        previousLabel: prevCompare.name,
+      }
+    : null;
+
+  const peakSprint = sprintStats.reduce(
+    (best, s) => (s.done > best.done ? s : best),
+    sprintStats[0]
+  );
+
+  const metricInsights: Record<string, MetricInsight> = {
+    "Say/Do Ratio": {
+      what:
+        "Of all the story points committed in the selected scope, how much was actually completed.",
+      formula: "Done SP ÷ Committed SP × 100",
+      calculation: `${fmt(scopeDoneSP)} SP done ÷ ${fmt(scopeCommittedSP)} SP committed = ${sayDoRatio}%`,
+      howToCompare:
+        "Compare against the 80% healthy target, the previous sprint, and other pods. A drop usually means scope was added late or work stalled mid-sprint.",
+      target: {
+        label: "Healthy",
+        value: 80,
+        current: sayDoRatio,
+        unit: "%",
+        direction: "atLeast",
+      },
+      trend:
+        trendBase && currentCompare && prevCompare
+          ? {
+              ...trendBase,
+              current: sayDoPercent(currentCompare),
+              previous: sayDoPercent(prevCompare),
+              delta: sayDoTrend,
+              unit: "pp",
+              better: "up",
+            }
+          : undefined,
+      recent: compareStats.map((s) => ({
+        label: s.name,
+        value: `${sayDoPercent(s)}%`,
+        detail: `${s.done} of ${s.committed} SP`,
+      })),
+      takeaways: [
+        `${summary.totalIssues - summary.completedIssues} of ${summary.totalIssues} work items are still open.`,
+        sayDoRatio >= 80
+          ? `Above the 80% target by ${sayDoRatio - 80} pp.`
+          : `${80 - sayDoRatio} pp below the 80% target.`,
+      ],
+    },
+    "Sprint Carry Over": {
+      what:
+        "The share of committed story points that was not completed and spills into later work.",
+      formula: "Carried SP ÷ Committed SP × 100",
+      calculation: `${fmt(scopeCarriedSP)} SP carried ÷ ${fmt(scopeCommittedSP)} SP committed = ${carryOver}%`,
+      howToCompare:
+        "Lower is better. Compare with the 18% target, the previous sprint, and the Delivery Diagnosis tab to see which reasons drive the carry-over.",
+      target: {
+        label: "Healthy",
+        value: 18,
+        current: carryOver,
+        unit: "%",
+        direction: "atMost",
+      },
+      trend:
+        trendBase && currentCompare && prevCompare
+          ? {
+              ...trendBase,
+              current: carryPercent(currentCompare),
+              previous: carryPercent(prevCompare),
+              delta: carryTrend,
+              unit: "pp",
+              better: "down",
+            }
+          : undefined,
+      recent: compareStats.map((s) => ({
+        label: s.name,
+        value: `${carryPercent(s)}%`,
+        detail: `${s.carried} SP carried`,
+      })),
+      takeaways: [
+        `${fmt(scopeCarriedSP)} SP is currently carried over.`,
+        `Primary driver: ${primaryDriver}.`,
+        `${contributors.length} contributor${contributors.length === 1 ? "" : "s"} still hold unfinished work.`,
+      ],
+    },
+    "Team/Epic Velocity": {
+      what: "The number of story points completed in the selected period.",
+      formula: "Sum of story points on done items",
+      calculation: `${fmt(currentVelocity)} SP completed`,
+      howToCompare:
+        "Compare with the previous sprint and the 3-sprint average. Rising velocity is good only if Say/Do and quality stay stable.",
+      trend:
+        trendBase && currentCompare && prevCompare
+          ? {
+              ...trendBase,
+              current: currentCompare.done,
+              previous: prevCompare.done,
+              delta: velocityTrendPct,
+              unit: "%",
+              better: "up",
+            }
+          : undefined,
+      recent: compareStats.map((s) => ({
+        label: s.name,
+        value: `${s.done} SP`,
+        detail: `${s.doneCount} of ${s.issueCount} items done`,
+      })),
+      takeaways: [
+        `Peak sprint in this window: ${peakSprint?.done ?? 0} SP (${peakSprint?.name ?? "n/a"}).`,
+        `3-sprint average: ${avgLastThree} SP.`,
+        `Latest sprint: ${lastSprint?.done ?? 0} SP completed.`,
+      ],
+    },
+    "Feature Predictability": {
+      what:
+        "How much of the planned commitment was delivered. In this dashboard planned and committed are the same number, because Jira does not keep the original commitment after scope changes.",
+      formula: "Done SP ÷ Planned SP × 100",
+      calculation: `${fmt(scopeDoneSP)} SP done ÷ ${fmt(scopeCommittedSP)} SP planned = ${predictabilityScore}%`,
+      howToCompare:
+        "Compare with the 85% target and the previous sprint. Use the iteration history below to see whether delivery is becoming more predictable.",
+      target: {
+        label: "On track",
+        value: 85,
+        current: predictabilityScore,
+        unit: "%",
+        direction: "atLeast",
+      },
+      trend:
+        trendBase && currentCompare && prevCompare
+          ? {
+              ...trendBase,
+              current: sayDoPercent(currentCompare),
+              previous: sayDoPercent(prevCompare),
+              delta: predictabilityTrend,
+              unit: "pp",
+              better: "up",
+            }
+          : undefined,
+      recent: compareStats.map((s) => ({
+        label: s.name,
+        value: `${sayDoPercent(s)}%`,
+        detail: `${s.done} of ${s.planned} SP`,
+      })),
+      takeaways: [
+        predictabilityScore >= 85
+          ? `On or above the 85% target.`
+          : `${85 - predictabilityScore} pp below the 85% target.`,
+        `Variance: ${Math.abs(scopeCommittedSP - scopeDoneSP)} SP between planned and delivered.`,
+      ],
+    },
   };
 
   // 13. Issue Explorer List
@@ -775,5 +969,6 @@ export function computeDashboardData(
     trends,
     diagnosis,
     issueList,
+    metricInsights,
   };
 }

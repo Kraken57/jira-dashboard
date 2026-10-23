@@ -263,6 +263,20 @@ export function TrendsTab({ data, podName, windowSize }: TrendsTabProps) {
           subtitle={`${podName} · ${velocityTrend.labels.length} sprints`}
           onClose={() => setOpen(null)}
         >
+          <div className="px-5 py-3 border-b border-jira-border bg-jira-bg/40 text-xs text-jira-text-muted space-y-1">
+            <p>
+              <span className="font-semibold text-jira-text">What this shows: </span>
+              {open === "velocity"
+                ? "Actual story points delivered per sprint next to the expanding average. The average smooths one-off spikes."
+                : "Running totals of all items and completed items across the window. The gap is work still open."}
+            </p>
+            <p>
+              <span className="font-semibold text-jira-text">How to compare: </span>
+              {open === "velocity"
+                ? "Compare each bar with the average line. Rising bars with a flat average mean the gain is not sustained yet."
+                : "Compare the slope between sprints. A flattening completed line means throughput is slowing down."}
+            </p>
+          </div>
           <table className="w-full text-left text-sm">
             <thead className="bg-jira-bg text-jira-text-muted text-xs uppercase border-b border-jira-border font-semibold sticky top-0">
               <tr>

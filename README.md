@@ -1,5 +1,11 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Documentation
+
+Start with [`documentation/08-complete-system-guide.md`](documentation/08-complete-system-guide.md).
+It is the current source of truth for architecture, data flow, metrics, filters, popups,
+Jira setup, and Forge deployment. Files `01`–`07` are older design snapshots.
+
 ## Getting Started
 
 First, run the development server:

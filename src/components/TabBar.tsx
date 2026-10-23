@@ -1,7 +1,5 @@
 "use client";
 
-import { useState } from "react";
-
 type Tab = { id: string; label: string };
 
 interface TabBarProps {

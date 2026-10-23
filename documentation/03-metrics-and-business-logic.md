@@ -1,5 +1,8 @@
 # 03 - Metrics Engine & Business Logic Guide
 
+> **Historical snapshot.** For current behavior, setup, and metrics, read
+> [`08-complete-system-guide.md`](08-complete-system-guide.md) first.
+
 This guide explains the exact mathematical formulas, business rules, and calculation logic implemented in `src/lib/jira/metricsEngine.ts`.
 
 ---

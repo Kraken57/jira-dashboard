@@ -459,6 +459,7 @@ function calculateKPIs(items: any[], filters: any) {
       assignee: i.assignee,
       priority: i.priority,
       createdDate: i.createdDate,
+      isDone: isDoneStatus(i.status),
     })),
   };
 }

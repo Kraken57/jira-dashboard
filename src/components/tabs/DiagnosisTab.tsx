@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { DiagnosisData, IssueRow, UnfinishedIssue } from "@/lib/jira/types";
+import { DiagnosisData, IssueRow, MetricInsight, UnfinishedIssue } from "@/lib/jira/types";
 import { IssuesModal } from "@/components/IssuesModal";
 
 interface DiagnosisTabProps {
@@ -33,6 +33,7 @@ export function DiagnosisTab({ data, podName, jiraDomain, statusFilter }: Diagno
       priority: i.priority,
       createdDate: "",
       isDone: false,
+      reason: i.reason,
     }));
 
   const byStatus =
@@ -42,6 +43,29 @@ export function DiagnosisTab({ data, podName, jiraDomain, statusFilter }: Diagno
   const contributorIssues = selectedContributor
     ? byStatus.filter((i) => i.assignee === selectedContributor)
     : [];
+  const contributorRows = asRows(contributorIssues);
+  const contributorSP = contributorRows.reduce((a, i) => a + i.storyPoints, 0);
+  const reasonCounts = new Map<string, number>();
+  contributorIssues.forEach((i) =>
+    reasonCounts.set(i.reason, (reasonCounts.get(i.reason) || 0) + 1)
+  );
+  let contributorTopReason = "—";
+  let topReasonCount = 0;
+  reasonCounts.forEach((count, reason) => {
+    if (count > topReasonCount) {
+      topReasonCount = count;
+      contributorTopReason = reason;
+    }
+  });
+  const contributorInsight: MetricInsight = {
+    what: `Open work currently assigned to ${selectedContributor} in the selected scope.`,
+    howToCompare:
+      "Compare this person's open SP with the team average in the contributor table. Use the reason column to see whether the load is caused by complexity, review delays, or delayed starts.",
+    takeaways: [
+      `${contributorRows.length} open item${contributorRows.length === 1 ? "" : "s"} worth ${contributorSP} SP.`,
+      `Most common reason: ${contributorTopReason}.`,
+    ],
+  };
 
   return (
     <div className="space-y-6">
@@ -311,84 +335,14 @@ export function DiagnosisTab({ data, podName, jiraDomain, statusFilter }: Diagno
 
       {/* Contributor issues modal — no page jump, no scroll */}
       {selectedContributor && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          onClick={() => setSelectedContributor(null)}
-        >
-          <div
-            className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[80vh] flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between px-5 py-4 border-b border-jira-border">
-              <div>
-                <h3 className="text-sm font-bold text-jira-text uppercase tracking-wider">
-                  Unfinished Items · {selectedContributor}
-                </h3>
-                <p className="text-xs text-jira-text-muted mt-0.5">
-                  {contributorIssues.length} open item(s) · {podName}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedContributor(null)}
-                className="text-jira-text-muted hover:text-jira-text text-lg leading-none px-2"
-                aria-label="Close"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="overflow-y-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-jira-bg text-jira-text-muted text-xs uppercase border-b border-jira-border font-semibold sticky top-0">
-                  <tr>
-                    <th className="px-5 py-2.5">Key</th>
-                    <th className="px-5 py-2.5">Summary</th>
-                    <th className="px-5 py-2.5 text-center">SP</th>
-                    <th className="px-5 py-2.5">Status</th>
-                    <th className="px-5 py-2.5">Reason</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-jira-border/60">
-                  {contributorIssues.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="px-5 py-8 text-center text-jira-text-muted">
-                        No unfinished items for this contributor.
-                      </td>
-                    </tr>
-                  ) : (
-                    contributorIssues.map((issue) => (
-                      <tr key={issue.key} className="hover:bg-jira-bg/30">
-                        <td className="px-5 py-2.5 font-semibold text-xs whitespace-nowrap">
-                          {jiraDomain ? (
-                            <a
-                              href={`${jiraDomain}/browse/${issue.key}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-jira-blue hover:underline"
-                            >
-                              {issue.key}
-                            </a>
-                          ) : (
-                            issue.key
-                          )}
-                        </td>
-                        <td className="px-5 py-2.5 text-xs text-jira-text">
-                          <p className="line-clamp-1">{issue.summary}</p>
-                          <p className="text-[11px] text-jira-text-light mt-0.5">
-                            {issue.podName} • {issue.sprint}
-                          </p>
-                        </td>
-                        <td className="px-5 py-2.5 text-center text-xs font-bold">{issue.storyPoints}</td>
-                        <td className="px-5 py-2.5 text-xs whitespace-nowrap">{issue.status}</td>
-                        <td className="px-5 py-2.5 text-xs text-jira-text-muted">{issue.reason}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
+        <IssuesModal
+          title={`Unfinished Items · ${selectedContributor}`}
+          subtitle={`${podName} · ${contributorRows.length} open item(s)`}
+          issues={contributorRows}
+          jiraDomain={jiraDomain}
+          insight={contributorInsight}
+          onClose={() => setSelectedContributor(null)}
+        />
       )}
 
       {cardModal && (

@@ -63,4 +63,6 @@ const Dropdown = forwardRef<HTMLDivElement, DropdownProps>(({ label, items, onCh
   );
 });
 
+Dropdown.displayName = "Dropdown";
+
 export { Dropdown };

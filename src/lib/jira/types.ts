@@ -17,12 +17,48 @@ export interface SprintOption {
   sub?: string;
 }
 
+export interface MetricInsightTrend {
+  currentLabel: string;
+  previousLabel: string;
+  current: number;
+  previous: number;
+  delta: number;
+  unit: "pp" | "%" | "SP";
+  better: "up" | "down";
+}
+
+export interface MetricInsightTarget {
+  label: string;
+  value: number;
+  current?: number;
+  unit: "pp" | "%" | "SP";
+  direction: "atLeast" | "atMost";
+}
+
+export interface MetricInsightRecentRow {
+  label: string;
+  value: string;
+  detail?: string;
+}
+
+export interface MetricInsight {
+  what: string;
+  formula?: string;
+  calculation?: string;
+  howToCompare?: string;
+  target?: MetricInsightTarget;
+  trend?: MetricInsightTrend;
+  recent?: MetricInsightRecentRow[];
+  takeaways?: string[];
+}
+
 export interface MetricCardData {
   title: string;
   value: string | number;
   subtitle: string;
   trend: number;
   trendLabel: string;
+  trendUnit?: "pp" | "%" | "SP";
   color: "blue" | "green" | "red";
   drilldownTab?: string;
   trendGood?: "up" | "down";
@@ -114,6 +150,7 @@ export interface IssueRow {
   priority: string;
   createdDate: string;
   isDone: boolean;
+  reason?: string;
 }
 
 export interface ContributorSlippage {
@@ -164,6 +201,7 @@ export interface DashboardData {
   trends: TrendsData;
   diagnosis: DiagnosisData;
   issueList: IssueRow[];
+  metricInsights?: Record<string, MetricInsight>;
   jiraBaseUrl?: string;
 }
 

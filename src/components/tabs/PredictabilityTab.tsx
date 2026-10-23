@@ -98,6 +98,20 @@ export function PredictabilityTab({ data }: PredictabilityTabProps) {
           subtitle="Iteration predictability track record for the current filters"
           onClose={() => setOpen(null)}
         >
+          <div className="px-5 py-3 border-b border-jira-border bg-jira-bg/40 text-xs text-jira-text-muted space-y-1">
+            <p>
+              <span className="font-semibold text-jira-text">What this shows: </span>
+              Each row compares what was planned with what was delivered in that sprint.
+              A Say/Do of 80% or more is high reliability, 65–79% is moderate, and below
+              65% is at risk.
+            </p>
+            <p>
+              <span className="font-semibold text-jira-text">How to compare: </span>
+              Look for a stable or rising pattern across iterations, not a single good
+              sprint. A rising planned SP with a falling Say/Do means scope is growing
+              faster than delivery.
+            </p>
+          </div>
           <table className="w-full text-left text-sm">
             <thead className="bg-jira-bg text-jira-text-muted text-xs uppercase border-b border-jira-border font-semibold sticky top-0">
               <tr>

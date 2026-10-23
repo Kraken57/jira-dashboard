@@ -1,5 +1,8 @@
 # 04 - Components & UI Architecture Guide
 
+> **Historical snapshot.** For current behavior, setup, and metrics, read
+> [`08-complete-system-guide.md`](08-complete-system-guide.md) first.
+
 This document catalogs all reusable components, page structures, and tab views in the codebase.
 
 ---

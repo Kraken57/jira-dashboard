@@ -1,5 +1,8 @@
 # 02 - Architecture & Data Flow
 
+> **Historical snapshot.** For current behavior, setup, and metrics, read
+> [`08-complete-system-guide.md`](08-complete-system-guide.md) first.
+
 This document outlines how data flows from Jira Cloud to the user interface, covering both Localhost and Atlassian Forge modes.
 
 ---

@@ -1,5 +1,8 @@
 # 01 - Project Overview & System Architecture
 
+> **Historical snapshot.** For current behavior, setup, and metrics, read
+> [`08-complete-system-guide.md`](08-complete-system-guide.md) first.
+
 ## 1. Executive Summary
 
 The **Enterprise Sprint Performance Dashboard** is a high-performance, real-time analytics web application built to monitor sprint health, delivery predictability, contributor output, defect density, and delivery bottlenecks across multi-pod agile organizations.

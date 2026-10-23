@@ -1,5 +1,8 @@
 # 07 - Developer Handbook & Contributor Guide
 
+> **Historical snapshot.** For current behavior, setup, and metrics, read
+> [`08-complete-system-guide.md`](08-complete-system-guide.md) first.
+
 Welcome to the **Enterprise Sprint Performance Dashboard** project! This guide is written for new team members, freshers, and experienced engineers to quickly understand, extend, and maintain this codebase.
 
 ---

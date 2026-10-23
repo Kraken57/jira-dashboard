@@ -1,5 +1,8 @@
 # 06 - Atlassian Forge Cloud Deployment Guide
 
+> **Historical snapshot.** For current behavior, setup, and metrics, read
+> [`08-complete-system-guide.md`](08-complete-system-guide.md) first.
+
 This guide details how to build and deploy the dashboard into **Atlassian Forge** to run directly inside Jira Cloud.
 
 ---

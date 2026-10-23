@@ -5,13 +5,12 @@ import { IssueRow } from "@/lib/jira/types";
 
 interface IssuesTabProps {
   issues: IssueRow[];
-  podName: string;
   jiraDomain?: string;
 }
 
 const PAGE_SIZE = 25;
 
-export function IssuesTab({ issues, podName, jiraDomain }: IssuesTabProps) {
+export function IssuesTab({ issues, jiraDomain }: IssuesTabProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedType, setSelectedType] = useState("all");
   const [selectedStatus, setSelectedStatus] = useState("all");

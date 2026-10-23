@@ -311,7 +311,6 @@ export default function DashboardPage() {
           {activeTab === "issues" && dashboardData && (
             <IssuesTab
               issues={dashboardData.issueList}
-              podName={selectedPodName}
               jiraDomain={dashboardData.jiraBaseUrl}
             />
           )}
@@ -323,6 +322,7 @@ export default function DashboardPage() {
             subtitle={issueModal.subtitle}
             issues={issueModal.issues}
             jiraDomain={dashboardData.jiraBaseUrl}
+            insight={dashboardData.metricInsights?.[issueModal.title]}
             onClose={() => setIssueModal(null)}
           />
         )}

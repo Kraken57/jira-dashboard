@@ -40,6 +40,7 @@ interface MetricCardProps {
   subtitle: string;
   trend: number;
   trendLabel: string;
+  trendUnit?: "pp" | "%" | "SP";
   color: "blue" | "green" | "red";
   trendGood?: "up" | "down";
   onOpen?: () => void;
@@ -51,6 +52,7 @@ export function MetricCard({
   subtitle,
   trend,
   trendLabel,
+  trendUnit = "%",
   color,
   trendGood = "up",
   onOpen,
@@ -105,7 +107,8 @@ export function MetricCard({
         </svg>
         <span>
           {isFlat ? "0" : isUp ? "+" : ""}
-          {trend}%
+          {trend}
+          {trendUnit}
         </span>
         <span className="text-jira-text-muted">{trendLabel}</span>
       </div>
