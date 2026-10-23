@@ -11,11 +11,7 @@ interface IssuesTabProps {
 
 const PAGE_SIZE = 25;
 
-export function IssuesTab({
-  issues,
-  podName,
-  jiraDomain = "https://one-atlas-yzpp.atlassian.net",
-}: IssuesTabProps) {
+export function IssuesTab({ issues, podName, jiraDomain }: IssuesTabProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedType, setSelectedType] = useState("all");
   const [selectedStatus, setSelectedStatus] = useState("all");
@@ -147,19 +143,18 @@ export function IssuesTab({
                 </tr>
               ) : (
                 pagedIssues.map((issue) => {
-                  const isDone =
-                    issue.status === "Done" ||
-                    issue.status === "Closed" ||
-                    issue.status === "Resolved";
-                  const isInProgress =
-                    issue.status === "In Progress" ||
-                    issue.status === "Selected for Development";
+                  const isDone = issue.isDone;
+                  const isInProgress = /progress|development|review/i.test(issue.status);
 
                   return (
                     <tr key={issue.key} className="hover:bg-jira-bg/30 transition-colors">
                       <td className="px-5 py-3 font-semibold text-xs whitespace-nowrap">
                         <a
-                          href={`${jiraDomain}/browse/${issue.key}`}
+                          href={
+                            jiraDomain
+                              ? `${jiraDomain}/browse/${issue.key}`
+                              : undefined
+                          }
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-jira-blue hover:underline inline-flex items-center gap-1"

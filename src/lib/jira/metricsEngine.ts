@@ -14,6 +14,7 @@ import {
   QualityData,
   QuarterOption,
   SprintAnalysisData,
+  SprintMeta,
   SprintOption,
   TrendsData,
   UnfinishedIssue,
@@ -36,16 +37,6 @@ export const DONE_STATUSES = new Set(
  * Derive sprint names from the actual data so the dashboard works with any
  * Jira project/board without code changes.
  */
-function deriveSprintNames(items: JiraWorkItem[]): string[] {
-  const names = new Set<string>();
-  for (const item of items) {
-    for (const s of item.sprints || []) {
-      if (s && typeof s === "string") names.add(s.trim());
-    }
-  }
-  return Array.from(names).sort();
-}
-
 function sprintDisplayName(name: string): string {
   // "2026-Q3 Iteration 1"             -> "Iteration 1"
   // "DTR 2026 - Q4 - Iteration 2"     -> "Iteration 2"
@@ -56,6 +47,45 @@ function sprintDisplayName(name: string): string {
     .replace(/^(?:CY)?\d{2}\s+PI\.?\d+\s*(?:-\s*)?/i, "")
     .trim();
   return stripped || name;
+}
+
+/**
+ * How many recent sprints to plot. Keeps the charts readable instead of
+ * plotting every historical sprint.
+ */
+const SPRINT_WINDOW = Math.max(1, Number(process.env.JIRA_SPRINT_WINDOW || 5));
+
+/**
+ * A future (zero-work or planned) sprint is only surfaced when the active
+ * sprint is this close to ending.
+ */
+const NEXT_SPRINT_REVEAL_DAYS = Number(
+  process.env.JIRA_NEXT_SPRINT_REVEAL_DAYS || 5
+);
+
+function sprintOrderKey(name: string, meta?: SprintMeta): number {
+  const year = Number(name.match(/(\d{4})/)?.[1] || 0);
+  const q = Number(name.match(/Q\s*(\d)/i)?.[1] || 0);
+  const pi = Number(name.match(/PI\.?\s*(\d)/i)?.[1] || 0);
+  const iter = Number(name.match(/(?:iteration|sprint)\s*(\d+)/i)?.[1] || 0);
+  if (year > 0) return year * 1e6 + (q || pi) * 1e4 + iter;
+  if (meta?.startDate) {
+    const started = Date.parse(meta.startDate);
+    if (!Number.isNaN(started)) return started;
+  }
+  return iter;
+}
+
+function daysUntil(iso?: string): number | null {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return null;
+  return (t - Date.now()) / 86400000;
+}
+
+function pctChange(current: number, previous: number): number {
+  if (previous > 0) return Math.round(((current - previous) / previous) * 100);
+  return current > 0 ? 100 : 0;
 }
 
 function derivePods(items: JiraWorkItem[]): PodOption[] {
@@ -104,7 +134,8 @@ function matchesSprint(itemSprints: string[] | undefined | null, target: string)
 
 export function computeDashboardData(
   items: JiraWorkItem[],
-  filters: DashboardFilters
+  filters: DashboardFilters,
+  sprintMeta: Record<string, SprintMeta> = {}
 ): DashboardData {
   const { podId, quarterId, sprintId } = filters;
 
@@ -148,40 +179,102 @@ export function computeDashboardData(
     completedStoryPoints: Math.round(completedStoryPoints),
   };
 
-  // 4. Calculate Sprint Chart Series
-  const sprintNames = deriveSprintNames(items);
-  const sprintStats = sprintNames.map((sprintName) => {
-    const sprintItems = scopedItems.filter((it) => matchesSprint(it.sprints, sprintName));
-    let sprintCommittedSP = 0;
-    let sprintDoneSP = 0;
-    let sprintCarriedSP = 0;
+  // 4. Sprint window: only sprints that actually have work in the current
+  //    pod/quarter scope, ordered chronologically, limited to the latest few.
+  const sprintCountMap = new Map<string, number>();
+  for (const it of scopedItems) {
+    for (const s of it.sprints || []) {
+      const name = s.trim();
+      if (!name) continue;
+      sprintCountMap.set(name, (sprintCountMap.get(name) || 0) + 1);
+    }
+  }
+
+  const observedSprints = Array.from(sprintCountMap.entries())
+    .filter(([, count]) => count > 0)
+    .map(([name]) => name)
+    .sort(
+      (a, b) => sprintOrderKey(a, sprintMeta[a]) - sprintOrderKey(b, sprintMeta[b])
+    );
+
+  // "Upcoming" is judged by start date: Jira sometimes reports already-started
+  // historical sprints as state=future, which must not hide real work.
+  const now = Date.now();
+  const sprintStatus = (name: string): "Active" | "Closed" | "Upcoming" | "" => {
+    const meta = sprintMeta[name];
+    if (meta?.state === "active") return "Active";
+    const start = meta?.startDate ? Date.parse(meta.startDate) : NaN;
+    const end = meta?.endDate ? Date.parse(meta.endDate) : NaN;
+    if (!Number.isNaN(start) && !Number.isNaN(end)) {
+      if (start > now) return "Upcoming";
+      if (end < now) return "Closed";
+      return "Active";
+    }
+    if (meta?.state === "future") return "Upcoming";
+    if (meta?.state === "closed") return "Closed";
+    return "";
+  };
+  const isUpcoming = (name: string) => sprintStatus(name) === "Upcoming";
+
+  // Only reveal the nearest upcoming sprint when the active one is nearly over.
+  const activeEndDays = observedSprints
+    .filter((name) => sprintStatus(name) === "Active")
+    .map((name) => daysUntil(sprintMeta[name]?.endDate))
+    .filter((d): d is number => d !== null)
+    .sort((a, b) => a - b)[0];
+
+  let revealedFuture: string | null = null;
+  if (activeEndDays !== undefined && activeEndDays <= NEXT_SPRINT_REVEAL_DAYS) {
+    const upcoming = observedSprints
+      .filter(isUpcoming)
+      .sort(
+        (a, b) => sprintOrderKey(a, sprintMeta[a]) - sprintOrderKey(b, sprintMeta[b])
+      );
+    revealedFuture = upcoming[0] || null;
+  }
+
+  const windowNames = observedSprints
+    .filter((name) => !isUpcoming(name) || name === revealedFuture)
+    .slice(-SPRINT_WINDOW);
+
+  const sprintStats = windowNames.map((sprintName) => {
+    const sprintItems = scopedItems.filter((it) =>
+      matchesSprint(it.sprints, sprintName)
+    );
+    let committedSP = 0;
+    let doneSP = 0;
+    let carriedSP = 0;
+    let issueCount = 0;
+    let doneCount = 0;
 
     sprintItems.forEach((it) => {
-      const sp = it.storyPoints || (it.workType === "Story" ? 5 : 3);
-      sprintCommittedSP += sp;
+      const sp = it.storyPoints || 0;
+      committedSP += sp;
+      issueCount += 1;
       if (DONE_STATUSES.has(it.status)) {
-        sprintDoneSP += sp;
+        doneSP += sp;
+        doneCount += 1;
       } else {
-        sprintCarriedSP += sp;
+        carriedSP += sp;
       }
     });
 
-    const sprintPlannedSP = Math.round(sprintCommittedSP * 1.05);
-
     return {
-      name: sprintName.replace("2026-Q3 ", "").replace("2026-", ""),
+      name: sprintDisplayName(sprintName),
       fullName: sprintName,
-      planned: sprintPlannedSP,
-      committed: Math.round(sprintCommittedSP),
-      done: Math.round(sprintDoneSP),
-      carried: Math.round(sprintCarriedSP),
+      planned: Math.round(committedSP),
+      committed: Math.round(committedSP),
+      done: Math.round(doneSP),
+      carried: Math.round(carriedSP),
+      issueCount,
+      doneCount,
     };
   });
 
   // 5. Delivery and Velocity Datasets
   const delivery: DeliveryChartData = {
     labels: sprintStats.map((s) => s.name),
-    planned: sprintStats.map((s) => s.planned),
+    planned: sprintStats.map((s) => s.committed),
     committed: sprintStats.map((s) => s.committed),
     done: sprintStats.map((s) => s.done),
     carried: sprintStats.map((s) => s.carried),
@@ -210,50 +303,93 @@ export function computeDashboardData(
     trendStatus,
   };
 
-  // 6. Executive KPI Metrics
-  const totalCommitted = summary.totalStoryPoints || summary.totalIssues * 5;
-  const totalDone = summary.completedStoryPoints || summary.completedIssues * 5;
-  const rawSayDo = totalCommitted > 0 ? Math.round((totalDone / totalCommitted) * 100) : 85;
-  const sayDoRatio = Math.min(Math.max(rawSayDo, 45), 98);
-  const carryOver = Math.max(100 - sayDoRatio, 5);
+  // 6. Executive KPI Metrics — all derived from the actual items/sprints.
+  const totalCommitted = summary.totalStoryPoints;
+  const totalDone = summary.completedStoryPoints;
+  const sayDoRatio =
+    totalCommitted > 0 ? Math.round((totalDone / totalCommitted) * 100) : 0;
+  const carryOver =
+    totalCommitted > 0
+      ? Math.round(((totalCommitted - totalDone) / totalCommitted) * 100)
+      : 0;
+
+  const lastSprint = sprintStats[sprintStats.length - 1];
+  const prevSprint = sprintStats[sprintStats.length - 2];
+  const sprintSayDo = (s: typeof lastSprint | undefined) =>
+    s && s.committed > 0 ? (s.done / s.committed) * 100 : 0;
+  const sprintCarry = (s: typeof lastSprint | undefined) =>
+    s && s.committed > 0 ? (s.carried / s.committed) * 100 : 0;
+
+  const sayDoTrend =
+    lastSprint && prevSprint
+      ? Math.round(sprintSayDo(lastSprint) - sprintSayDo(prevSprint))
+      : 0;
+  const carryTrend =
+    lastSprint && prevSprint
+      ? Math.round(sprintCarry(lastSprint) - sprintCarry(prevSprint))
+      : 0;
+  const velocityTrendPct =
+    lastSprint && prevSprint ? pctChange(lastSprint.done, prevSprint.done) : 0;
+
   const currentVelocity =
     sprintId !== "all"
-      ? summary.completedStoryPoints || Math.round(avgLastThree)
+      ? summary.completedStoryPoints
       : Math.round(avgLastThree);
-  const predictabilityScore = Math.min(Math.max(Math.round(sayDoRatio * 1.04), 60), 96);
+
+  const hittingSprints = sprintStats.filter(
+    (s) => s.committed > 0 && s.done / s.committed >= 0.9
+  ).length;
+  const predictabilityScore = sprintStats.length
+    ? Math.round((hittingSprints / sprintStats.length) * 100)
+    : 0;
+  const predictabilityTrend =
+    lastSprint && prevSprint
+      ? Math.round(sprintSayDo(lastSprint) - sprintSayDo(prevSprint))
+      : 0;
+
+  const trendLabelFor = (delta: number) =>
+    delta === 0 ? "no change vs last sprint" : "vs last sprint";
 
   const metrics: MetricCardData[] = [
     {
       title: "Say/Do Ratio",
       value: `${sayDoRatio}%`,
-      subtitle: "Issues completed vs committed",
-      trend: sayDoRatio >= 75 ? 8 : -4,
-      trendLabel: sayDoRatio >= 75 ? "up from last sprint" : "down from last sprint",
+      subtitle: "Completed SP vs committed SP",
+      trend: sayDoTrend,
+      trendLabel: trendLabelFor(sayDoTrend),
       color: sayDoRatio >= 80 ? "green" : sayDoRatio >= 65 ? "blue" : "red",
+      trendGood: "up",
+      drilldownTab: "diagnosis",
     },
     {
       title: "Sprint Carry Over",
       value: `${carryOver}%`,
-      subtitle: "Points carried to next sprint",
-      trend: carryOver <= 20 ? -5 : 6,
-      trendLabel: carryOver <= 20 ? "reduced spillover" : "increased spillover",
+      subtitle: "Unfinished SP carried to next sprint",
+      trend: carryTrend,
+      trendLabel: trendLabelFor(carryTrend),
       color: carryOver <= 18 ? "green" : carryOver <= 28 ? "blue" : "red",
+      trendGood: "down",
+      drilldownTab: "diagnosis",
     },
     {
       title: "Team/Epic Velocity",
       value: `${currentVelocity} pts`,
-      subtitle: "Avg story points completed",
-      trend: trendDiff >= 0 ? 6 : -3,
-      trendLabel: trendStatus === "rising" ? "rising trajectory" : "stable",
+      subtitle: "Avg done SP over last 3 sprints",
+      trend: velocityTrendPct,
+      trendLabel: trendLabelFor(velocityTrendPct),
       color: "blue",
+      trendGood: "up",
+      drilldownTab: "trends",
     },
     {
       title: "Feature Predictability",
       value: `${predictabilityScore}%`,
-      subtitle: "Epics delivered on time",
-      trend: 4,
-      trendLabel: "on-track schedule",
+      subtitle: "Sprints hitting 90% of commitment",
+      trend: predictabilityTrend,
+      trendLabel: trendLabelFor(predictabilityTrend),
       color: predictabilityScore >= 85 ? "green" : "blue",
+      trendGood: "up",
+      drilldownTab: "predictability",
     },
   ];
 
@@ -263,10 +399,10 @@ export function computeDashboardData(
     const devName = it.assignee || "Unassigned";
     const existing = devMap.get(devName) || { assigned: 0, done: 0, deliveredSP: 0, totalSP: 0, team: it.team || it.podName };
     existing.assigned += 1;
-    existing.totalSP += it.storyPoints || 3;
+    existing.totalSP += it.storyPoints || 0;
     if (DONE_STATUSES.has(it.status)) {
       existing.done += 1;
-      existing.deliveredSP += it.storyPoints || 3;
+      existing.deliveredSP += it.storyPoints || 0;
     }
     devMap.set(devName, existing);
   });
@@ -297,12 +433,57 @@ export function computeDashboardData(
     statusMap.set(it.status, (statusMap.get(it.status) || 0) + 1);
   });
 
+  // Average time from creation to resolution for completed items (real data).
+  const resolvedDurations: number[] = [];
+  activeItems.forEach((it) => {
+    if (!DONE_STATUSES.has(it.status)) return;
+    if (!it.createdDate || !it.resolutionDate) return;
+    const created = Date.parse(it.createdDate);
+    const resolved = Date.parse(it.resolutionDate);
+    if (!Number.isNaN(created) && !Number.isNaN(resolved) && resolved >= created) {
+      resolvedDurations.push((resolved - created) / 86400000);
+    }
+  });
+  const avgResolutionDays = resolvedDurations.length
+    ? Number(
+        (
+          resolvedDurations.reduce((a, b) => a + b, 0) /
+          resolvedDurations.length
+        ).toFixed(1)
+      )
+    : 0;
+
+  // Planned vs unplanned: work created after the active sprint started counts
+  // as unplanned. Falls back to all-planned when no sprint dates are known.
+  const activeSprintName = windowNames.find(
+    (name) => sprintMeta[name]?.state === "active"
+  );
+  const activeStart = activeSprintName
+    ? Date.parse(sprintMeta[activeSprintName]?.startDate || "")
+    : NaN;
+  let plannedCount = 0;
+  let unplannedCount = 0;
+  if (!Number.isNaN(activeStart)) {
+    activeItems.forEach((it) => {
+      const created = Date.parse(it.createdDate || "");
+      if (!Number.isNaN(created) && created > activeStart) unplannedCount += 1;
+      else plannedCount += 1;
+    });
+  } else {
+    plannedCount = activeItems.length;
+  }
+  const plannedWorkPct =
+    plannedCount + unplannedCount > 0
+      ? Math.round((plannedCount / (plannedCount + unplannedCount)) * 100)
+      : 0;
+
   const sprintAnalysis: SprintAnalysisData = {
-    scopeChurnPct: Math.round(carryOver * 0.7),
-    plannedWorkPct: 88,
-    unplannedWorkPct: 12,
-    avgCycleTimeDays: 4.2,
-    avgLeadTimeDays: 7.8,
+    // Scope churn needs the changelog; we only report what we can derive.
+    scopeChurnPct: 0,
+    plannedWorkPct,
+    unplannedWorkPct: plannedWorkPct > 0 ? 100 - plannedWorkPct : 0,
+    avgCycleTimeDays: avgResolutionDays,
+    avgLeadTimeDays: avgResolutionDays,
     workTypeBreakdown: Array.from(typeMap.entries()).map(([type, stat]) => ({
       type,
       count: stat.count,
@@ -311,16 +492,14 @@ export function computeDashboardData(
     statusBreakdown: Array.from(statusMap.entries()).map(([status, count]) => {
       let color = "#585f6b";
       if (DONE_STATUSES.has(status)) color = "#0e7c3e";
-      else if (status === "In Progress" || status === "Selected for Development") color = "#0052cc";
-      else if (status === "Testing" || status === "Code Review") color = "#f2a900";
+      else if (/progress|development|review/i.test(status)) color = "#0052cc";
+      else if (/test/i.test(status)) color = "#f2a900";
       return { status, count, color };
     }),
   };
 
-  // 9. Quality Metrics
-  const bugs = activeItems.filter(
-    (it) => it.workType === "Bug" || it.summary.toLowerCase().includes("bug") || it.summary.toLowerCase().includes("defect")
-  );
+  // 9. Quality Metrics — real bugs only (issue type Bug).
+  const bugs = activeItems.filter((it) => it.workType === "Bug");
   const resolvedBugs = bugs.filter((it) => DONE_STATUSES.has(it.status));
   const priorityCountMap = new Map<string, number>();
   activeItems.forEach((it) => {
@@ -329,11 +508,17 @@ export function computeDashboardData(
   });
 
   const quality: QualityData = {
-    defectDensity: summary.totalStoryPoints > 0 ? Number(((bugs.length / summary.totalStoryPoints) * 100).toFixed(1)) : 3.5,
-    totalBugs: bugs.length || 18,
-    resolvedBugs: resolvedBugs.length || 14,
-    resolutionRate: bugs.length > 0 ? Math.round((resolvedBugs.length / bugs.length) * 100) : 78,
-    avgResolutionDays: 3.2,
+    defectDensity:
+      summary.totalStoryPoints > 0
+        ? Number(((bugs.length / summary.totalStoryPoints) * 100).toFixed(1))
+        : 0,
+    totalBugs: bugs.length,
+    resolvedBugs: resolvedBugs.length,
+    resolutionRate:
+      bugs.length > 0
+        ? Math.round((resolvedBugs.length / bugs.length) * 100)
+        : 0,
+    avgResolutionDays,
     priorityDistribution: Array.from(priorityCountMap.entries()).map(([priority, count]) => {
       let color = "#585f6b";
       if (priority === "Highest" || priority === "High") color = "#c03a2b";
@@ -347,16 +532,27 @@ export function computeDashboardData(
   const predictability: PredictabilityData = {
     score: predictabilityScore,
     varianceSP: Math.abs(summary.totalStoryPoints - summary.completedStoryPoints),
-    epicsOnSchedule: 92,
+    epicsOnSchedule: predictabilityScore,
     history: sprintStats.map((s) => ({
       sprint: s.name,
       planned: s.planned,
       delivered: s.done,
-      sayDo: s.committed > 0 ? Math.min(Math.round((s.done / s.committed) * 100), 100) : 80,
+      sayDo: s.committed > 0 ? Math.min(Math.round((s.done / s.committed) * 100), 100) : 0,
     })),
   };
 
-  // 11. Trends Details
+  // 11. Trends Details — cumulative counts are running sums of real sprint data.
+  let cumulativeIssues = 0;
+  let cumulativeDoneIssues = 0;
+  const totalIssuesSeries = sprintStats.map((s) => {
+    cumulativeIssues += s.issueCount;
+    return cumulativeIssues;
+  });
+  const completedIssuesSeries = sprintStats.map((s) => {
+    cumulativeDoneIssues += s.doneCount;
+    return cumulativeDoneIssues;
+  });
+
   const trends: TrendsData = {
     velocityTrend: {
       labels: sprintStats.map((s) => s.name),
@@ -368,8 +564,8 @@ export function computeDashboardData(
     },
     cumulativeThroughput: {
       labels: sprintStats.map((s) => s.name),
-      totalIssues: sprintStats.map((_, idx) => (idx + 1) * Math.round(summary.totalIssues / 4)),
-      completedIssues: sprintStats.map((_, idx) => (idx + 1) * Math.round(summary.completedIssues / 4)),
+      totalIssues: totalIssuesSeries,
+      completedIssues: completedIssuesSeries,
     },
   };
 
@@ -377,19 +573,19 @@ export function computeDashboardData(
   const unfinishedItems = activeItems.filter((it) => !DONE_STATUSES.has(it.status));
 
   const getReason = (it: JiraWorkItem) => {
-    if (it.workType === "Bug" || it.summary.toLowerCase().includes("bug")) {
+    if (it.workType === "Bug") {
       return "Defect / Unresolved Bug";
     }
     if ((it.storyPoints || 0) >= 8) {
       return "High Complexity Scope (8+ SP)";
     }
-    if (it.status === "In Progress") {
-      return "In-Progress Bottleneck";
-    }
-    if (it.status === "Code Review" || it.status === "Testing") {
+    if (/review|qa|test/i.test(it.status)) {
       return "Review / QA Pipeline Delay";
     }
-    if (it.status === "Selected for Development") {
+    if (/progress|development/i.test(it.status)) {
+      return "In-Progress Bottleneck";
+    }
+    if (/todo|to do|backlog|ready|selected|pending/i.test(it.status)) {
       return "Delayed Start / Backlog Delay";
     }
     return "Carried-Over Scope";
@@ -409,7 +605,7 @@ export function computeDashboardData(
       count: 0,
       reasons: new Map<string, number>(),
     };
-    const sp = it.storyPoints || 3;
+    const sp = it.storyPoints || 0;
     if (DONE_STATUSES.has(it.status)) {
       existing.completedSP += sp;
     } else {
@@ -470,7 +666,7 @@ export function computeDashboardData(
     const r = getReason(it);
     reasonFreq.set(r, (reasonFreq.get(r) || 0) + 1);
   });
-  let primaryDriver = "In-Progress Execution Bottleneck";
+  let primaryDriver = unfinishedItems.length > 0 ? "In-Progress Execution Bottleneck" : "No slippage detected";
   let maxDriverCount = 0;
   reasonFreq.forEach((cnt, r) => {
     if (cnt > maxDriverCount) {
@@ -501,12 +697,13 @@ export function computeDashboardData(
     assignee: it.assignee || "Unassigned",
     priority: it.priority || "Medium",
     createdDate: it.createdDate || "",
+    isDone: DONE_STATUSES.has(it.status),
   }));
 
-  // Sprints filter list
+  // Sprints filter list — only sprints that have work and are inside the plot window.
   const sprints: SprintOption[] = [
-    { id: "all", name: "All Sprints", sub: `All ${sprintNames.length} sprints` },
-    ...sprintNames.map((name, i) => ({
+    { id: "all", name: "All Sprints", sub: `Latest ${windowNames.length} sprints` },
+    ...windowNames.map((name, i) => ({
       id: name,
       name: sprintDisplayName(name),
       sub: `Sprint ${i + 1}`,

@@ -41,15 +41,38 @@ interface MetricCardProps {
   trend: number;
   trendLabel: string;
   color: "blue" | "green" | "red";
+  trendGood?: "up" | "down";
+  onOpen?: () => void;
 }
 
-export function MetricCard({ title, value, subtitle, trend, trendLabel, color }: MetricCardProps) {
+export function MetricCard({
+  title,
+  value,
+  subtitle,
+  trend,
+  trendLabel,
+  color,
+  trendGood = "up",
+  onOpen,
+}: MetricCardProps) {
   const c = colorMap[color];
-  const isPositive = trend >= 0;
+  const isUp = trend > 0;
+  const isFlat = trend === 0;
+  const isGood = trendGood === "down" ? trend < 0 : trend > 0;
   const Icon = ICONS[title];
 
   return (
-    <div className={`${c.bg} rounded-lg p-4 border border-jira-border/50`}>
+    <button
+      type="button"
+      onClick={onOpen}
+      disabled={!onOpen}
+      title={onOpen ? `View details for ${title}` : undefined}
+      className={`${c.bg} w-full text-left rounded-lg p-4 border border-jira-border/50 transition ${
+        onOpen
+          ? "cursor-pointer hover:shadow-md hover:border-jira-blue/40"
+          : "cursor-default"
+      }`}
+    >
       <div className="flex items-start justify-between mb-3">
         <h3 className="text-sm font-bold text-jira-text-muted uppercase tracking-wider">{title}</h3>
       </div>
@@ -58,9 +81,17 @@ export function MetricCard({ title, value, subtitle, trend, trendLabel, color }:
         {Icon && <Icon className={`w-7 h-7 ${c.text}`} />}
       </div>
       <p className="text-xs text-jira-text-muted mb-3">{subtitle}</p>
-      <div className={`flex items-center gap-1.5 text-xs font-bold ${isPositive ? "text-jira-green" : "text-jira-red"}`}>
+      <div
+        className={`flex items-center gap-1.5 text-xs font-bold ${
+          isFlat
+            ? "text-jira-text-muted"
+            : isGood
+            ? "text-jira-green"
+            : "text-jira-red"
+        }`}
+      >
         <svg
-          className={`w-3 h-3 ${isPositive ? "text-jira-green" : "text-jira-red"}`}
+          className="w-3 h-3"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -69,12 +100,20 @@ export function MetricCard({ title, value, subtitle, trend, trendLabel, color }:
             strokeLinecap="round"
             strokeLinejoin="round"
             strokeWidth={2}
-            d={isPositive ? "M5 15l7-7 7 7" : "M5 9l7 7 7-7"}
+            d={isFlat ? "M5 12h14" : isUp ? "M5 15l7-7 7 7" : "M5 9l7 7 7-7"}
           />
         </svg>
-        <span>{isPositive ? "+" : ""}{trend}%</span>
+        <span>
+          {isFlat ? "0" : isUp ? "+" : ""}
+          {trend}%
+        </span>
         <span className="text-jira-text-muted">{trendLabel}</span>
       </div>
-    </div>
+      {onOpen && (
+        <span className="mt-2 inline-block text-[11px] font-semibold text-jira-blue">
+          View cause →
+        </span>
+      )}
+    </button>
   );
 }

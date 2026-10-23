@@ -9,11 +9,7 @@ interface DiagnosisTabProps {
   jiraDomain?: string;
 }
 
-export function DiagnosisTab({
-  data,
-  podName,
-  jiraDomain = "https://one-atlas-yzpp.atlassian.net",
-}: DiagnosisTabProps) {
+export function DiagnosisTab({ data, podName, jiraDomain }: DiagnosisTabProps) {
   const [selectedContributor, setSelectedContributor] = useState<string | null>(null);
 
   const filteredIssues = selectedContributor
@@ -196,7 +192,11 @@ export function DiagnosisTab({
                   <tr key={issue.key} className="hover:bg-jira-bg/30 transition-colors">
                     <td className="px-5 py-3 font-semibold text-xs whitespace-nowrap">
                       <a
-                        href={`${jiraDomain}/browse/${issue.key}`}
+                        href={
+                          jiraDomain
+                            ? `${jiraDomain}/browse/${issue.key}`
+                            : undefined
+                        }
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-jira-blue hover:underline inline-flex items-center gap-1"

@@ -24,6 +24,15 @@ export interface MetricCardData {
   trend: number;
   trendLabel: string;
   color: "blue" | "green" | "red";
+  drilldownTab?: string;
+  trendGood?: "up" | "down";
+}
+
+export interface SprintMeta {
+  name: string;
+  state?: string;
+  startDate?: string;
+  endDate?: string;
 }
 
 export interface VelocityChartData {
@@ -104,6 +113,7 @@ export interface IssueRow {
   assignee: string;
   priority: string;
   createdDate: string;
+  isDone: boolean;
 }
 
 export interface ContributorSlippage {
@@ -154,6 +164,7 @@ export interface DashboardData {
   trends: TrendsData;
   diagnosis: DiagnosisData;
   issueList: IssueRow[];
+  jiraBaseUrl?: string;
 }
 
 export interface DashboardFilters {

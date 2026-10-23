@@ -92,30 +92,11 @@ export default function DashboardPage() {
     };
   }, [selectedPod, selectedQuarter, selectedSprint]);
 
-  const pods = dashboardData?.pods || [
-    { id: "all", key: "ALL", name: "All Pods", sub: "5 pods" },
-    { id: "CRM", key: "CRM", name: "Customer Relationship Management" },
-    { id: "DTP", key: "DTP", name: "Data Technology Platform" },
-    { id: "ERP", key: "ERP", name: "Enterprise Resource Planning" },
-    { id: "SEC", key: "SEC", name: "Security Engineering" },
-    { id: "SRG", key: "SRG", name: "Service Reliability Group" },
-  ];
+  const pods = dashboardData?.pods || [];
 
-  const quarters = dashboardData?.quarters || [
-    { id: "all", name: "All Quarters" },
-    { id: "CY26 PI.1", name: "CY26 PI.1" },
-    { id: "CY26 PI.2", name: "CY26 PI.2" },
-    { id: "CY26 PI.3", name: "CY26 PI.3" },
-    { id: "CY26 PI.4", name: "CY26 PI.4" },
-  ];
+  const quarters = dashboardData?.quarters || [];
 
-  const sprints = dashboardData?.sprints || [
-    { id: "all", name: "All Sprints" },
-    { id: "2026-Q3 Iteration 1", name: "Iteration 1" },
-    { id: "2026-Q3 Iteration 2", name: "Iteration 2" },
-    { id: "2026-Q3 Iteration 3", name: "Iteration 3" },
-    { id: "2026-Q3 Iteration 4", name: "Iteration 4" },
-  ];
+  const sprints = dashboardData?.sprints || [];
 
   const metrics = dashboardData?.metrics || [];
   const selectedPodName = pods.find((p) => p.id === selectedPod)?.name || "All Pods";
@@ -217,7 +198,18 @@ export default function DashboardPage() {
               {/* Dynamic KPI Metric Cards */}
               <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {metrics.map((card) => (
-                  <MetricCard key={card.title} {...card} />
+                  <MetricCard
+                    key={card.title}
+                    {...card}
+                    onOpen={
+                      card.drilldownTab
+                        ? () => {
+                            setActiveTab(card.drilldownTab!);
+                            window.scrollTo({ top: 0, behavior: "smooth" });
+                          }
+                        : undefined
+                    }
+                  />
                 ))}
               </section>
 
@@ -258,7 +250,11 @@ export default function DashboardPage() {
 
           {/* Delivery Diagnosis Tab */}
           {activeTab === "diagnosis" && dashboardData && (
-            <DiagnosisTab data={dashboardData.diagnosis} podName={selectedPodName} />
+            <DiagnosisTab
+              data={dashboardData.diagnosis}
+              podName={selectedPodName}
+              jiraDomain={dashboardData.jiraBaseUrl}
+            />
           )}
 
           {/* Trends Tab */}
@@ -268,7 +264,11 @@ export default function DashboardPage() {
 
           {/* Issues Tab */}
           {activeTab === "issues" && dashboardData && (
-            <IssuesTab issues={dashboardData.issueList} podName={selectedPodName} />
+            <IssuesTab
+              issues={dashboardData.issueList}
+              podName={selectedPodName}
+              jiraDomain={dashboardData.jiraBaseUrl}
+            />
           )}
         </div>
       </div>

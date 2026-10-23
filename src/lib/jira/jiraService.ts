@@ -1,5 +1,5 @@
 import { isJiraConfigured, JIRA_CONFIG } from "./config";
-import { DashboardData, DashboardFilters, JiraWorkItem } from "./types";
+import { DashboardData, DashboardFilters, JiraWorkItem, SprintMeta } from "./types";
 import { computeDashboardData } from "./metricsEngine";
 
 /**
@@ -30,8 +30,14 @@ export function quarterFromSprint(sprintName: string): string {
 /**
  * Fetches all issues from Jira Cloud with pagination.
  * Read-only. Uses Basic auth from environment variables.
+ * Returns the mapped work items plus sprint metadata (state/dates) collected
+ * from the Sprint field, so the dashboard can order sprints and reason about
+ * the active/future ones without extra board API calls.
  */
-async function fetchAllLiveJiraIssues(): Promise<JiraWorkItem[]> {
+async function fetchAllLiveJiraIssues(): Promise<{
+  items: JiraWorkItem[];
+  sprintMeta: Record<string, SprintMeta>;
+}> {
   const { host, email, apiToken } = JIRA_CONFIG;
   const authHeader = Buffer.from(`${email}:${apiToken}`).toString("base64");
   const url = `${host.replace(/\/+$/, "")}/rest/api/3/search/jql`;
@@ -57,14 +63,10 @@ async function fetchAllLiveJiraIssues(): Promise<JiraWorkItem[]> {
         "assignee",
         "priority",
         "created",
-        "updated",
         "resolutiondate",
-        "duedate",
         spField,
         sprintField,
         podField,
-        "fixVersions",
-        "labels",
       ],
     };
 
@@ -96,7 +98,9 @@ async function fetchAllLiveJiraIssues(): Promise<JiraWorkItem[]> {
     nextPageToken = json.nextPageToken;
   }
 
-  return allIssues.map((issue: Record<string, unknown>) => {
+  const sprintMeta: Record<string, SprintMeta> = {};
+
+  const items = allIssues.map((issue: Record<string, unknown>) => {
     const fields = (issue.fields || {}) as Record<string, unknown>;
     const project = (fields.project || {}) as Record<string, string>;
     const issuetype = (fields.issuetype || {}) as Record<string, string>;
@@ -115,10 +119,19 @@ async function fetchAllLiveJiraIssues(): Promise<JiraWorkItem[]> {
     if (Array.isArray(sprintObj)) {
       for (const s of sprintObj) {
         if (s && typeof s.name === "string") {
+          const meta = s as { state?: string; startDate?: string; endDate?: string };
           s.name.split(",").forEach((part: string) => {
             const trimmed = part.trim();
-            if (trimmed && !sprints.includes(trimmed)) {
-              sprints.push(trimmed);
+            if (trimmed) {
+              if (!sprintMeta[trimmed]) {
+                sprintMeta[trimmed] = {
+                  name: trimmed,
+                  state: meta.state,
+                  startDate: meta.startDate,
+                  endDate: meta.endDate,
+                };
+              }
+              if (!sprints.includes(trimmed)) sprints.push(trimmed);
             }
           });
         }
@@ -170,13 +183,25 @@ async function fetchAllLiveJiraIssues(): Promise<JiraWorkItem[]> {
       updatedDate: String(fields.updated || ""),
     };
   });
+
+  return { items, sprintMeta };
 }
 
 /**
  * Returns dashboard data from live Jira only.
  * No dummy data, no CSV, no JSON fallback.
  * If Jira is not configured, throws an error.
+ *
+ * Raw issues are cached in memory for a short TTL so changing a filter does not
+ * re-download the whole portfolio from Jira on every request.
  */
+const CACHE_TTL_MS = Number(process.env.JIRA_CACHE_TTL_MS || 300000);
+let cache: {
+  at: number;
+  items: JiraWorkItem[];
+  sprintMeta: Record<string, SprintMeta>;
+} | null = null;
+
 export async function getDashboardData(
   filters: DashboardFilters = { podId: "all", quarterId: "all", sprintId: "all" }
 ): Promise<DashboardData> {
@@ -186,6 +211,15 @@ export async function getDashboardData(
     );
   }
 
-  const liveItems = await fetchAllLiveJiraIssues();
-  return computeDashboardData(liveItems, filters);
+  const now = Date.now();
+  if (!cache || now - cache.at > CACHE_TTL_MS) {
+    const live = await fetchAllLiveJiraIssues();
+    cache = { at: now, items: live.items, sprintMeta: live.sprintMeta };
+  }
+
+  const baseUrl = (JIRA_CONFIG.host || "").replace(/\/+$/, "");
+  return {
+    ...computeDashboardData(cache.items, filters, cache.sprintMeta),
+    jiraBaseUrl: baseUrl,
+  };
 }

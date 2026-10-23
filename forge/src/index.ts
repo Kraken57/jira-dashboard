@@ -183,27 +183,104 @@ function calculateKPIs(items: any[], filters: any) {
     completedStoryPoints: val.doneSp,
   }));
 
-  // Group by sprint
-  const sprintMap = new Map<string, { count: number; sp: number }>();
+  // Group by sprint (real committed/done SP and issue counts)
+  const sprintMap = new Map<
+    string,
+    { count: number; sp: number; doneSp: number; doneCount: number }
+  >();
   for (const item of items) {
     for (const sprint of item.sprints) {
       if (!sprintMap.has(sprint)) {
-        sprintMap.set(sprint, { count: 0, sp: 0 });
+        sprintMap.set(sprint, { count: 0, sp: 0, doneSp: 0, doneCount: 0 });
       }
       const s = sprintMap.get(sprint)!;
+      const sp = item.storyPoints || 0;
       s.count++;
-      s.sp += item.storyPoints || 0;
+      s.sp += sp;
+      if (isDoneStatus(item.status)) {
+        s.doneSp += sp;
+        s.doneCount++;
+      }
     }
   }
 
-  const sprints = Array.from(sprintMap.entries()).map(([name, val]) => ({
-    id: name,
-    name,
-    issueCount: val.count,
-    storyPoints: val.sp,
-    count: val.count,
-    sp: val.sp,
-  }));
+  const allSprints = Array.from(sprintMap.entries())
+    .filter(([, val]) => val.count > 0)
+    .map(([name, val]) => ({
+      id: name,
+      name,
+      issueCount: val.count,
+      storyPoints: Math.round(val.sp),
+      doneStoryPoints: Math.round(val.doneSp),
+      doneIssueCount: val.doneCount,
+    }));
+
+  // Plot only the latest five sprints so the charts stay readable.
+  const sprints = allSprints.slice(-5);
+
+  const completedSeries = sprints.map((s) => s.doneStoryPoints);
+  const committedSeries = sprints.map((s) => s.storyPoints);
+  const lastThree = completedSeries.slice(Math.max(completedSeries.length - 3, 0));
+  const avgLastThree = lastThree.length
+    ? Number((lastThree.reduce((a, b) => a + b, 0) / lastThree.length).toFixed(1))
+    : 0;
+  const lastDone = completedSeries[completedSeries.length - 1] || 0;
+  const prevDone = completedSeries[completedSeries.length - 2] || 0;
+  const trendStatus =
+    completedSeries.length < 2
+      ? ("stable" as const)
+      : lastDone > prevDone
+      ? ("rising" as const)
+      : lastDone < prevDone
+      ? ("falling" as const)
+      : ("stable" as const);
+
+  const savedSayDo = Math.round(sayDo * 100);
+  const savedCarry = Math.round(carryover * 100);
+  const lastSprint = sprints[sprints.length - 1];
+  const prevSprint = sprints[sprints.length - 2];
+  const sprintSayDo = (s?: typeof lastSprint) =>
+    s && s.storyPoints > 0 ? Math.round((s.doneStoryPoints / s.storyPoints) * 100) : 0;
+  const sprintCarry = (s?: typeof lastSprint) =>
+    s && s.storyPoints > 0
+      ? Math.round(((s.storyPoints - s.doneStoryPoints) / s.storyPoints) * 100)
+      : 0;
+  const sayDoTrend =
+    lastSprint && prevSprint ? sprintSayDo(lastSprint) - sprintSayDo(prevSprint) : 0;
+  const carryTrend =
+    lastSprint && prevSprint ? sprintCarry(lastSprint) - sprintCarry(prevSprint) : 0;
+  const velocityTrendPct =
+    prevDone > 0 ? Math.round(((lastDone - prevDone) / prevDone) * 100) : lastDone > 0 ? 100 : 0;
+  const hitting = sprints.filter(
+    (s) => s.storyPoints > 0 && s.doneStoryPoints / s.storyPoints >= 0.9
+  ).length;
+  const predictabilityScore = sprints.length
+    ? Math.round((hitting / sprints.length) * 100)
+    : 0;
+
+  const podsWithAll = [
+    {
+      id: "all",
+      key: "ALL",
+      name: "All Pods",
+      sub: `${pods.length} pods`,
+      issueCount: totalIssues,
+      storyPoints: totalStoryPoints,
+      completedStoryPoints: completedStoryPoints,
+    },
+    ...pods.map((p) => ({ ...p, key: p.id })),
+  ];
+
+  const quarterSet = new Set<string>();
+  for (const item of items) {
+    if (item.quarter && item.quarter !== "All") quarterSet.add(item.quarter);
+  }
+  const quarters = [
+    { id: "all", name: "All Quarters", sub: "Full Portfolio" },
+    ...Array.from(quarterSet)
+      .sort()
+      .map((q) => ({ id: q, name: q })),
+  ];
 
   return {
     summary: {
@@ -214,56 +291,68 @@ function calculateKPIs(items: any[], filters: any) {
       sayDoRatio: sayDo,
       carryoverRatio: carryover,
     },
-    pods,
-    sprints,
+    pods: podsWithAll,
+    quarters,
+    sprints: [
+      { id: "all", name: "All Sprints", sub: `Latest ${sprints.length} sprints` },
+      ...sprints,
+    ],
     metrics: [
       {
-        title: "Total Issues",
-        value: totalIssues,
-        subtitle: "Across all sprints",
-        trend: 0,
-        trendLabel: "",
-        color: "blue" as const,
-      },
-      {
-        title: "Total Story Points",
-        value: totalStoryPoints,
-        subtitle: "Committed",
-        trend: 0,
-        trendLabel: "",
-        color: "blue" as const,
-      },
-      {
         title: "Say/Do Ratio",
-        value: Math.round(sayDo * 100),
-        subtitle: "% delivered",
-        trend: 0,
-        trendLabel: "",
-        color: sayDo >= 0.8 ? ("green" as const) : ("red" as const),
+        value: `${savedSayDo}%`,
+        subtitle: "Completed SP vs committed SP",
+        trend: sayDoTrend,
+        trendLabel: sayDoTrend === 0 ? "no change vs last sprint" : "vs last sprint",
+        color: savedSayDo >= 80 ? ("green" as const) : savedSayDo >= 65 ? ("blue" as const) : ("red" as const),
+        trendGood: "up" as const,
+        drilldownTab: "diagnosis",
       },
       {
-        title: "Carryover Ratio",
-        value: Math.round(carryover * 100),
-        subtitle: "% not delivered",
-        trend: 0,
-        trendLabel: "",
-        color: carryover <= 0.2 ? ("green" as const) : ("red" as const),
+        title: "Sprint Carry Over",
+        value: `${savedCarry}%`,
+        subtitle: "Unfinished SP carried to next sprint",
+        trend: carryTrend,
+        trendLabel: carryTrend === 0 ? "no change vs last sprint" : "vs last sprint",
+        color: savedCarry <= 18 ? ("green" as const) : savedCarry <= 28 ? ("blue" as const) : ("red" as const),
+        trendGood: "down" as const,
+        drilldownTab: "diagnosis",
+      },
+      {
+        title: "Team/Epic Velocity",
+        value: `${Math.round(avgLastThree)} pts`,
+        subtitle: "Avg done SP over last 3 sprints",
+        trend: velocityTrendPct,
+        trendLabel: velocityTrendPct === 0 ? "no change vs last sprint" : "vs last sprint",
+        color: "blue" as const,
+        trendGood: "up" as const,
+        drilldownTab: "trends",
+      },
+      {
+        title: "Feature Predictability",
+        value: `${predictabilityScore}%`,
+        subtitle: "Sprints hitting 90% of commitment",
+        trend: sayDoTrend,
+        trendLabel: sayDoTrend === 0 ? "no change vs last sprint" : "vs last sprint",
+        color: predictabilityScore >= 85 ? ("green" as const) : ("blue" as const),
+        trendGood: "up" as const,
+        drilldownTab: "predictability",
       },
     ],
     velocity: {
       labels: sprints.map((s) => s.name),
-      completed: sprints.map(() => 0),
-      committed: sprints.map((s) => s.sp),
-      totalFinished: completedStoryPoints,
-      avgLastThree: 0,
-      trendStatus: "stable" as const,
+      completed: completedSeries,
+      committed: committedSeries,
+      totalFinished: completedSeries.reduce((a, b) => a + b, 0),
+      avgLastThree,
+      trendStatus,
     },
     delivery: {
       labels: sprints.map((s) => s.name),
-      planned: sprints.map((s) => s.sp),
-      committed: sprints.map((s) => s.sp),
-      done: sprints.map((s) => 0), // placeholder
-      carried: sprints.map((s) => 0), // placeholder
+      planned: committedSeries,
+      committed: committedSeries,
+      done: completedSeries,
+      carried: sprints.map((s) => Math.max(s.storyPoints - s.doneStoryPoints, 0)),
     },
     developers: [],
     sprintAnalysis: {
@@ -284,21 +373,35 @@ function calculateKPIs(items: any[], filters: any) {
       priorityDistribution: [],
     },
     predictability: {
-      score: Math.round(sayDo * 100),
-      varianceSP: 0,
-      epicsOnSchedule: 0,
-      history: [],
+      score: predictabilityScore,
+      varianceSP: Math.abs(totalStoryPoints - completedStoryPoints),
+      epicsOnSchedule: predictabilityScore,
+      history: sprints.map((s) => ({
+        sprint: s.name,
+        planned: s.storyPoints,
+        delivered: s.doneStoryPoints,
+        sayDo: sprintSayDo(s),
+      })),
     },
     trends: {
       velocityTrend: {
         labels: sprints.map((s) => s.name),
-        velocity: sprints.map((s) => s.sp),
-        movingAvg: sprints.map((s) => s.sp),
+        velocity: completedSeries,
+        movingAvg: completedSeries.map((_, idx) => {
+          const slice = completedSeries.slice(0, idx + 1);
+          return Math.round(slice.reduce((a, b) => a + b, 0) / slice.length);
+        }),
       },
       cumulativeThroughput: {
         labels: sprints.map((s) => s.name),
-        totalIssues: sprints.map((s) => s.count),
-        completedIssues: sprints.map((s) => 0),
+        totalIssues: sprints.reduce<number[]>((acc, s) => {
+          acc.push((acc[acc.length - 1] || 0) + s.issueCount);
+          return acc;
+        }, []),
+        completedIssues: sprints.reduce<number[]>((acc, s) => {
+          acc.push((acc[acc.length - 1] || 0) + s.doneIssueCount);
+          return acc;
+        }, []),
       },
     },
     diagnosis: {
@@ -307,10 +410,22 @@ function calculateKPIs(items: any[], filters: any) {
       primaryDriver: "Incomplete work",
       atRiskContributorsCount: 0,
       contributors: [],
-      unfinishedIssues: items.filter(
-        (i) =>
-          i.status.toLowerCase() !== "done" && i.status.toLowerCase() !== "closed"
-      ).slice(0, 10),
+      unfinishedIssues: items
+        .filter((i) => !isDoneStatus(i.status))
+        .slice(0, 150)
+        .map((i) => ({
+          key: i.key,
+          summary: i.summary,
+          workType: i.workType,
+          status: i.status,
+          storyPoints: i.storyPoints || 0,
+          podKey: i.podKey,
+          podName: i.podName,
+          sprint: i.sprints.length > 0 ? i.sprints.join(", ") : "Backlog",
+          assignee: i.assignee || "Unassigned",
+          priority: i.priority || "Medium",
+          reason: "Carried-Over Scope",
+        })),
     },
     issueList: items.map((i) => ({
       key: i.key,
@@ -320,7 +435,7 @@ function calculateKPIs(items: any[], filters: any) {
       storyPoints: i.storyPoints,
       podKey: i.podKey,
       podName: i.podName,
-      sprint: i.sprints[0] || "",
+      sprint: i.sprints.length > 0 ? i.sprints.join(", ") : "Backlog",
       assignee: i.assignee,
       priority: i.priority,
       createdDate: i.createdDate,
@@ -344,14 +459,10 @@ resolver.define("getDashboardData", async (req) => {
       "assignee",
       "priority",
       "created",
-      "updated",
       "resolutiondate",
-      "duedate",
       config.storyPointsField,
       config.sprintField,
       config.podField,
-      "fixVersions",
-      "labels",
     ]);
 
     const items = issues.map((issue) => mapIssueToWorkItem(issue, config));
@@ -388,6 +499,7 @@ resolver.define("getDashboardData", async (req) => {
       issueList: kpis.issueList,
       summary: kpis.summary,
       calculated_at: new Date().toISOString(),
+      jiraBaseUrl: (process.env.JIRA_HOST || "").replace(/\/+$/, ""),
       source: "live_jira",
     };
   } catch (err) {
@@ -417,7 +529,7 @@ resolver.define("getEvidence", async (req) => {
       created: fields.created,
       updated: fields.updated,
       resolutiondate: fields.resolutiondate,
-      jira_url: `https://cdkglobal.atlassian.net/browse/${issue.key}`,
+      jira_url: `${(process.env.JIRA_HOST || "").replace(/\/+$/, "")}/browse/${issue.key}`,
       source: "live_jira",
     };
   } catch (err) {

@@ -35,9 +35,10 @@ interface VelocityChartProps {
 }
 
 function VelocityChart({ data }: VelocityChartProps) {
-  const { labels, completed, committed, totalFinished, avgLastThree, trendStatus } = data;
+  const { labels, completed, totalFinished, avgLastThree, trendStatus } = data;
   const rising = trendStatus === "rising";
   const falling = trendStatus === "falling";
+  const averageLine = labels.map(() => avgLastThree);
 
   return (
     <div className="bg-white border border-jira-border rounded-lg p-3 flex flex-col h-full shadow-sm">
@@ -59,10 +60,9 @@ function VelocityChart({ data }: VelocityChartProps) {
           />
           <span>{rising ? "Rising" : falling ? "Falling" : "Stable"} vs last sprint</span>
         </div>
-        <span className="text-xs font-bold text-jira-text">{totalFinished} SP finished</span>
       </div>
       <p className="text-[10px] text-jira-text-light mb-2">
-        Average last 3 sprints: {avgLastThree.toFixed(1)} SP
+        {totalFinished} SP finished in window · 3-sprint avg {avgLastThree.toFixed(1)} SP
       </p>
       <div className="h-48 overflow-x-auto min-w-0">
         <Chart
@@ -71,7 +71,7 @@ function VelocityChart({ data }: VelocityChartProps) {
             labels,
             datasets: [
               {
-                label: "Velocity (Done SP)",
+                label: "Done SP",
                 data: completed,
                 backgroundColor: COLORS.done,
                 borderRadius: 3,
@@ -79,18 +79,14 @@ function VelocityChart({ data }: VelocityChartProps) {
                 categoryPercentage: 0.7,
               },
               {
-                label: "Committed SP",
-                data: committed,
+                label: "3-sprint avg",
+                data: averageLine,
                 type: "line",
                 showLine: true,
                 borderColor: COLORS.committed,
                 borderWidth: 2,
                 borderDash: [6, 4],
-                pointRadius: 4,
-                pointBackgroundColor: COLORS.committed,
-                pointBorderColor: "#ffffff",
-                pointBorderWidth: 2,
-                pointStyle: "circle",
+                pointRadius: 0,
                 fill: false,
                 tension: 0,
                 yAxisID: "y",
@@ -133,7 +129,7 @@ interface DeliveryChartProps {
 }
 
 function DeliveryChart({ data }: DeliveryChartProps) {
-  const { labels, planned, committed, done, carried } = data;
+  const { labels, committed, done, carried } = data;
 
   return (
     <div className="bg-white border border-jira-border rounded-lg p-3 flex flex-col h-full shadow-sm">
@@ -145,14 +141,6 @@ function DeliveryChart({ data }: DeliveryChartProps) {
           data={{
             labels,
             datasets: [
-              {
-                label: "Planned",
-                data: planned,
-                backgroundColor: COLORS.planned,
-                borderRadius: 2,
-                barPercentage: 0.5,
-                categoryPercentage: 0.7,
-              },
               {
                 label: "Committed",
                 data: committed,
@@ -217,20 +205,20 @@ interface VelocityGridProps {
 
 export function VelocityGrid({ velocity, delivery }: VelocityGridProps) {
   const defaultVelocity: VelocityChartData = {
-    labels: ["Iteration 1", "Iteration 2", "Iteration 3", "Iteration 4"],
-    completed: [32, 38, 28, 35],
-    committed: [39, 41, 34, 37],
-    totalFinished: 133,
-    avgLastThree: 33.7,
-    trendStatus: "rising",
+    labels: [],
+    completed: [],
+    committed: [],
+    totalFinished: 0,
+    avgLastThree: 0,
+    trendStatus: "stable",
   };
 
   const defaultDelivery: DeliveryChartData = {
-    labels: ["Iteration 1", "Iteration 2", "Iteration 3", "Iteration 4"],
-    planned: [40, 42, 35, 38],
-    committed: [39, 41, 34, 37],
-    done: [32, 38, 28, 35],
-    carried: [8, 4, 7, 3],
+    labels: [],
+    planned: [],
+    committed: [],
+    done: [],
+    carried: [],
   };
 
   return (
