@@ -14,6 +14,7 @@ import { join } from "node:path";
 
 const ROUTE = join(process.cwd(), "src", "app", "api", "jira", "route.ts");
 const BACKUP = `${ROUTE}.localhost.bak`;
+const STUB_MARKER = "Static stub for the Forge build";
 
 const STUB = `import { NextResponse } from "next/server";
 
@@ -49,12 +50,23 @@ if (!existsSync(ROUTE)) {
 
 // Recover from an interrupted build that left the static stub in place.
 if (existsSync(BACKUP)) {
-  console.log("[build-forge] Recovering original /api/jira route...");
-  rmSync(ROUTE, { force: true });
-  renameSync(BACKUP, ROUTE);
+  const current = readFileSync(ROUTE, "utf8");
+  if (current.includes(STUB_MARKER)) {
+    console.log("[build-forge] Recovering original /api/jira route...");
+    rmSync(ROUTE, { force: true });
+    renameSync(BACKUP, ROUTE);
+  } else {
+    console.log("[build-forge] Discarding stale route backup...");
+    rmSync(BACKUP, { force: true });
+  }
 }
 
 const original = readFileSync(ROUTE, "utf8");
+if (original.includes(STUB_MARKER)) {
+  throw new Error(
+    "src/app/api/jira/route.ts is the Forge stub, not the real API route. Restore it with: git checkout -- src/app/api/jira/route.ts"
+  );
+}
 
 try {
   console.log("[build-forge] Swapping /api/jira route for static stub...");
