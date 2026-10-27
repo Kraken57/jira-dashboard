@@ -380,10 +380,10 @@ Four stat cards plus work-type and status rows. All open `IssuesModal`:
 
 | Element | Popup issues |
 |---|---|
-| Total Work Items | all |
-| Completed (Done) | `isDone` |
-| In Flight | `!isDone` |
-| Defect Density | `workType === "Bug"` |
+| Total Features | `Feature` items (falls back to `Epic` when the site has no Feature type) |
+| Total Stories | `workType === "Story"` |
+| Completed Stories | stories with `isDone` |
+| In Flight | stories with `!isDone` |
 | Work-type row | matching `workType` |
 | Status row | matching `status` |
 
