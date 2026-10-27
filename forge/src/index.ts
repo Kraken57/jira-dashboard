@@ -489,7 +489,7 @@ function calculateKPIs(items: any[], filters: any) {
         trendLabel: velocityTrendPct === 0 ? "no change vs last sprint" : "vs last sprint",
         color: "blue" as const,
         trendGood: "up" as const,
-        drilldownTab: "trends",
+        drilldownTab: "executive",
       },
       {
         title: "Future Predictability",

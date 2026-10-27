@@ -14,7 +14,7 @@ import { DeveloperTab } from "@/components/tabs/DeveloperTab";
 import { SprintAnalysisTab } from "@/components/tabs/SprintAnalysisTab";
 import { QualityTab } from "@/components/tabs/QualityTab";
 import { PredictabilityTab } from "@/components/tabs/PredictabilityTab";
-import { TrendsTab } from "@/components/tabs/TrendsTab";
+import { TrendsCharts } from "@/components/TrendsCharts";
 import { DiagnosisTab } from "@/components/tabs/DiagnosisTab";
 import { IssuesTab } from "@/components/tabs/IssuesTab";
 
@@ -26,7 +26,6 @@ const TABS = [
   { id: "quality", label: "Quality" },
   { id: "predictability", label: "Predictability" },
   { id: "diagnosis", label: "Delivery Diagnosis" },
-  { id: "trends", label: "Trends" },
   { id: "issues", label: "Issues" },
 ];
 
@@ -40,12 +39,11 @@ const TAB_FILTERS: Record<string, FilterKey[]> = {
   quality: ["pod", "quarter", "sprint"],
   predictability: ["pod", "quarter"],
   diagnosis: ["pod", "quarter", "sprint", "status"],
-  trends: ["pod", "quarter", "window"],
   issues: ["pod", "quarter", "sprint"],
 };
 
 const BASE_DEFAULT = { pod: "all", quarter: "all", sprint: "all" };
-const EXTRA_DEFAULT = { developer: "all", status: "all", window: "5" };
+const EXTRA_DEFAULT = { developer: "all", status: "all" };
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState("executive");
@@ -197,11 +195,6 @@ export default function DashboardPage() {
       { id: "all", name: "All Statuses" },
       ...statuses.map((s) => ({ id: s, name: s })),
     ],
-    window: [
-      { id: "3", name: "Last 3 sprints" },
-      { id: "5", name: "Last 5 sprints" },
-      { id: "8", name: "Last 8 sprints" },
-    ],
   };
 
   return (
@@ -256,10 +249,13 @@ export default function DashboardPage() {
               </section>
 
               {dashboardData && (
-                <VelocityGrid
-                  velocity={dashboardData.velocity}
-                  delivery={dashboardData.delivery}
-                />
+                <>
+                  <VelocityGrid
+                    velocity={dashboardData.velocity}
+                    delivery={dashboardData.delivery}
+                  />
+                  <TrendsCharts data={dashboardData.trends} />
+                </>
               )}
             </div>
           )}
@@ -304,14 +300,6 @@ export default function DashboardPage() {
               podName={selectedPodName}
               jiraDomain={dashboardData.jiraBaseUrl}
               statusFilter={filters.status}
-            />
-          )}
-
-          {activeTab === "trends" && dashboardData && (
-            <TrendsTab
-              data={dashboardData.trends}
-              podName={selectedPodName}
-              windowSize={Number(filters.window) || 5}
             />
           )}
 

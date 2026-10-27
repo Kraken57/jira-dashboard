@@ -8,8 +8,7 @@ export type FilterKey =
   | "quarter"
   | "sprint"
   | "developer"
-  | "status"
-  | "window";
+  | "status";
 
 export type FilterState = {
   pod: string;
@@ -17,7 +16,6 @@ export type FilterState = {
   sprint: string;
   developer: string;
   status: string;
-  window: string;
 };
 
 export interface FilterOption {
@@ -32,7 +30,6 @@ const LABELS: Record<FilterKey, string> = {
   sprint: "Sprint",
   developer: "Developer",
   status: "Status",
-  window: "Window",
 };
 
 function Select({

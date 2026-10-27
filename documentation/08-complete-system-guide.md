@@ -38,8 +38,8 @@ A read-only sprint-performance dashboard for Jira Cloud.
 
 - It pulls issues from Jira with a JQL query.
 - It computes delivery metrics in memory.
-- It renders nine tabs (Executive, Pod, Developer, Sprint, Quality, Predictability,
-  Delivery Diagnosis, Trends, Issues).
+- It renders eight tabs (Executive, Pod, Developer, Sprint, Quality, Predictability,
+  Delivery Diagnosis, Issues).
 - Every KPI card and most table rows are **clickable** and open a popup with the exact
   work items behind that number.
 
@@ -294,7 +294,6 @@ Each tab declares which filters it shows:
 | Quality | Pod, Quarter, Sprint |
 | Predictability | Pod, Quarter |
 | Delivery Diagnosis | Pod, Quarter, Sprint, **Status** |
-| Trends | Pod, Quarter, **Window** |
 | Issues | Pod, Quarter, Sprint |
 
 Extras are stored per tab, so a Developer selection on the Developer tab does not leak
@@ -334,11 +333,6 @@ setSprintOptions((allSprints ?? data).sprints);
 | Sprint | `metricsEngine` | case-insensitive fuzzy match against each sprint name on the issue (`matchesSprint`) |
 | Developer | Developer tab only | `issue.assignee === selected name` |
 | Status | Diagnosis tab only | `unfinishedIssue.status === selected status` |
-| Window | Trends tab only | last N points of the already-computed series (3/5/8) |
-
-> **Window caveat:** the backend only computes the latest `JIRA_SPRINT_WINDOW` sprints
-> (default 5). Choosing “Last 8 sprints” in Trends cannot show more than those 5 unless
-> `JIRA_SPRINT_WINDOW` is raised.
 
 ### 6.6 Dropdown options are portfolio-wide
 
@@ -449,18 +443,17 @@ page.
 
 The Status filter applies to the cards and the bottom table.
 
-### 7.8 Trends (`TrendsTab`)
+### 7.8 Executive trend charts (`TrendsCharts`)
 
-Cards open `DetailModal` with the series table, not issue rows:
+Two read-only charts sit below Team Velocity and Sprint Delivery Overview on the
+Executive Summary:
 
-| Card | Popup content |
+| Chart | Shows |
 |---|---|
-| Peak Velocity | sprint, velocity, moving average |
-| Rolling Velocity | same velocity table |
-| Cumulative Throughput | sprint, total items, completed items |
-| Throughput Momentum | same cumulative table |
+| Velocity Trajectory & Moving Average | Done SP per sprint plus the expanding moving average |
+| Cumulative Throughput Growth | Running total of tracked items vs completed items |
 
-The Window filter slices the series before rendering (last 3/5/8 points).
+There is no separate Trends tab.
 
 ### 7.9 Issues (`IssuesTab`)
 
@@ -759,7 +752,7 @@ If no active sprint start date is known, all SP is treated as planned.
 - `epicsOnSchedule = score` (same number today)
 - `history` = one row per sprint in the window: planned, delivered, Say/Do
 
-### 9.11 Trends
+### 9.11 Executive trend charts
 
 - `velocityTrend.velocity` = done SP per sprint.
 - `velocityTrend.movingAvg` = **expanding average** (mean of all points up to index `i`),
@@ -768,7 +761,7 @@ If no active sprint start date is known, all SP is treated as planned.
 - `cumulativeThroughput.completedIssues` = running sum of done issue counts per sprint.
 
 > Two different “moving averages” exist: the Executive velocity chart uses a **trailing
-> 3-sprint** average; the Trends chart uses the **expanding** average from the data object.
+> 3-sprint** average; the Executive trend chart uses the **expanding** average from the data object.
 
 ### 9.12 Delivery Diagnosis
 
@@ -1218,9 +1211,9 @@ does not exist.
 - **Subtasks are excluded** from all metrics and issue lists; only Stories, Bugs, Tasks, Features, Epics, etc. are counted.
 - **Per-sprint sums can overcount carried work** because an issue can appear in several
   sprints. Executive All-Sprints totals use de-duplicated summary totals to avoid this.
-- **Trends “moving average” is an expanding average**, unlike the trailing 3-sprint average
-  in the Executive velocity chart.
-- **Trends window is capped** by `JIRA_SPRINT_WINDOW` (default 5), so “Last 8” may show 5.
+- **The trend chart’s “moving average” is an expanding average**, unlike the trailing
+  3-sprint average in the Executive velocity chart.
+- **The trend charts are capped** by `JIRA_SPRINT_WINDOW` (default 5).
 
 ### 17.2 Forge parity
 

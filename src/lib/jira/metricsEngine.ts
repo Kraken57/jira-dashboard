@@ -596,7 +596,7 @@ export function computeDashboardData(
       trendUnit: "%",
       color: "blue",
       trendGood: "up",
-      drilldownTab: "trends",
+      drilldownTab: "executive",
     },
     {
       title: "Future Predictability",
