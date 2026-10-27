@@ -25,6 +25,7 @@ export interface MetricInsightTrend {
   delta: number;
   unit: "pp" | "%" | "SP";
   better: "up" | "down";
+  display?: string;
 }
 
 export interface MetricInsightTarget {
@@ -59,6 +60,7 @@ export interface MetricCardData {
   trend: number;
   trendLabel: string;
   trendUnit?: "pp" | "%" | "SP";
+  trendText?: string;
   color: "blue" | "green" | "red";
   drilldownTab?: string;
   trendGood?: "up" | "down";

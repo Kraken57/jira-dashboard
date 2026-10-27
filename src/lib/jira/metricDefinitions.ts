@@ -22,6 +22,13 @@ const DEFINITIONS: Record<string, Omit<MetricInsight, "recent" | "trend">> = {
     howToCompare:
       "Compare with the previous sprint and the 3-sprint average. Rising velocity is good only if Say/Do and quality stay stable.",
   },
+  "Total Sprint Velocity": {
+    what:
+      "Total story points completed in the selected Pod, Quarter, and Sprint scope.",
+    formula: "Sum of story points on done items",
+    howToCompare:
+      "Compare with the previous sprint and the 3-sprint average. Rising velocity is good only if Say/Do and quality stay stable.",
+  },
   "Future Predictability": {
     what:
       "Percentage of estimated planned features expected to be delivered by their due date. Remaining work is the sum of open child story points; capacity uses weekdays and the team's recent delivery rate.",

@@ -166,6 +166,7 @@ export default function DashboardPage() {
         label = "Not accepted / spilled-over committed work";
         break;
       case "Avg. Sprint Velocity":
+      case "Total Sprint Velocity":
         issues = all.filter((i) => i.isDone);
         label = "Completed work items";
         break;

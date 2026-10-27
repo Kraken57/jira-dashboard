@@ -25,6 +25,7 @@ const ICONS: Record<string, React.FC<{ className?: string }>> = {
   "Say/Do Ratio": SayDoIcon,
   "Sprint Carry Over": CarryIcon,
   "Avg. Sprint Velocity": VelocityIcon,
+  "Total Sprint Velocity": VelocityIcon,
   "Future Predictability": PredictabilityIcon,
 };
 
@@ -41,6 +42,7 @@ interface MetricCardProps {
   trend: number;
   trendLabel: string;
   trendUnit?: "pp" | "%" | "SP";
+  trendText?: string;
   color: "blue" | "green" | "red";
   trendGood?: "up" | "down";
   onOpen?: () => void;
@@ -53,6 +55,7 @@ export function MetricCard({
   trend,
   trendLabel,
   trendUnit = "%",
+  trendText,
   color,
   trendGood = "up",
   onOpen,
@@ -84,7 +87,7 @@ export function MetricCard({
       </div>
       <p className="text-xs text-jira-text-muted mb-3">{subtitle}</p>
       <div
-        className={`flex items-center gap-1.5 text-xs font-bold ${
+        className={`flex flex-wrap items-center gap-1.5 text-xs font-bold ${
           isFlat
             ? "text-jira-text-muted"
             : isGood
@@ -106,9 +109,8 @@ export function MetricCard({
           />
         </svg>
         <span>
-          {isFlat ? "0" : isUp ? "+" : ""}
-          {trend}
-          {trendUnit}
+          {trendText ??
+            `${isFlat ? "0" : isUp ? "+" : ""}${trend}${trendUnit}`}
         </span>
         <span className="text-jira-text-muted">{trendLabel}</span>
       </div>

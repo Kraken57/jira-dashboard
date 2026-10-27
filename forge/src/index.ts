@@ -449,6 +449,8 @@ function calculateKPIs(
     (!filters.quarterId || filters.quarterId === "all") &&
     (!filters.sprintId || filters.sprintId === "all");
   let globalVelocityTrend: number | null = null;
+  let velocityCompareCurrent = lastSprint?.doneStoryPoints ?? 0;
+  let velocityComparePrevious = prevSprint?.doneStoryPoints ?? 0;
   if (isGlobalAll) {
     // Velocity only counts accepted (done) items with real story points.
     const velocityItems = items.filter(
@@ -499,6 +501,8 @@ function calculateKPIs(
       };
       const latest = podAvgForSprint(lastSprint.name);
       const previous = podAvgForSprint(prevSprint.name);
+      velocityCompareCurrent = latest;
+      velocityComparePrevious = previous;
       globalVelocityTrend =
         previous > 0 ? Math.round(((latest - previous) / previous) * 100) : latest > 0 ? 100 : 0;
     }
@@ -523,7 +527,26 @@ function calculateKPIs(
         : 0
       : 0;
 
+  const sayDoTrendText =
+    lastSprint && prevSprint
+      ? `${sprintSayDo(lastSprint)}% (was ${sprintSayDo(prevSprint)}%)`
+      : "No previous sprint";
+  const carryTrendText =
+    lastSprint && prevSprint
+      ? `${sprintCarry(lastSprint)}% (was ${sprintCarry(prevSprint)}%)`
+      : "No previous sprint";
+  const velocityTrendText =
+    lastSprint && prevSprint
+      ? `${Math.round(velocityCompareCurrent)} SP (was ${Math.round(velocityComparePrevious)} SP)`
+      : "No previous sprint";
+
   const futureForecast = computeFuturePredictability(forecastSource, forecastChildSource);
+  const futureTrendText =
+    futureForecast.forecastableCount > 0
+      ? `${futureForecast.onTimeCount} of ${futureForecast.forecastableCount}`
+      : futureForecast.plannedCount > 0
+      ? "No estimated features"
+      : "No planned features";
 
   // Predictability across the selection: delivered / planned SP.
   const predictabilityScore =
@@ -653,6 +676,7 @@ function calculateKPIs(
         subtitle: "Completed committed SP ÷ committed SP",
         trend: sayDoTrend,
         trendLabel: sayDoTrend === 0 ? "no change vs last sprint" : "vs last sprint",
+        trendText: sayDoTrendText,
         color: savedSayDo >= 80 ? ("green" as const) : savedSayDo >= 65 ? ("blue" as const) : ("red" as const),
         trendGood: "up" as const,
         drilldownTab: "diagnosis",
@@ -663,18 +687,20 @@ function calculateKPIs(
         subtitle: "Spilled-over committed SP ÷ committed SP",
         trend: carryTrend,
         trendLabel: carryTrend === 0 ? "no change vs last sprint" : "vs last sprint",
+        trendText: carryTrendText,
         color: savedCarry <= 18 ? ("green" as const) : savedCarry <= 28 ? ("blue" as const) : ("red" as const),
         trendGood: "down" as const,
         drilldownTab: "diagnosis",
       },
       {
-        title: "Avg. Sprint Velocity",
+        title: isGlobalAll ? "Avg. Sprint Velocity" : "Total Sprint Velocity",
         value: `${currentVelocity} pts`,
         subtitle: isGlobalAll
           ? `Average SP per sprint across ${velocityPodCount} pods`
           : "SP completed in latest sprint",
         trend: velocityTrendPct,
         trendLabel: velocityTrendPct === 0 ? "no change vs last sprint" : "vs last sprint",
+        trendText: velocityTrendText,
         color: "blue" as const,
         trendGood: "up" as const,
         drilldownTab: "executive",
@@ -689,7 +715,11 @@ function calculateKPIs(
             ? "No estimated remaining work on planned features"
             : "No late-stage features with future due dates",
         trend: 0,
-        trendLabel: "due-date forecast",
+        trendLabel:
+          futureForecast.forecastableCount > 0
+            ? "features on time"
+            : "for forecast",
+        trendText: futureTrendText,
         color:
           futureForecast.forecastableCount === 0
             ? ("blue" as const)

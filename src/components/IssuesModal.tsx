@@ -192,9 +192,8 @@ export function IssuesModal({
                       : "text-jira-red"
                   }`}
                 >
-                  {trend.delta > 0 ? "+" : ""}
-                  {trend.delta}
-                  {trend.unit}
+                  {trend.display ??
+                    `${trend.delta > 0 ? "+" : ""}${trend.delta}${trend.unit}`}
                 </p>
                 <p className="text-xs text-jira-text-muted mt-1">
                   {trend.currentLabel}: {trend.current}
@@ -202,12 +201,12 @@ export function IssuesModal({
                   {trendLevelUnit}
                 </p>
                 <p className="text-[11px] text-jira-text-light mt-1">
-                  {UNIT_LABEL[trend.unit]}
+                  {trend.display ? "" : `${UNIT_LABEL[trend.unit]} · `}
                   {trendGood === null
-                    ? " · unchanged"
+                    ? "unchanged"
                     : trendGood
-                    ? " · improving"
-                    : " · worsening"}
+                    ? "improving"
+                    : "worsening"}
                 </p>
               </>
             ) : (

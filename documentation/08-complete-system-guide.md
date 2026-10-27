@@ -361,7 +361,7 @@ navigates to another tab and never triggers a new Jira request.
 |---|---|---|
 | Say/Do Ratio | `isDone` only | “Accepted / completed committed work” |
 | Sprint Carry Over | `!isDone` | “Not accepted / spilled-over committed work” |
-| Avg. Sprint Velocity | `isDone` | “Completed work items” |
+| Avg. Sprint Velocity / Total Sprint Velocity | `isDone` | “Completed work items” |
 | Future Predictability | open features with a due date | “Planned features vs due-date forecast” |
 
 The subtitle also appends the current scope, e.g. `CRM · CY26 PI.3 · Iteration 2`.
@@ -654,10 +654,10 @@ For **one specific sprint**, the totals come from that sprint's stats.
 
 | Card | Formula | Trend | Color rule |
 |---|---|---|---|
-| Say/Do Ratio | `doneSP / committedSP × 100` | percentage-point change: latest plotted sprint vs the one before it | ≥80 green, ≥65 blue, else red |
-| Sprint Carry Over | `carriedSP / committedSP × 100` | percentage-point change: latest plotted sprint vs the one before it | ≤18 green, ≤28 blue, else red |
-| Avg. Sprint Velocity | Global All/All/All: mean of each pod’s average sprint SP, counting only accepted items with SP > 0. Otherwise: `doneSP` for the period | % change: latest plotted sprint vs the one before it | always blue |
-| Future Predictability | on-time-forecast estimated features / estimated features (future due dates) × 100 | none — due-date forecast, not sprint-trended | ≥85 green, ≥50 blue, else red |
+| Say/Do Ratio | `doneSP / committedSP × 100` | latest plotted sprint vs the one before it, shown as `current% (was previous%)` | ≥80 green, ≥65 blue, else red |
+| Sprint Carry Over | `carriedSP / committedSP × 100` | latest plotted sprint vs the one before it, shown as `current% (was previous%)` | ≤18 green, ≤28 blue, else red |
+| Avg. Sprint Velocity | Global All/All/All: mean of each pod’s average sprint SP, counting only accepted items with SP > 0. Otherwise the card is titled **Total Sprint Velocity** and shows `doneSP` for the period | latest plotted sprint vs the one before it, shown as `current SP (was previous SP)` | always blue |
+| Future Predictability | on-time-forecast estimated features / estimated features (future due dates) × 100 | `on time of estimated` features; not sprint-trended | ≥85 green, ≥50 blue, else red |
 
 **Future Predictability math** (different from Say/Do):
 

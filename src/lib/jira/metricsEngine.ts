@@ -648,6 +648,8 @@ export function computeDashboardData(
   // Keep the global trend consistent with the two-level average: compare the
   // pod-averaged velocity of the latest sprint with the previous sprint.
   let effectiveVelocityTrendPct = velocityTrendPct;
+  let velocityCompareCurrent = currentCompare?.done ?? 0;
+  let velocityComparePrevious = prevCompare?.done ?? 0;
   if (isGlobalAll && globalPodPools && hasComparison && currentCompare && prevCompare) {
     const podAvgForSprint = (name: string) => {
       const vals: number[] = [];
@@ -657,11 +659,26 @@ export function computeDashboardData(
       });
       return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
     };
+    velocityCompareCurrent = podAvgForSprint(currentCompare.fullName);
+    velocityComparePrevious = podAvgForSprint(prevCompare.fullName);
     effectiveVelocityTrendPct = pctChange(
-      podAvgForSprint(currentCompare.fullName),
-      podAvgForSprint(prevCompare.fullName)
+      velocityCompareCurrent,
+      velocityComparePrevious
     );
   }
+
+  // Show the actual values behind the arrow instead of "pp" deltas.
+  const sayDoTrendText =
+    hasComparison && currentCompare && prevCompare
+      ? `${Math.round(sayDoOf(currentCompare))}% (was ${Math.round(sayDoOf(prevCompare))}%)`
+      : "No previous sprint";
+  const carryTrendText =
+    hasComparison && currentCompare && prevCompare
+      ? `${Math.round(carryOf(currentCompare))}% (was ${Math.round(carryOf(prevCompare))}%)`
+      : "No previous sprint";
+  const velocityTrendText = hasComparison
+    ? `${Math.round(velocityCompareCurrent)} SP (was ${Math.round(velocityComparePrevious)} SP)`
+    : "No previous sprint";
 
   const predictabilityScore =
     scopeCommittedSP > 0 ? Math.round((scopeDoneSP / scopeCommittedSP) * 100) : 0; // (kept for the Predictability tab)
@@ -675,6 +692,12 @@ export function computeDashboardData(
     (s) => DONE_STATUSES.has(s),
     forecastChildSource
   );
+  const futureTrendText =
+    futurePredictability.forecastableCount > 0
+      ? `${futurePredictability.onTimeCount} of ${futurePredictability.forecastableCount}`
+      : futurePredictability.plannedCount > 0
+      ? "No estimated features"
+      : "No planned features";
 
   const trendLabelFor = (delta: number) =>
     !prevCompare || !currentCompare
@@ -691,6 +714,7 @@ export function computeDashboardData(
       trend: sayDoTrend,
       trendLabel: trendLabelFor(sayDoTrend),
       trendUnit: "pp",
+      trendText: sayDoTrendText,
       color: sayDoRatio >= 80 ? "green" : sayDoRatio >= 65 ? "blue" : "red",
       trendGood: "up",
       drilldownTab: "diagnosis",
@@ -702,12 +726,13 @@ export function computeDashboardData(
       trend: carryTrend,
       trendLabel: trendLabelFor(carryTrend),
       trendUnit: "pp",
+      trendText: carryTrendText,
       color: carryOver <= 18 ? "green" : carryOver <= 28 ? "blue" : "red",
       trendGood: "down",
       drilldownTab: "diagnosis",
     },
     {
-      title: "Avg. Sprint Velocity",
+      title: isGlobalAll ? "Avg. Sprint Velocity" : "Total Sprint Velocity",
       value: `${currentVelocity} pts`,
       subtitle:
         sprintId === "all"
@@ -718,6 +743,7 @@ export function computeDashboardData(
       trend: effectiveVelocityTrendPct,
       trendLabel: trendLabelFor(effectiveVelocityTrendPct),
       trendUnit: "%",
+      trendText: velocityTrendText,
       color: "blue",
       trendGood: "up",
       drilldownTab: "executive",
@@ -735,8 +761,12 @@ export function computeDashboardData(
           ? "No estimated remaining work on planned features"
           : "No late-stage features with future due dates",
       trend: 0,
-      trendLabel: "due-date forecast",
+      trendLabel:
+        futurePredictability.forecastableCount > 0
+          ? "features on time"
+          : "for forecast",
       trendUnit: "pp",
+      trendText: futureTrendText,
       color:
         futurePredictability.forecastableCount === 0
           ? "blue"
@@ -1149,6 +1179,7 @@ export function computeDashboardData(
               delta: sayDoTrend,
               unit: "pp",
               better: "up",
+              display: `${Math.round(sayDoPercent(prevCompare))}% → ${Math.round(sayDoPercent(currentCompare))}%`,
             }
           : undefined,
       recent: compareStats.map((s) => ({
@@ -1186,6 +1217,7 @@ export function computeDashboardData(
               delta: carryTrend,
               unit: "pp",
               better: "down",
+              display: `${Math.round(carryPercent(prevCompare))}% → ${Math.round(carryPercent(currentCompare))}%`,
             }
           : undefined,
       recent: compareStats.map((s) => ({
@@ -1219,6 +1251,7 @@ export function computeDashboardData(
               delta: effectiveVelocityTrendPct,
               unit: "%",
               better: "up",
+              display: `${Math.round(velocityComparePrevious)} SP → ${Math.round(velocityCompareCurrent)} SP`,
             }
           : undefined,
       recent: compareStats.map((s) => ({
@@ -1299,6 +1332,15 @@ export function computeDashboardData(
                 : "Every planned feature has a remaining SP estimate.",
             ],
     },
+  };
+
+  // Total Sprint Velocity is the same card for non-global filters; keep its
+  // popup explanation aligned with the title.
+  metricInsights["Total Sprint Velocity"] = {
+    ...metricInsights["Avg. Sprint Velocity"],
+    what:
+      "Total story points completed in the selected Pod, Quarter, and Sprint scope.",
+    formula: "Sum of story points on done items",
   };
 
   // 13. Issue Explorer List
