@@ -162,8 +162,14 @@ export default function DashboardPage() {
       case "Say/Do Ratio":
         label = "Committed work items (done vs open)";
         break;
-      case "Feature Predictability":
-        label = "Planned work items (delivered vs open)";
+      case "Future Predictability":
+        issues = all.filter(
+          (i) =>
+            !i.isDone &&
+            !!i.reason &&
+            (i.reason.startsWith("On Forecast") || i.reason.startsWith("At Risk"))
+        );
+        label = "Planned features vs due-date forecast";
         break;
     }
 

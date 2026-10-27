@@ -368,7 +368,7 @@ navigates to another tab and never triggers a new Jira request.
 | Say/Do Ratio | all issues in scope | “Committed work items (done vs open)” |
 | Sprint Carry Over | `!isDone` | “Unfinished / spilled-over committed work” |
 | Team/Epic Velocity | `isDone` | “Completed work items” |
-| Feature Predictability | all issues in scope | “Planned work items (delivered vs open)” |
+| Future Predictability | open features with a due date | “Planned features vs due-date forecast” |
 
 The subtitle also appends the current scope, e.g. `CRM · CY26 PI.3 · Iteration 2`.
 `scopeLabel` is built from the selected pod/quarter/sprint names and drops names starting
@@ -659,7 +659,16 @@ For **one specific sprint**, the totals come from that sprint's stats.
 | Say/Do Ratio | `doneSP / committedSP × 100` | percentage-point change: latest plotted sprint vs the one before it | ≥80 green, ≥65 blue, else red |
 | Sprint Carry Over | `carriedSP / committedSP × 100` | percentage-point change: latest plotted sprint vs the one before it | ≤18 green, ≤28 blue, else red |
 | Team/Epic Velocity | `doneSP` (points) | % change: latest plotted sprint vs the one before it | always blue |
-| Feature Predictability | `doneSP / committedSP × 100` | percentage-point change: latest plotted sprint vs the one before it | ≥85 green, else blue |
+| Future Predictability | on-time-forecast features / planned features (future due dates) × 100 | none — due-date forecast, not sprint-trended | ≥85 green, ≥50 blue, else red |
+
+**Future Predictability math** (different from Say/Do):
+
+- Planned features = open (not done) features with a due date on or after today.
+  If the site has no `Feature` issue type, `Epic` is used instead.
+- On time = the feature's remaining story points fit inside the days remaining until
+  its due date at the team's average delivery rate (completed SP over the last 30 days
+  ÷ 30). Past-due open features are excluded from the score and listed as `Past Due`.
+- Example: 8 planned features, 6 forecast on time → 75%.
 
 The trend is **not** hard-coded to zero for All Sprints. It compares the latest sprint
 in the window with the sprint before it, even when the card value aggregates the whole
@@ -668,8 +677,8 @@ previous sprint in the data, the trend is `0` and the label says `no previous sp
 
 Notes:
 
-- Say/Do and Feature Predictability currently use the **same ratio**. They differ in
-  presentation, not math.
+- Future Predictability is a **forward-looking due-date forecast** and shares no math
+  with Say/Do, which is a retrospective delivered/committed ratio.
 - `MetricCard.trendGood` controls whether an increase is good (`up`) or bad (`down`).
   Carry Over uses `down`.
 - `MetricCard` also receives a legacy `drilldownTab`, but the page now always passes
@@ -1202,7 +1211,7 @@ does not exist.
   changes, so planned/committed are the same number.
 - **Cycle time and scope churn are N/A.** They require issue changelog data, which the
   dashboard does not fetch.
-- **Say/Do and Feature Predictability are the same ratio.**
+- **Future Predictability is a due-date forecast**, not the Say/Do ratio.
 - **`epicsOnSchedule` equals the predictability score**; it is not a separate epic-level
   calculation.
 - **Priority distribution is all issues**, not bugs only, despite the Quality section label.

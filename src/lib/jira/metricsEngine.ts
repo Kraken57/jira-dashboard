@@ -89,6 +89,97 @@ function pctChange(current: number, previous: number): number {
   return current > 0 ? 100 : 0;
 }
 
+const DAY_MS = 86_400_000;
+const RATE_WINDOW_DAYS = 30;
+
+/**
+ * Future Predictability — share of planned features (not done, due date in the
+ * future) forecast to finish on or before their due date at the team's recent
+ * delivery rate. Forward-looking and due-date based; different from Say/Do,
+ * which compares delivered vs committed points after the fact.
+ *
+ * A feature is forecast on time when its estimated remaining work (story
+ * points) fits inside the days remaining until its due date at the team's
+ * average delivery rate over the last 30 days.
+ */
+export function computeFuturePredictability(
+  items: JiraWorkItem[],
+  isDone: (status: string) => boolean
+) {
+  const now = Date.now();
+  const startOfToday = new Date(now).setHours(0, 0, 0, 0);
+  const rateStart = now - RATE_WINDOW_DAYS * DAY_MS;
+  const recentDoneSP = items
+    .filter(
+      (it) =>
+        isDone(it.status) &&
+        it.resolutionDate &&
+        new Date(it.resolutionDate).getTime() >= rateStart
+    )
+    .reduce((sum, it) => sum + (it.storyPoints || 0), 0);
+  // ponytail: flat SP/day rate over 30 days; per-pod rates if the single rate mispredicts.
+  const dailyRate = recentDoneSP / RATE_WINDOW_DAYS;
+
+  // Sites without a "Feature" issue type report feature-level work as Epics.
+  const hasFeatureType = items.some((it) => /^feature$/i.test(it.workType));
+  const isFeature = (it: JiraWorkItem) =>
+    hasFeatureType ? /^feature$/i.test(it.workType) : /^epic$/i.test(it.workType);
+
+  const isFutureDated = (it: JiraWorkItem) =>
+    Boolean(it.dueDate) && new Date(it.dueDate as string).getTime() >= startOfToday;
+
+  const planned = items.filter(
+    (it) => isFeature(it) && !isDone(it.status) && isFutureDated(it)
+  );
+  const pastDue = items.filter(
+    (it) => isFeature(it) && !isDone(it.status) && !isFutureDated(it) && !!it.dueDate
+  );
+
+  const onTimeCount = planned.filter((it) => {
+    const remaining = it.storyPoints || 0;
+    if (dailyRate <= 0) return remaining === 0;
+    const days = Math.ceil(
+      (new Date(it.dueDate as string).getTime() - startOfToday) / DAY_MS
+    );
+    return remaining <= dailyRate * days;
+  }).length;
+
+  const reasons = new Map<string, string>();
+  planned.forEach((it) => {
+    const remaining = it.storyPoints || 0;
+    if (dailyRate <= 0) {
+      reasons.set(
+        it.key,
+        remaining === 0
+          ? "On Forecast"
+          : "At Risk (no recent delivery rate)"
+      );
+      return;
+    }
+    const days = Math.ceil(
+      (new Date(it.dueDate as string).getTime() - startOfToday) / DAY_MS
+    );
+    const capacity = Math.round(dailyRate * days * 10) / 10;
+    reasons.set(
+      it.key,
+      remaining <= dailyRate * days
+        ? `On Forecast (${remaining} SP ≤ ${capacity} SP capacity by due date)`
+        : `At Risk (${remaining} SP > ${capacity} SP capacity by due date)`
+    );
+  });
+  pastDue.forEach((it) => reasons.set(it.key, "Past Due (missed due date)"));
+
+  return {
+    dailyRate: Math.round(dailyRate * 10) / 10,
+    plannedCount: planned.length,
+    onTimeCount,
+    pastDueCount: pastDue.length,
+    score: planned.length > 0 ? Math.round((onTimeCount / planned.length) * 100) : 0,
+    plannedKeys: new Set(planned.map((it) => it.key)),
+    reasons,
+  };
+}
+
 function derivePods(items: JiraWorkItem[]): PodOption[] {
   const map = new Map<string, { name: string; count: number }>();
   for (const item of items) {
@@ -388,10 +479,11 @@ export function computeDashboardData(
       ? pctChange(currentCompare.done, prevCompare.done)
       : 0;
 
-  const predictabilityScore = scopeCommittedSP > 0
-    ? Math.round((scopeDoneSP / scopeCommittedSP) * 100)
-    : 0;
-  const predictabilityTrend = sayDoTrend;
+  const predictabilityScore =
+    scopeCommittedSP > 0 ? Math.round((scopeDoneSP / scopeCommittedSP) * 100) : 0; // (kept for the Predictability tab)
+  const futurePredictability = computeFuturePredictability(scopedItems, (s) =>
+    DONE_STATUSES.has(s)
+  );
 
   const trendLabelFor = (delta: number) =>
     !prevCompare || !currentCompare
@@ -438,13 +530,21 @@ export function computeDashboardData(
       drilldownTab: "trends",
     },
     {
-      title: "Feature Predictability",
-      value: `${predictabilityScore}%`,
-      subtitle: "Completed committed SP ÷ planned SP",
-      trend: predictabilityTrend,
-      trendLabel: trendLabelFor(predictabilityTrend),
+      title: "Future Predictability",
+      value: `${futurePredictability.score}%`,
+      subtitle:
+        futurePredictability.plannedCount > 0
+          ? "Forecast on-time features ÷ planned features (future due dates)"
+          : "No late-stage features with future due dates",
+      trend: 0,
+      trendLabel: "due-date forecast",
       trendUnit: "pp",
-      color: predictabilityScore >= 85 ? "green" : "blue",
+      color:
+        futurePredictability.score >= 85
+          ? "green"
+          : futurePredictability.score >= 50
+          ? "blue"
+          : "red",
       trendGood: "up",
       drilldownTab: "predictability",
     },
@@ -877,42 +977,57 @@ export function computeDashboardData(
         `Latest sprint: ${lastSprint?.done ?? 0} SP completed.`,
       ],
     },
-    "Feature Predictability": {
+    "Future Predictability": {
       what:
-        "How much of the planned commitment was delivered. In this dashboard planned and committed are the same number, because Jira does not keep the original commitment after scope changes.",
-      formula: "Done SP ÷ Planned SP × 100",
-      calculation: `${fmt(scopeDoneSP)} SP done ÷ ${fmt(scopeCommittedSP)} SP planned = ${predictabilityScore}%`,
+        "Percentage of planned features expected to be delivered by their due date. A feature is forecast to finish on time when its estimated remaining work can be completed by its due date based on the team's delivery rate.",
+      formula:
+        "Features forecast to finish on or before due date ÷ planned features with a future due date × 100",
+      calculation:
+        futurePredictability.plannedCount > 0
+          ? `${futurePredictability.onTimeCount} of ${futurePredictability.plannedCount} features forecast on time = ${futurePredictability.score}% (team rate ${futurePredictability.dailyRate} SP/day over the last ${RATE_WINDOW_DAYS} days)`
+          : `No planned features with a future due date in the current scope (${futurePredictability.pastDueCount} past-due features are listed as Past Due in the popup).`,
       howToCompare:
-        "Compare with the 85% target and the previous sprint. Use the iteration history below to see whether delivery is becoming more predictable.",
+        "Open the popup and filter the Reason column: 'On Forecast' features are safe at the current pace, 'At Risk' features need more capacity or a scope change. Compare with the 85% target.",
       target: {
         label: "On track",
         value: 85,
-        current: predictabilityScore,
+        current: futurePredictability.score,
         unit: "%",
         direction: "atLeast",
       },
-      trend:
-        trendBase && currentCompare && prevCompare
-          ? {
-              ...trendBase,
-              current: sayDoPercent(currentCompare),
-              previous: sayDoPercent(prevCompare),
-              delta: predictabilityTrend,
-              unit: "pp",
-              better: "up",
-            }
-          : undefined,
-      recent: compareStats.map((s) => ({
-        label: s.name,
-        value: `${sayDoPercent(s)}%`,
-        detail: `${s.done} of ${s.planned} SP`,
-      })),
-      takeaways: [
-        predictabilityScore >= 85
-          ? `On or above the 85% target.`
-          : `${85 - predictabilityScore} pp below the 85% target.`,
-        `Variance: ${Math.abs(scopeCommittedSP - scopeDoneSP)} SP between planned and delivered.`,
+      recent: [
+        {
+          label: "Planned features",
+          value: String(futurePredictability.plannedCount),
+          detail: "Not done, due date in the future",
+        },
+        {
+          label: "Forecast on time",
+          value: String(futurePredictability.onTimeCount),
+          detail: `At the current ${futurePredictability.dailyRate} SP/day rate`,
+        },
+        {
+          label: "Past due",
+          value: String(futurePredictability.pastDueCount),
+          detail: "Not done and already past their due date",
+        },
       ],
+      takeaways:
+        futurePredictability.plannedCount === 0
+          ? [
+              "No features with a future due date are open right now.",
+              futurePredictability.pastDueCount > 0
+                ? `${futurePredictability.pastDueCount} feature(s) are already past due.`
+                : "Nothing scheduled head — update due dates to make this card meaningful.",
+            ]
+          : [
+              futurePredictability.score >= 85
+                ? "On or above the 85% target at the current delivery rate."
+                : `${85 - futurePredictability.score} pp below the 85% target at the current delivery rate.`,
+              futurePredictability.dailyRate <= 0
+                ? "No completed SP in the last 30 days, so every feature with remaining work is forecast late."
+                : `Delivery rate used for the forecast: ${futurePredictability.dailyRate} SP/day over the last ${RATE_WINDOW_DAYS} days.`,
+            ],
     },
   };
 
@@ -930,6 +1045,7 @@ export function computeDashboardData(
     priority: it.priority || "Medium",
     createdDate: it.createdDate || "",
     isDone: DONE_STATUSES.has(it.status),
+    reason: futurePredictability.reasons.get(it.key),
   }));
 
   // Sprint → team mapping, so the sprint filter shows whose sprint it is.

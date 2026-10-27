@@ -74,6 +74,78 @@ async function getFieldConfig(): Promise<{
   };
 }
 
+const DAY_MS = 86_400_000;
+const RATE_WINDOW_DAYS = 30;
+
+/**
+ * Future Predictability — same math as the frontend metrics engine (kept in
+ * sync because the Forge backend does not import frontend code):
+ * share of planned features (not done, future due date) forecast to finish on
+ * or before their due date at the team's average delivery rate over the last
+ * 30 days.
+ */
+function computeFuturePredictability(items: any[]) {
+  const now = Date.now();
+  const startOfToday = new Date(now).setHours(0, 0, 0, 0);
+  const rateStart = now - RATE_WINDOW_DAYS * DAY_MS;
+  const recentDoneSP = items
+    .filter(
+      (it: any) =>
+        isDoneStatus(it.status) &&
+        it.resolutionDate &&
+        new Date(it.resolutionDate).getTime() >= rateStart
+    )
+    .reduce((sum: number, it: any) => sum + (it.storyPoints || 0), 0);
+  const dailyRate = recentDoneSP / RATE_WINDOW_DAYS;
+
+  const hasFeatureType = items.some((it: any) => /^feature$/i.test(it.workType));
+  const isFeature = (it: any) =>
+    hasFeatureType ? /^feature$/i.test(it.workType) : /^epic$/i.test(it.workType);
+
+  const isFutureDated = (it: any) =>
+    !!it.dueDate && new Date(it.dueDate).getTime() >= startOfToday;
+
+  const planned = items.filter(
+    (it: any) => isFeature(it) && !isDoneStatus(it.status) && isFutureDated(it)
+  );
+  const pastDue = items.filter(
+    (it: any) => isFeature(it) && !isDoneStatus(it.status) && !isFutureDated(it) && !!it.dueDate
+  );
+
+  const onTimeCount = planned.filter((it: any) => {
+    const remaining = it.storyPoints || 0;
+    if (dailyRate <= 0) return remaining === 0;
+    const days = Math.ceil((new Date(it.dueDate).getTime() - startOfToday) / DAY_MS);
+    return remaining <= dailyRate * days;
+  }).length;
+
+  const reasons = new Map<string, string>();
+  planned.forEach((it: any) => {
+    const remaining = it.storyPoints || 0;
+    if (dailyRate <= 0) {
+      reasons.set(it.key, remaining === 0 ? "On Forecast" : "At Risk (no recent delivery rate)");
+      return;
+    }
+    const days = Math.ceil((new Date(it.dueDate).getTime() - startOfToday) / DAY_MS);
+    const capacity = Math.round(dailyRate * days * 10) / 10;
+    reasons.set(
+      it.key,
+      remaining <= dailyRate * days
+        ? `On Forecast (${remaining} SP ≤ ${capacity} SP capacity by due date)`
+        : `At Risk (${remaining} SP > ${capacity} SP capacity by due date)`
+    );
+  });
+  pastDue.forEach((it: any) => reasons.set(it.key, "Past Due (missed due date)"));
+
+  return {
+    dailyRate: Math.round(dailyRate * 10) / 10,
+    plannedCount: planned.length,
+    onTimeCount,
+    score: planned.length > 0 ? Math.round((onTimeCount / planned.length) * 100) : 0,
+    reasons,
+  };
+}
+
 /**
  * Transform a raw Jira issue into a work item for dashboard calculations.
  */
@@ -138,6 +210,7 @@ function mapIssueToWorkItem(
     parentId: parentObj?.id || "",
     createdDate: String(fields.created || ""),
     resolutionDate: fields.resolutiondate ? String(fields.resolutiondate) : undefined,
+    dueDate: fields.duedate ? String(fields.duedate) : undefined,
     updatedDate: String(fields.updated || ""),
   };
 }
@@ -274,6 +347,8 @@ function calculateKPIs(items: any[], filters: any) {
         : 0
       : 0;
 
+  const futureForecast = computeFuturePredictability(items);
+
   // Predictability across the selection: delivered / planned SP.
   const predictabilityScore =
     totalCommittedSP > 0 ? Math.round((totalDoneSP / totalCommittedSP) * 100) : 0;
@@ -349,12 +424,20 @@ function calculateKPIs(items: any[], filters: any) {
         drilldownTab: "trends",
       },
       {
-        title: "Feature Predictability",
-        value: `${predictabilityScore}%`,
-        subtitle: "Completed committed SP ÷ planned SP",
-        trend: sayDoTrend,
-        trendLabel: sayDoTrend === 0 ? "no change vs last sprint" : "vs last sprint",
-        color: predictabilityScore >= 85 ? ("green" as const) : ("blue" as const),
+        title: "Future Predictability",
+        value: `${futureForecast.score}%`,
+        subtitle:
+          futureForecast.plannedCount > 0
+            ? "Forecast on-time features ÷ planned features (future due dates)"
+            : "No late-stage features with future due dates",
+        trend: 0,
+        trendLabel: "due-date forecast",
+        color:
+          futureForecast.score >= 85
+            ? ("green" as const)
+            : futureForecast.score >= 50
+            ? ("blue" as const)
+            : ("red" as const),
         trendGood: "up" as const,
         drilldownTab: "predictability",
       },
@@ -460,6 +543,7 @@ function calculateKPIs(items: any[], filters: any) {
       priority: i.priority,
       createdDate: i.createdDate,
       isDone: isDoneStatus(i.status),
+      reason: futureForecast.reasons.get(i.key),
     })),
   };
 }
@@ -481,6 +565,7 @@ resolver.define("getDashboardData", async (req) => {
       "priority",
       "created",
       "resolutiondate",
+      "duedate",
       config.storyPointsField,
       config.sprintField,
       config.podField,

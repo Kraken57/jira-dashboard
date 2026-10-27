@@ -226,4 +226,5 @@ export interface JiraWorkItem {
   priority?: string;
   resolutionDate?: string;
   createdDate?: string;
+  dueDate?: string;
 }

@@ -21,10 +21,13 @@ const DEFINITIONS: Record<string, Omit<MetricInsight, "recent" | "trend">> = {
     howToCompare:
       "Compare with the previous sprint and the 3-sprint average. Rising velocity is good only if Say/Do and quality stay stable.",
   },
-  "Feature Predictability": {
-    what: "Share of planned commitment that was delivered. Planned and committed are the same value in this data.",
-    formula: "Done SP ÷ Planned SP × 100",
-    howToCompare: "Compare with the 85% target and the previous sprint. Look for a stable trend, not one good sprint.",
+  "Future Predictability": {
+    what:
+      "Percentage of planned features expected to be delivered by their due date. A feature is forecast to finish on time when its estimated remaining work can be completed by its due date based on the team's delivery rate.",
+    formula:
+      "Features forecast to finish on or before due date ÷ planned features with a future due date × 100",
+    howToCompare:
+      "Compare with the 85% target. In the popup, the Reason column separates On Forecast from At Risk features.",
     target: { label: "On track", value: 85, unit: "%", direction: "atLeast" },
   },
 

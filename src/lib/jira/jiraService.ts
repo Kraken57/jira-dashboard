@@ -64,6 +64,7 @@ async function fetchAllLiveJiraIssues(): Promise<{
         "priority",
         "created",
         "resolutiondate",
+        "duedate",
         spField,
         sprintField,
         podField,
@@ -183,6 +184,7 @@ async function fetchAllLiveJiraIssues(): Promise<{
       resolutionDate: fields.resolutiondate
         ? String(fields.resolutiondate)
         : undefined,
+      dueDate: fields.duedate ? String(fields.duedate) : undefined,
       updatedDate: String(fields.updated || ""),
     };
   });

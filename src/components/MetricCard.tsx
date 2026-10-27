@@ -25,7 +25,7 @@ const ICONS: Record<string, React.FC<{ className?: string }>> = {
   "Say/Do Ratio": SayDoIcon,
   "Sprint Carry Over": CarryIcon,
   "Team/Epic Velocity": VelocityIcon,
-  "Feature Predictability": PredictabilityIcon,
+  "Future Predictability": PredictabilityIcon,
 };
 
 const colorMap: Record<string, { bg: string; text: string }> = {
