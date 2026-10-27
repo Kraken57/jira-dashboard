@@ -328,14 +328,80 @@ function calculateKPIs(items: any[], filters: any) {
     totalCommittedSP > 0 ? Math.round((totalDoneSP / totalCommittedSP) * 100) : 0;
   const savedCarry =
     totalCommittedSP > 0 ? Math.round((totalCarriedSP / totalCommittedSP) * 100) : 0;
-  const currentVelocity = totalDoneSP;
+  let currentVelocity = totalDoneSP;
+  let velocityPodCount = 0;
+
+  // Global All Pods / All Quarters / All Sprints: average each pod's sprint
+  // velocity first, then average the pods. Other filter combinations keep the
+  // existing calculation.
+  const isGlobalAll =
+    (!filters.podId || filters.podId === "all") &&
+    (!filters.quarterId || filters.quarterId === "all") &&
+    (!filters.sprintId || filters.sprintId === "all");
+  let globalVelocityTrend: number | null = null;
+  if (isGlobalAll) {
+    // Velocity only counts accepted (done) items with real story points.
+    const velocityItems = items.filter(
+      (item) => isDoneStatus(item.status) && (item.storyPoints || 0) > 0
+    );
+    const podPools = new Map<string, any[]>();
+    for (const item of velocityItems) {
+      const key = item.podKey || "UNKNOWN";
+      if (!podPools.has(key)) podPools.set(key, []);
+      podPools.get(key)!.push(item);
+    }
+
+    const podAverages: number[] = [];
+    podPools.forEach((pool) => {
+      const podSprints = sprints.filter((s) =>
+        pool.some((i) => i.sprints.includes(s.name))
+      );
+      if (!podSprints.length) return;
+      const perSprint = podSprints.map((s) =>
+        pool
+          .filter((i) => i.sprints.includes(s.name) && isDoneStatus(i.status))
+          .reduce((sum, i) => sum + (i.storyPoints || 0), 0)
+      );
+      podAverages.push(
+        perSprint.reduce((a, b) => a + b, 0) / perSprint.length
+      );
+    });
+
+    velocityPodCount = podAverages.length;
+    currentVelocity = podAverages.length
+      ? Math.round(
+          podAverages.reduce((a, b) => a + b, 0) / podAverages.length
+        )
+      : 0;
+
+    if (lastSprint && prevSprint) {
+      const podAvgForSprint = (name: string) => {
+        const vals: number[] = [];
+        podPools.forEach((pool) => {
+          if (!pool.some((i) => i.sprints.includes(name))) return;
+          vals.push(
+            pool
+              .filter((i) => i.sprints.includes(name) && isDoneStatus(i.status))
+              .reduce((sum, i) => sum + (i.storyPoints || 0), 0)
+          );
+        });
+        return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+      };
+      const latest = podAvgForSprint(lastSprint.name);
+      const previous = podAvgForSprint(prevSprint.name);
+      globalVelocityTrend =
+        previous > 0 ? Math.round(((latest - previous) / previous) * 100) : latest > 0 ? 100 : 0;
+    }
+  }
 
   const sayDoTrend =
     lastSprint && prevSprint ? sprintSayDo(lastSprint) - sprintSayDo(prevSprint) : 0;
   const carryTrend =
     lastSprint && prevSprint ? sprintCarry(lastSprint) - sprintCarry(prevSprint) : 0;
   const velocityTrendPct =
-    lastSprint && prevSprint
+    globalVelocityTrend !== null
+      ? globalVelocityTrend
+      : lastSprint && prevSprint
       ? prevSprint.doneStoryPoints > 0
         ? Math.round(
             ((lastSprint.doneStoryPoints - prevSprint.doneStoryPoints) /
@@ -414,9 +480,11 @@ function calculateKPIs(items: any[], filters: any) {
         drilldownTab: "diagnosis",
       },
       {
-        title: "Team/Epic Velocity",
+        title: "Avg. Sprint Velocity",
         value: `${currentVelocity} pts`,
-        subtitle: "SP completed in latest sprint",
+        subtitle: isGlobalAll
+          ? `Average SP per sprint across ${velocityPodCount} pods`
+          : "SP completed in latest sprint",
         trend: velocityTrendPct,
         trendLabel: velocityTrendPct === 0 ? "no change vs last sprint" : "vs last sprint",
         color: "blue" as const,

@@ -464,7 +464,51 @@ export function computeDashboardData(
   const carryOver = scopeCommittedSP > 0
     ? Math.round((scopeCarriedSP / scopeCommittedSP) * 100)
     : 0;
-  const currentVelocity = scopeDoneSP;
+  let currentVelocity = scopeDoneSP;
+  let velocityPodCount = 0;
+  let globalPodPools: Map<string, JiraWorkItem[]> | null = null;
+
+  // Two-level average for the global "All Pods / All Quarters / All Sprints"
+  // view: average each pod's sprint velocity first, then average the pods.
+  // This stops a large pod from dominating the enterprise average. Every
+  // other filter combination keeps the existing calculation.
+  const isGlobalAll =
+    podId === "all" && quarterId === "all" && sprintId === "all";
+  if (isGlobalAll) {
+    // Velocity only counts accepted (done) items with real story points.
+    // Zero-SP items (including subtasks) cannot contribute velocity.
+    const velocityItems = activeItems.filter(
+      (it) => DONE_STATUSES.has(it.status) && (it.storyPoints || 0) > 0
+    );
+    const podPools = new Map<string, JiraWorkItem[]>();
+    velocityItems.forEach((it) => {
+      const key = it.podKey || "UNKNOWN";
+      if (!podPools.has(key)) podPools.set(key, []);
+      podPools.get(key)!.push(it);
+    });
+
+    const podAverages: number[] = [];
+    podPools.forEach((pool) => {
+      const podSprints = windowNames.filter((name) =>
+        pool.some((it) => matchesSprint(it.sprints, name))
+      );
+      if (!podSprints.length) return;
+      const perSprint = podSprints.map(
+        (name) => buildSprintStat(name, pool).done
+      );
+      podAverages.push(
+        perSprint.reduce((a, b) => a + b, 0) / perSprint.length
+      );
+    });
+
+    velocityPodCount = podAverages.length;
+    currentVelocity = podAverages.length
+      ? Math.round(
+          podAverages.reduce((a, b) => a + b, 0) / podAverages.length
+        )
+      : 0;
+    globalPodPools = podPools;
+  }
 
   const sayDoOf = (s: typeof currentCompare | undefined) =>
     s && s.committed > 0 ? (s.done / s.committed) * 100 : 0;
@@ -483,6 +527,24 @@ export function computeDashboardData(
     hasComparison && currentCompare && prevCompare
       ? pctChange(currentCompare.done, prevCompare.done)
       : 0;
+
+  // Keep the global trend consistent with the two-level average: compare the
+  // pod-averaged velocity of the latest sprint with the previous sprint.
+  let effectiveVelocityTrendPct = velocityTrendPct;
+  if (isGlobalAll && globalPodPools && hasComparison && currentCompare && prevCompare) {
+    const podAvgForSprint = (name: string) => {
+      const vals: number[] = [];
+      globalPodPools!.forEach((pool) => {
+        if (!pool.some((it) => matchesSprint(it.sprints, name))) return;
+        vals.push(buildSprintStat(name, pool).done);
+      });
+      return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+    };
+    effectiveVelocityTrendPct = pctChange(
+      podAvgForSprint(currentCompare.fullName),
+      podAvgForSprint(prevCompare.fullName)
+    );
+  }
 
   const predictabilityScore =
     scopeCommittedSP > 0 ? Math.round((scopeDoneSP / scopeCommittedSP) * 100) : 0; // (kept for the Predictability tab)
@@ -521,14 +583,16 @@ export function computeDashboardData(
       drilldownTab: "diagnosis",
     },
     {
-      title: "Team/Epic Velocity",
+      title: "Avg. Sprint Velocity",
       value: `${currentVelocity} pts`,
       subtitle:
         sprintId === "all"
-          ? `SP completed across ${windowNames.length} sprints`
+          ? isGlobalAll
+            ? `Average SP per sprint across ${velocityPodCount} pods`
+            : `SP completed across ${windowNames.length} sprints`
           : "SP completed in selected sprint",
-      trend: velocityTrendPct,
-      trendLabel: trendLabelFor(velocityTrendPct),
+      trend: effectiveVelocityTrendPct,
+      trendLabel: trendLabelFor(effectiveVelocityTrendPct),
       trendUnit: "%",
       color: "blue",
       trendGood: "up",
@@ -954,10 +1018,15 @@ export function computeDashboardData(
         `${contributors.length} contributor${contributors.length === 1 ? "" : "s"} still hold unfinished work.`,
       ],
     },
-    "Team/Epic Velocity": {
-      what: "The number of story points completed in the selected period.",
-      formula: "Sum of story points on done items",
-      calculation: `${fmt(currentVelocity)} SP completed`,
+    "Avg. Sprint Velocity": {
+      what:
+        "Average story points completed per sprint. With All Pods, All Quarters, and All Sprints selected, it averages each pod's sprint velocity first, then averages the pods, so one large pod cannot dominate.",
+      formula: isGlobalAll
+        ? "Mean of each pod's average sprint velocity"
+        : "Sum of story points on done items",
+      calculation: isGlobalAll
+        ? `${fmt(currentVelocity)} SP average per sprint across ${velocityPodCount} pods`
+        : `${fmt(currentVelocity)} SP completed`,
       howToCompare:
         "Compare with the previous sprint and the 3-sprint average. Rising velocity is good only if Say/Do and quality stay stable.",
       trend:
@@ -966,7 +1035,7 @@ export function computeDashboardData(
               ...trendBase,
               current: currentCompare.done,
               previous: prevCompare.done,
-              delta: velocityTrendPct,
+              delta: effectiveVelocityTrendPct,
               unit: "%",
               better: "up",
             }

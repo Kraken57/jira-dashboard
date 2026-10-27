@@ -15,9 +15,10 @@ const DEFINITIONS: Record<string, Omit<MetricInsight, "recent" | "trend">> = {
       "Lower is better. Compare with the 18% target and use Delivery Diagnosis to see why work was carried.",
     target: { label: "Healthy", value: 18, unit: "%", direction: "atMost" },
   },
-  "Team/Epic Velocity": {
-    what: "Story points completed in the selected period.",
-    formula: "Sum of story points on done items",
+  "Avg. Sprint Velocity": {
+    what:
+      "Average story points completed per sprint. With All Pods, All Quarters, and All Sprints selected, it averages each pod's sprint velocity first, then averages the pods.",
+    formula: "Mean of each pod's average sprint velocity (global view), otherwise SP completed in the period. Only accepted items with SP > 0 count.",
     howToCompare:
       "Compare with the previous sprint and the 3-sprint average. Rising velocity is good only if Say/Do and quality stay stable.",
   },

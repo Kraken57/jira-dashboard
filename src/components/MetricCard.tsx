@@ -24,7 +24,7 @@ const PredictabilityIcon = ({ className }: { className?: string }) => (
 const ICONS: Record<string, React.FC<{ className?: string }>> = {
   "Say/Do Ratio": SayDoIcon,
   "Sprint Carry Over": CarryIcon,
-  "Team/Epic Velocity": VelocityIcon,
+  "Avg. Sprint Velocity": VelocityIcon,
   "Future Predictability": PredictabilityIcon,
 };
 
