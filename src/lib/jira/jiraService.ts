@@ -60,6 +60,7 @@ async function fetchAllLiveJiraIssues(): Promise<{
         "issuetype",
         "project",
         "parent",
+        "customfield_10014",
         "assignee",
         "priority",
         "created",
@@ -172,6 +173,12 @@ async function fetchAllLiveJiraIssues(): Promise<{
     const assigneeObj = fields.assignee as { displayName?: string } | undefined;
     const priorityObj = fields.priority as { name?: string } | undefined;
     const parentObj = fields.parent as { key?: string; id?: string } | undefined;
+    // Company-managed projects link stories to Epics/Features through the
+    // "Epic Link" field instead of `parent`.
+    const epicLink =
+      typeof fields.customfield_10014 === "string"
+        ? fields.customfield_10014
+        : "";
 
     return {
       key: issueKey,
@@ -189,7 +196,7 @@ async function fetchAllLiveJiraIssues(): Promise<{
       sprints,
       storyPoints,
       team: project.name || "",
-      parentKey: parentObj?.key || "",
+      parentKey: parentObj?.key || epicLink || "",
       parentId: parentObj?.id || "",
       createdDate: String(fields.created || ""),
       resolutionDate: fields.resolutiondate

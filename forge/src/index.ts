@@ -275,6 +275,10 @@ function mapIssueToWorkItem(
   const assigneeObj = fields.assignee as { displayName?: string } | undefined;
   const priorityObj = fields.priority as { name?: string } | undefined;
   const parentObj = fields.parent as { key?: string; id?: string } | undefined;
+  const epicLink =
+    typeof fields.customfield_10014 === "string"
+      ? fields.customfield_10014
+      : "";
 
   return {
     key: issueKey,
@@ -289,7 +293,7 @@ function mapIssueToWorkItem(
     sprints,
     storyPoints,
     team: project.name || "",
-    parentKey: parentObj?.key || "",
+    parentKey: parentObj?.key || epicLink || "",
     parentId: parentObj?.id || "",
     createdDate: String(fields.created || ""),
     resolutionDate: fields.resolutiondate ? String(fields.resolutiondate) : undefined,
@@ -659,15 +663,35 @@ function calculateKPIs(
     isSubtask: /^sub-?task$/i.test(i.workType),
   }));
 
-  // Features usually have no quarter/sprint of their own (and are often not
-  // linked to stories), so quarter/sprint filters must not hide them.
+  // Features often have no quarter/sprint of their own, so include any
+  // feature that is an ancestor of an item in the current scope. Features
+  // with no link and no sprint stay in the All/All view only.
+  const featureByKey = new Map(forecastChildSource.map((i: any) => [i.key, i]));
   const featureRe = forecastChildSource.some((i: any) =>
     /^feature$/i.test(i.workType)
   )
     ? /^feature$/i
     : /^epic$/i;
+  const activeKeys = new Set(items.map((i: any) => i.key));
+  const featureKeys = new Set<string>();
+  for (const item of items) {
+    let cursor: any = item;
+    const seen = new Set<string>();
+    while (cursor && !seen.has(cursor.key)) {
+      seen.add(cursor.key);
+      if (featureRe.test(cursor.workType)) {
+        featureKeys.add(cursor.key);
+        break;
+      }
+      cursor = cursor.parentKey ? featureByKey.get(cursor.parentKey) : undefined;
+    }
+  }
   const podFeatureList = forecastChildSource
-    .filter((i: any) => featureRe.test(i.workType))
+    .filter(
+      (i: any) =>
+        featureRe.test(i.workType) &&
+        (activeKeys.has(i.key) || featureKeys.has(i.key))
+    )
     .map((i: any) => ({
       key: i.key,
       summary: i.summary,
@@ -887,6 +911,7 @@ resolver.define("getDashboardData", async (req) => {
       "issuetype",
       "project",
       "parent",
+      "customfield_10014",
       "assignee",
       "priority",
       "created",

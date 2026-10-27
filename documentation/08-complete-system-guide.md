@@ -380,7 +380,7 @@ Four stat cards, a work-type selector, and a workflow pie chart:
 
 | Element | Action |
 |---|---|
-| Total Features | opens `Feature` items (falls back to `Epic` when the site has no Feature type). Features are pod-level and stay visible under quarter/sprint filters because they usually have no quarter/sprint field. |
+| Total Features | opens `Feature` items (falls back to `Epic` when the site has no Feature type). Features follow the selected quarter/sprint through their own sprint or a linked child story (`parent` / Epic Link). Features with no sprint and no linked children appear only in All/All. |
 | Total Stories | opens `workType === "Story"` |
 | Completed Stories | opens stories with `isDone` |
 | In Flight | opens stories with `!isDone` |

@@ -1365,17 +1365,33 @@ export function computeDashboardData(
   });
   const issueList: IssueRow[] = activeItems.map(toIssueRow);
 
-  // Pod View shows feature-level work for the selected pod. Features usually
-  // have no quarter/sprint of their own (and are often not linked to stories),
-  // so quarter/sprint filters must not hide them.
+  // Pod View features follow the selected quarter/sprint. Features often have
+  // no quarter/sprint of their own, so include any feature that is an ancestor
+  // of an item in the current scope. Features with no link and no sprint stay
+  // in the All/All view only.
   const featureTypeRe = workItems.some((it) => /^feature$/i.test(it.workType))
     ? /^feature$/i
     : /^epic$/i;
+  const activeKeys = new Set(activeItems.map((it) => it.key));
+  const featureKeys = new Set<string>();
+  for (const item of activeItems) {
+    let cursor: JiraWorkItem | undefined = item;
+    const seen = new Set<string>();
+    while (cursor && !seen.has(cursor.key)) {
+      seen.add(cursor.key);
+      if (featureTypeRe.test(cursor.workType)) {
+        featureKeys.add(cursor.key);
+        break;
+      }
+      cursor = cursor.parentKey ? itemByKey.get(cursor.parentKey) : undefined;
+    }
+  }
   const podFeatureList: IssueRow[] = workItems
     .filter(
       (it) =>
         (podId === "all" || it.podKey === podId) &&
-        featureTypeRe.test(it.workType)
+        featureTypeRe.test(it.workType) &&
+        (activeKeys.has(it.key) || featureKeys.has(it.key))
     )
     .map(toIssueRow);
 
