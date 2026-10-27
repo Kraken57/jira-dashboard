@@ -93,40 +93,121 @@ const DAY_MS = 86_400_000;
 const RATE_WINDOW_DAYS = 30;
 
 /**
+ * Statuses that close a sub-task. Sub-tasks often use a simpler workflow than
+ * their parent story, so a site that only treats "Accepted" as done for stories
+ * would otherwise show every sub-task as incomplete.
+ */
+const SUBTASK_DONE_STATUSES = new Set(
+  (
+    process.env.JIRA_SUBTASK_DONE_STATUSES ||
+    "Done,Closed,Resolved,Completed,Released,Accepted"
+  )
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+);
+
+function isSubtaskDoneStatus(status: string): boolean {
+  return DONE_STATUSES.has(status) || SUBTASK_DONE_STATUSES.has(status);
+}
+
+function isWeekend(date: Date): boolean {
+  const day = date.getDay();
+  return day === 0 || day === 6;
+}
+
+/**
+ * Weekdays between two instants. The end date is excluded because it is the
+ * deadline, not a full day of capacity. Public holidays are not modelled.
+ */
+function workingDaysBetween(startMs: number, endMs: number): number {
+  const cursor = new Date(startMs);
+  cursor.setHours(0, 0, 0, 0);
+  const end = new Date(endMs);
+  end.setHours(0, 0, 0, 0);
+  let days = 0;
+  while (cursor < end) {
+    if (!isWeekend(cursor)) days += 1;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return days;
+}
+
+/**
  * Future Predictability — share of planned features (not done, due date in the
- * future) forecast to finish on or before their due date at the team's recent
- * delivery rate. Forward-looking and due-date based; different from Say/Do,
- * which compares delivered vs committed points after the fact.
+ * future) forecast to finish on or before their due date.
  *
- * A feature is forecast on time when its estimated remaining work (story
- * points) fits inside the days remaining until its due date at the team's
- * average delivery rate over the last 30 days.
+ * Remaining work is the sum of open child story points. A feature's own story
+ * points are used only when it has no estimated children. Capacity is based on
+ * weekdays (not calendar days) so weekends do not inflate the forecast.
+ * Features without any remaining estimate are excluded from the score and
+ * reported separately instead of being counted as "on time".
  */
 export function computeFuturePredictability(
   items: JiraWorkItem[],
-  isDone: (status: string) => boolean
+  isDone: (status: string) => boolean,
+  childSource: JiraWorkItem[] = items
 ) {
   const now = Date.now();
   const startOfToday = new Date(now).setHours(0, 0, 0, 0);
-  const rateStart = now - RATE_WINDOW_DAYS * DAY_MS;
-  const recentDoneSP = items
+  const rateStart = startOfToday - RATE_WINDOW_DAYS * DAY_MS;
+  const recentDoneSP = childSource
     .filter(
       (it) =>
         isDone(it.status) &&
         it.resolutionDate &&
-        new Date(it.resolutionDate).getTime() >= rateStart
+        new Date(it.resolutionDate).getTime() >= rateStart &&
+        new Date(it.resolutionDate).getTime() <= now
     )
     .reduce((sum, it) => sum + (it.storyPoints || 0), 0);
-  // ponytail: flat SP/day rate over 30 days; per-pod rates if the single rate mispredicts.
-  const dailyRate = recentDoneSP / RATE_WINDOW_DAYS;
+  const rateWorkingDays = Math.max(1, workingDaysBetween(rateStart, now + DAY_MS));
+  // ponytail: flat SP/working-day rate over 30 days; per-pod rates if the single rate mispredicts.
+  const dailyRate = recentDoneSP / rateWorkingDays;
 
   // Sites without a "Feature" issue type report feature-level work as Epics.
-  const hasFeatureType = items.some((it) => /^feature$/i.test(it.workType));
+  const hasFeatureType = childSource.some((it) => /^feature$/i.test(it.workType));
   const isFeature = (it: JiraWorkItem) =>
     hasFeatureType ? /^feature$/i.test(it.workType) : /^epic$/i.test(it.workType);
 
   const isFutureDated = (it: JiraWorkItem) =>
     Boolean(it.dueDate) && new Date(it.dueDate as string).getTime() >= startOfToday;
+
+  // Remaining work belongs to the feature, but is estimated on its descendant
+  // stories. Walk the full parent tree so Feature → Epic → Story hierarchies work.
+  const childrenByParent = new Map<string, JiraWorkItem[]>();
+  childSource.forEach((it) => {
+    if (!it.parentKey) return;
+    if (/^sub-?task$/i.test(it.workType)) return;
+    if (!childrenByParent.has(it.parentKey)) childrenByParent.set(it.parentKey, []);
+    childrenByParent.get(it.parentKey)!.push(it);
+  });
+
+  const remainingUnder = (
+    item: JiraWorkItem,
+    seen = new Set<string>()
+  ): { remaining: number; hasEstimate: boolean } => {
+    if (seen.has(item.key)) return { remaining: 0, hasEstimate: false };
+    seen.add(item.key);
+    const children = childrenByParent.get(item.key) || [];
+    if (children.length === 0) {
+      const sp = item.storyPoints || 0;
+      return { remaining: isDone(item.status) ? 0 : sp, hasEstimate: sp > 0 };
+    }
+    let remaining = 0;
+    let hasEstimate = false;
+    for (const child of children) {
+      const childResult = remainingUnder(child, seen);
+      hasEstimate = hasEstimate || childResult.hasEstimate;
+      if (!isDone(child.status)) remaining += childResult.remaining;
+    }
+    if (!hasEstimate && (item.storyPoints || 0) > 0) {
+      return {
+        remaining: isDone(item.status) ? 0 : item.storyPoints || 0,
+        hasEstimate: true,
+      };
+    }
+    return { remaining, hasEstimate };
+  };
 
   const planned = items.filter(
     (it) => isFeature(it) && !isDone(it.status) && isFutureDated(it)
@@ -135,46 +216,53 @@ export function computeFuturePredictability(
     (it) => isFeature(it) && !isDone(it.status) && !isFutureDated(it) && !!it.dueDate
   );
 
-  const onTimeCount = planned.filter((it) => {
-    const remaining = it.storyPoints || 0;
+  const forecastable = planned.filter((it) => remainingUnder(it).hasEstimate);
+  const onTimeCount = forecastable.filter((it) => {
+    const { remaining } = remainingUnder(it);
     if (dailyRate <= 0) return remaining === 0;
-    const days = Math.ceil(
-      (new Date(it.dueDate as string).getTime() - startOfToday) / DAY_MS
-    );
+    const days = workingDaysBetween(startOfToday, new Date(it.dueDate as string).getTime());
     return remaining <= dailyRate * days;
   }).length;
 
   const reasons = new Map<string, string>();
   planned.forEach((it) => {
-    const remaining = it.storyPoints || 0;
+    const { remaining, hasEstimate } = remainingUnder(it);
+    if (!hasEstimate) {
+      reasons.set(it.key, "No Estimate (add story points to child work)");
+      return;
+    }
     if (dailyRate <= 0) {
       reasons.set(
         it.key,
         remaining === 0
-          ? "On Forecast"
+          ? "On Forecast (no remaining work)"
           : "At Risk (no recent delivery rate)"
       );
       return;
     }
-    const days = Math.ceil(
-      (new Date(it.dueDate as string).getTime() - startOfToday) / DAY_MS
-    );
+    const days = workingDaysBetween(startOfToday, new Date(it.dueDate as string).getTime());
     const capacity = Math.round(dailyRate * days * 10) / 10;
     reasons.set(
       it.key,
       remaining <= dailyRate * days
-        ? `On Forecast (${remaining} SP ≤ ${capacity} SP capacity by due date)`
-        : `At Risk (${remaining} SP > ${capacity} SP capacity by due date)`
+        ? `On Forecast (${remaining} SP ≤ ${capacity} SP capacity in ${days} working days)`
+        : `At Risk (${remaining} SP > ${capacity} SP capacity in ${days} working days)`
     );
   });
   pastDue.forEach((it) => reasons.set(it.key, "Past Due (missed due date)"));
 
   return {
     dailyRate: Math.round(dailyRate * 10) / 10,
+    rateWorkingDays,
     plannedCount: planned.length,
+    forecastableCount: forecastable.length,
+    unestimatedCount: planned.length - forecastable.length,
     onTimeCount,
     pastDueCount: pastDue.length,
-    score: planned.length > 0 ? Math.round((onTimeCount / planned.length) * 100) : 0,
+    score:
+      forecastable.length > 0
+        ? Math.round((onTimeCount / forecastable.length) * 100)
+        : 0,
     plannedKeys: new Set(planned.map((it) => it.key)),
     reasons,
   };
@@ -260,13 +348,32 @@ export function computeDashboardData(
 
   // Developer View is explicitly Story + Sub-task. Subtasks are kept out of
   // every other metric, but contributors need their real execution items.
-  const developerItems = items.filter((item) => {
-    if (!/^(story|sub-?task)$/i.test(item.workType)) return false;
-    if (podId !== "all" && item.podKey !== podId) return false;
-    if (quarterId !== "all" && item.quarter !== quarterId) return false;
-    if (sprintId !== "all" && !matchesSprint(item.sprints, sprintId)) return false;
-    return true;
-  });
+  // Sub-tasks often have no sprint/quarter of their own, so inherit those from
+  // the parent before applying the tab filters.
+  const itemByKey = new Map(items.map((item) => [item.key, item]));
+  const withParentContext = (item: JiraWorkItem): JiraWorkItem => {
+    if (!/^sub-?task$/i.test(item.workType) || !item.parentKey) return item;
+    const parent = itemByKey.get(item.parentKey);
+    if (!parent) return item;
+    return {
+      ...item,
+      sprints: item.sprints && item.sprints.length > 0 ? item.sprints : parent.sprints,
+      quarter:
+        item.quarter && item.quarter !== "All" ? item.quarter : parent.quarter,
+      podName:
+        item.podName && item.podName !== item.team ? item.podName : parent.podName,
+      team: item.team || parent.team,
+    };
+  };
+  const developerItems = items
+    .map(withParentContext)
+    .filter((item) => {
+      if (!/^(story|sub-?task)$/i.test(item.workType)) return false;
+      if (podId !== "all" && item.podKey !== podId) return false;
+      if (quarterId !== "all" && item.quarter !== quarterId) return false;
+      if (sprintId !== "all" && !matchesSprint(item.sprints, sprintId)) return false;
+      return true;
+    });
 
   // 3. Compute Summary Counts
   let totalStoryPoints = 0;
@@ -558,8 +665,15 @@ export function computeDashboardData(
 
   const predictabilityScore =
     scopeCommittedSP > 0 ? Math.round((scopeDoneSP / scopeCommittedSP) * 100) : 0; // (kept for the Predictability tab)
-  const futurePredictability = computeFuturePredictability(scopedItems, (s) =>
-    DONE_STATUSES.has(s)
+  // Feature children can live outside the selected quarter; gather them from the
+  // pod scope so remaining work is not understated.
+  const forecastChildSource = workItems.filter(
+    (item) => podId === "all" || item.podKey === podId
+  );
+  const futurePredictability = computeFuturePredictability(
+    scopedItems,
+    (s) => DONE_STATUSES.has(s),
+    forecastChildSource
   );
 
   const trendLabelFor = (delta: number) =>
@@ -610,16 +724,23 @@ export function computeDashboardData(
     },
     {
       title: "Future Predictability",
-      value: `${futurePredictability.score}%`,
+      value:
+        futurePredictability.forecastableCount > 0
+          ? `${futurePredictability.score}%`
+          : "N/A",
       subtitle:
-        futurePredictability.plannedCount > 0
-          ? "Forecast on-time features ÷ planned features (future due dates)"
+        futurePredictability.forecastableCount > 0
+          ? "Forecast on-time estimated features ÷ estimated features (future due dates)"
+          : futurePredictability.plannedCount > 0
+          ? "No estimated remaining work on planned features"
           : "No late-stage features with future due dates",
       trend: 0,
       trendLabel: "due-date forecast",
       trendUnit: "pp",
       color:
-        futurePredictability.score >= 85
+        futurePredictability.forecastableCount === 0
+          ? "blue"
+          : futurePredictability.score >= 85
           ? "green"
           : futurePredictability.score >= 50
           ? "blue"
@@ -666,7 +787,7 @@ export function computeDashboardData(
         team: it.team || it.podName,
       };
     const isSubtask = /^sub-?task$/i.test(it.workType);
-    const isDone = DONE_STATUSES.has(it.status);
+    const isDone = isSubtask ? isSubtaskDoneStatus(it.status) : DONE_STATUSES.has(it.status);
 
     existing.assigned += 1;
     existing.totalSP += it.storyPoints || 0;
@@ -833,7 +954,9 @@ export function computeDashboardData(
   const predictability: PredictabilityData = {
     score: predictabilityScore,
     varianceSP: Math.abs(scopeCommittedSP - scopeDoneSP),
-    epicsOnSchedule: predictabilityScore,
+    epicsOnSchedule: futurePredictability.score,
+    forecastableFeatures: futurePredictability.forecastableCount,
+    unestimatedFeatures: futurePredictability.unestimatedCount,
     history: sprintStats.map((s) => ({
       sprint: s.name,
       planned: s.planned,
@@ -1111,12 +1234,14 @@ export function computeDashboardData(
     },
     "Future Predictability": {
       what:
-        "Percentage of planned features expected to be delivered by their due date. A feature is forecast to finish on time when its estimated remaining work can be completed by its due date based on the team's delivery rate.",
+        "Percentage of estimated planned features expected to be delivered by their due date. Remaining work is the sum of open child story points; capacity is based on weekdays and the team's recent delivery rate.",
       formula:
-        "Features forecast to finish on or before due date ÷ planned features with a future due date × 100",
+        "Estimated features forecast to finish on or before due date ÷ estimated features with a future due date × 100",
       calculation:
-        futurePredictability.plannedCount > 0
-          ? `${futurePredictability.onTimeCount} of ${futurePredictability.plannedCount} features forecast on time = ${futurePredictability.score}% (team rate ${futurePredictability.dailyRate} SP/day over the last ${RATE_WINDOW_DAYS} days)`
+        futurePredictability.forecastableCount > 0
+          ? `${futurePredictability.onTimeCount} of ${futurePredictability.forecastableCount} estimated features forecast on time = ${futurePredictability.score}% (${futurePredictability.dailyRate} SP/working day over ${futurePredictability.rateWorkingDays} working days).`
+          : futurePredictability.plannedCount > 0
+          ? `${futurePredictability.plannedCount} planned feature(s) have no remaining SP estimate. Add story points to child stories to make them forecastable.`
           : `No planned features with a future due date in the current scope (${futurePredictability.pastDueCount} past-due features are listed as Past Due in the popup).`,
       howToCompare:
         "Open the popup and filter the Reason column: 'On Forecast' features are safe at the current pace, 'At Risk' features need more capacity or a scope change. Compare with the 85% target.",
@@ -1134,9 +1259,14 @@ export function computeDashboardData(
           detail: "Not done, due date in the future",
         },
         {
+          label: "Estimated for forecast",
+          value: String(futurePredictability.forecastableCount),
+          detail: `${futurePredictability.unestimatedCount} without a remaining SP estimate`,
+        },
+        {
           label: "Forecast on time",
           value: String(futurePredictability.onTimeCount),
-          detail: `At the current ${futurePredictability.dailyRate} SP/day rate`,
+          detail: `At ${futurePredictability.dailyRate} SP per working day`,
         },
         {
           label: "Past due",
@@ -1150,15 +1280,23 @@ export function computeDashboardData(
               "No features with a future due date are open right now.",
               futurePredictability.pastDueCount > 0
                 ? `${futurePredictability.pastDueCount} feature(s) are already past due.`
-                : "Nothing scheduled head — update due dates to make this card meaningful.",
+                : "Nothing scheduled ahead — update due dates to make this card meaningful.",
+            ]
+          : futurePredictability.forecastableCount === 0
+          ? [
+              "Planned features exist, but none have remaining story points on themselves or their child stories.",
+              "Add story points to the open child stories so the forecast can compare work against capacity.",
             ]
           : [
               futurePredictability.score >= 85
                 ? "On or above the 85% target at the current delivery rate."
                 : `${85 - futurePredictability.score} pp below the 85% target at the current delivery rate.`,
               futurePredictability.dailyRate <= 0
-                ? "No completed SP in the last 30 days, so every feature with remaining work is forecast late."
-                : `Delivery rate used for the forecast: ${futurePredictability.dailyRate} SP/day over the last ${RATE_WINDOW_DAYS} days.`,
+                ? "No completed SP in the last 30 days, so every estimated feature with remaining work is forecast late."
+                : `Forecast uses ${futurePredictability.dailyRate} SP per working day over the last ${RATE_WINDOW_DAYS} calendar days (${futurePredictability.rateWorkingDays} working days).`,
+              futurePredictability.unestimatedCount > 0
+                ? `${futurePredictability.unestimatedCount} planned feature(s) are excluded because they have no remaining SP estimate.`
+                : "Every planned feature has a remaining SP estimate.",
             ],
     },
   };
@@ -1177,6 +1315,7 @@ export function computeDashboardData(
     priority: it.priority || "Medium",
     createdDate: it.createdDate || "",
     isDone: DONE_STATUSES.has(it.status),
+    originalEstimateHours: estimateHours(it.originalEstimateSeconds),
     reason: futurePredictability.reasons.get(it.key),
   }));
 
@@ -1192,7 +1331,9 @@ export function computeDashboardData(
     assignee: it.assignee || "Unassigned",
     priority: it.priority || "Medium",
     createdDate: it.createdDate || "",
-    isDone: DONE_STATUSES.has(it.status),
+    isDone: /^sub-?task$/i.test(it.workType)
+      ? isSubtaskDoneStatus(it.status)
+      : DONE_STATUSES.has(it.status),
     originalEstimateHours: estimateHours(it.originalEstimateSeconds),
     isSubtask: /^sub-?task$/i.test(it.workType),
   }));

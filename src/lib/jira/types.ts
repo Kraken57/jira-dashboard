@@ -135,6 +135,8 @@ export interface PredictabilityData {
   score: number;
   varianceSP: number;
   epicsOnSchedule: number;
+  forecastableFeatures: number;
+  unestimatedFeatures: number;
   history: { sprint: string; planned: number; delivered: number; sayDo: number }[];
 }
 
@@ -233,6 +235,7 @@ export interface JiraWorkItem {
   team: string;
   assignee?: string;
   priority?: string;
+  parentKey?: string;
   resolutionDate?: string;
   createdDate?: string;
   dueDate?: string;

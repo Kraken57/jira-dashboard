@@ -101,6 +101,7 @@ JIRA_STORY_POINTS_FIELD=customfield_10031
 JIRA_SPRINT_FIELD=customfield_10020
 JIRA_POD_FIELD=customfield_10050
 JIRA_DONE_STATUSES=Done,Accepted,Released,Closed,Resolved
+JIRA_SUBTASK_DONE_STATUSES=Done,Closed,Resolved,Completed,Released,Accepted
 ```
 
 Custom field IDs are **different on every Jira site**. Do not trust the examples; discover
@@ -402,9 +403,18 @@ the table:
 | Table row | Story + Sub-task items assigned to that developer |
 
 The table counts **Story + Sub-task only** and shows the split in each cell.
-`Story Points / Hours` pairs delivered SP with `completed / original` hours from
+The table now has separate **Story Points** (`Delivered / Assigned`) and **Hours**
+(`Completed / Original estimate`) columns, plus a team-total footer. Hours come from
 Jira’s `timeoriginalestimate`. Completion rate is completed items ÷ assigned items.
 Developer rows are tinted **yellow above 70%** and **red at 70% or below**.
+
+Sub-tasks inherit their parent story’s sprint/quarter when they have none of their own.
+Sub-task completion also accepts `JIRA_SUBTASK_DONE_STATUSES` (default
+`Done,Closed,Resolved,Completed,Released,Accepted`), because a site may only count
+`Accepted` as done for stories.
+
+The Developer popup adds an **Hours** column and hour totals. Each row shows the
+original estimate and whether those hours are completed.
 
 ### 7.4 Quality (`QualityTab`)
 
@@ -647,16 +657,22 @@ For **one specific sprint**, the totals come from that sprint's stats.
 | Say/Do Ratio | `doneSP / committedSP × 100` | percentage-point change: latest plotted sprint vs the one before it | ≥80 green, ≥65 blue, else red |
 | Sprint Carry Over | `carriedSP / committedSP × 100` | percentage-point change: latest plotted sprint vs the one before it | ≤18 green, ≤28 blue, else red |
 | Avg. Sprint Velocity | Global All/All/All: mean of each pod’s average sprint SP, counting only accepted items with SP > 0. Otherwise: `doneSP` for the period | % change: latest plotted sprint vs the one before it | always blue |
-| Future Predictability | on-time-forecast features / planned features (future due dates) × 100 | none — due-date forecast, not sprint-trended | ≥85 green, ≥50 blue, else red |
+| Future Predictability | on-time-forecast estimated features / estimated features (future due dates) × 100 | none — due-date forecast, not sprint-trended | ≥85 green, ≥50 blue, else red |
 
 **Future Predictability math** (different from Say/Do):
 
 - Planned features = open (not done) features with a due date on or after today.
   If the site has no `Feature` issue type, `Epic` is used instead.
-- On time = the feature's remaining story points fit inside the days remaining until
-  its due date at the team's average delivery rate (completed SP over the last 30 days
-  ÷ 30). Past-due open features are excluded from the score and listed as `Past Due`.
-- Example: 8 planned features, 6 forecast on time → 75%.
+- Remaining work = sum of open child story points. The feature’s own story points are
+  used only when it has no estimated children. Features with no remaining estimate are
+  excluded from the score and reported as `No Estimate`.
+- On time = remaining SP fit inside the **weekdays** remaining until the due date at
+  the team’s recent rate (completed SP over the last 30 calendar days ÷ working days in
+  that window). Weekends do not add capacity. Public holidays are not modelled.
+- Past-due open features are excluded from the score and listed as `Past Due`.
+- If no planned feature has a remaining estimate, the card shows `N/A` instead of a
+  misleading 0% or 100%.
+- Example: 8 estimated planned features, 6 forecast on time → 75%.
 
 The trend is **not** hard-coded to zero for All Sprints. It compares the latest sprint
 in the window with the sprint before it, even when the card value aggregates the whole
@@ -746,7 +762,7 @@ If no active sprint start date is known, all SP is treated as planned.
 
 - `score = doneSP / committedSP × 100`
 - `varianceSP = |committedSP − doneSP|`
-- `epicsOnSchedule = score` (same number today)
+- `epicsOnSchedule = futurePredictability.score` (forward-looking due-date forecast)
 - `history` = one row per sprint in the window: planned, delivered, Say/Do
 
 ### 9.11 Executive trend charts
@@ -986,6 +1002,7 @@ forge variables set JIRA_STORY_POINTS_FIELD customfield_10031
 forge variables set JIRA_SPRINT_FIELD customfield_10020
 forge variables set JIRA_POD_FIELD customfield_10050
 forge variables set JIRA_DONE_STATUSES "Done,Accepted,Released,Closed,Resolved"
+forge variables set JIRA_SUBTASK_DONE_STATUSES "Done,Closed,Resolved,Completed,Released,Accepted"
 ```
 
 Variables are per environment. `forge deploy`/`forge install` default to the
@@ -1209,9 +1226,9 @@ does not exist.
   changes, so planned/committed are the same number.
 - **Cycle time and scope churn are N/A.** They require issue changelog data, which the
   dashboard does not fetch.
-- **Future Predictability is a due-date forecast**, not the Say/Do ratio.
-- **`epicsOnSchedule` equals the predictability score**; it is not a separate epic-level
-  calculation.
+- **Future Predictability is a due-date forecast**, not the Say/Do ratio. It sums open
+  child story points and uses weekday capacity.
+- **`epicsOnSchedule` uses the Future Predictability score**, not the Say/Do score.
 - **Priority distribution is all issues**, not bugs only, despite the Quality section label.
 - **Subtasks are excluded** from all metrics and issue lists, except Developer View, which explicitly counts Story + Sub-task.
 - **Per-sprint sums can overcount carried work** because an issue can appear in several
@@ -1269,7 +1286,7 @@ If full Forge parity is required, port the logic from `metricsEngine.ts` into
 | **Done** | Status present in `JIRA_DONE_STATUSES` (exact, case-sensitive) |
 | **Carry over / spillover** | Committed SP not completed in the sprint |
 | **Say/Do** | Done SP ÷ committed SP |
-| **Predictability** | In this app, done SP ÷ planned (currently same as Say/Do) |
+| **Predictability** | Predictability Index = done SP ÷ planned; Feature Milestone Confidence uses the Future Predictability forecast |
 | **Deduplicated total** | Counting each issue once even if it appears in several sprints |
 | **Forge** | Atlassian's serverless app platform; backend runs in Atlassian cloud |
 | **Bridge** | `@forge/bridge`; lets the iframe call Forge resolvers |
@@ -1289,6 +1306,7 @@ If full Forge parity is required, port the logic from `metricsEngine.ts` into
 | `JIRA_SPRINT_FIELD` | no | `customfield_10020` | Sprint field |
 | `JIRA_POD_FIELD` | no | `customfield_10050` (local) / `10001` (Forge) | POD/team field |
 | `JIRA_DONE_STATUSES` | no | `Done,Accepted,Released,Closed,Resolved` | Done status names |
+| `JIRA_SUBTASK_DONE_STATUSES` | no | `Done,Closed,Resolved,Completed,Released,Accepted` | Done status names for sub-tasks |
 | `JIRA_CACHE_TTL_MS` | no | `300000` | Local raw-data cache TTL |
 | `JIRA_SPRINT_WINDOW` | no | `5` | Number of sprints plotted |
 | `JIRA_NEXT_SPRINT_REVEAL_DAYS` | no | `5` | When to reveal an upcoming sprint |

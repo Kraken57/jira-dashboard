@@ -39,8 +39,14 @@ export function PredictabilityTab({ data }: PredictabilityTabProps) {
           className="text-left bg-white border border-jira-border rounded-lg p-4 shadow-sm hover:border-jira-green/50 transition"
         >
           <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Feature Milestone Confidence</p>
-          <p className="text-2xl font-bold text-jira-green mt-1">{data.epicsOnSchedule}%</p>
-          <p className="text-xs text-jira-text-light mt-1">Epics tracking for on-time release</p>
+          <p className="text-2xl font-bold text-jira-green mt-1">
+            {data.forecastableFeatures > 0 ? `${data.epicsOnSchedule}%` : "N/A"}
+          </p>
+          <p className="text-xs text-jira-text-light mt-1">
+            {data.forecastableFeatures > 0
+              ? `${data.forecastableFeatures} estimated feature(s) forecast`
+              : "No estimated planned features"}
+          </p>
         </button>
       </div>
 
@@ -95,23 +101,51 @@ export function PredictabilityTab({ data }: PredictabilityTabProps) {
       {open && (
         <DetailModal
           title={open}
-          subtitle="Iteration predictability track record for the current filters"
+          subtitle={
+            open === "Feature Milestone Confidence"
+              ? "Forward-looking due-date forecast for planned features"
+              : "Iteration predictability track record for the current filters"
+          }
           onClose={() => setOpen(null)}
         >
           <div className="px-5 py-3 border-b border-jira-border bg-jira-bg/40 text-xs text-jira-text-muted space-y-1">
-            <p>
-              <span className="font-semibold text-jira-text">What this shows: </span>
-              Each row compares what was planned with what was delivered in that sprint.
-              A Say/Do of 80% or more is high reliability, 65–79% is moderate, and below
-              65% is at risk.
-            </p>
-            <p>
-              <span className="font-semibold text-jira-text">How to compare: </span>
-              Look for a stable or rising pattern across iterations, not a single good
-              sprint. A rising planned SP with a falling Say/Do means scope is growing
-              faster than delivery.
-            </p>
+            {open === "Feature Milestone Confidence" ? (
+              <>
+                <p>
+                  <span className="font-semibold text-jira-text">What this shows: </span>
+                  The same forecast as the Executive Summary Future Predictability card.
+                  It compares remaining child story points with weekday capacity until
+                  each feature’s due date.
+                </p>
+                <p>
+                  <span className="font-semibold text-jira-text">Current forecast: </span>
+                  <span className="font-bold text-jira-green">
+                    {data.forecastableFeatures > 0 ? `${data.epicsOnSchedule}%` : "N/A"}
+                  </span>{" "}
+                  {data.forecastableFeatures > 0
+                    ? `of ${data.forecastableFeatures} estimated planned feature(s) are forecast on time.`
+                    : "because no planned feature has a remaining SP estimate."}{" "}
+                  Open the Executive card for feature-level reasons.
+                </p>
+              </>
+            ) : (
+              <>
+                <p>
+                  <span className="font-semibold text-jira-text">What this shows: </span>
+                  Each row compares what was planned with what was delivered in that sprint.
+                  A Say/Do of 80% or more is high reliability, 65–79% is moderate, and below
+                  65% is at risk.
+                </p>
+                <p>
+                  <span className="font-semibold text-jira-text">How to compare: </span>
+                  Look for a stable or rising pattern across iterations, not a single good
+                  sprint. A rising planned SP with a falling Say/Do means scope is growing
+                  faster than delivery.
+                </p>
+              </>
+            )}
           </div>
+          {open !== "Feature Milestone Confidence" && (
           <table className="w-full text-left text-sm">
             <thead className="bg-jira-bg text-jira-text-muted text-xs uppercase border-b border-jira-border font-semibold sticky top-0">
               <tr>
@@ -140,6 +174,7 @@ export function PredictabilityTab({ data }: PredictabilityTabProps) {
               )}
             </tbody>
           </table>
+          )}
         </DetailModal>
       )}
     </div>

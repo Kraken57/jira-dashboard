@@ -27,6 +27,20 @@ function isDoneStatus(status: string): boolean {
   return DONE_STATUSES.has(status);
 }
 
+const SUBTASK_DONE_STATUSES = new Set(
+  (
+    process.env.JIRA_SUBTASK_DONE_STATUSES ||
+    "Done,Closed,Resolved,Completed,Released,Accepted"
+  )
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+);
+
+function isSubtaskDoneStatus(status: string): boolean {
+  return DONE_STATUSES.has(status) || SUBTASK_DONE_STATUSES.has(status);
+}
+
 /**
  * Derive the enterprise quarter id from a Jira sprint name.
  *   "2026-Q3 Iteration 1"          -> "CY26 PI.3"
@@ -77,33 +91,87 @@ async function getFieldConfig(): Promise<{
 const DAY_MS = 86_400_000;
 const RATE_WINDOW_DAYS = 30;
 
+function isWeekend(date: Date): boolean {
+  const day = date.getDay();
+  return day === 0 || day === 6;
+}
+
+/** Weekdays between two instants; the deadline day is excluded. */
+function workingDaysBetween(startMs: number, endMs: number): number {
+  const cursor = new Date(startMs);
+  cursor.setHours(0, 0, 0, 0);
+  const end = new Date(endMs);
+  end.setHours(0, 0, 0, 0);
+  let days = 0;
+  while (cursor < end) {
+    if (!isWeekend(cursor)) days += 1;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return days;
+}
+
 /**
- * Future Predictability — same math as the frontend metrics engine (kept in
- * sync because the Forge backend does not import frontend code):
- * share of planned features (not done, future due date) forecast to finish on
- * or before their due date at the team's average delivery rate over the last
- * 30 days.
+ * Future Predictability — same math as the frontend metrics engine.
+ * Remaining work is the sum of open child story points; a feature's own points
+ * are used only when it has no estimated children. Capacity uses weekdays.
  */
-function computeFuturePredictability(items: any[]) {
+function computeFuturePredictability(items: any[], childSource: any[] = items) {
   const now = Date.now();
   const startOfToday = new Date(now).setHours(0, 0, 0, 0);
-  const rateStart = now - RATE_WINDOW_DAYS * DAY_MS;
-  const recentDoneSP = items
+  const rateStart = startOfToday - RATE_WINDOW_DAYS * DAY_MS;
+  const recentDoneSP = childSource
     .filter(
       (it: any) =>
         isDoneStatus(it.status) &&
         it.resolutionDate &&
-        new Date(it.resolutionDate).getTime() >= rateStart
+        new Date(it.resolutionDate).getTime() >= rateStart &&
+        new Date(it.resolutionDate).getTime() <= now
     )
     .reduce((sum: number, it: any) => sum + (it.storyPoints || 0), 0);
-  const dailyRate = recentDoneSP / RATE_WINDOW_DAYS;
+  const rateWorkingDays = Math.max(1, workingDaysBetween(rateStart, now + DAY_MS));
+  const dailyRate = recentDoneSP / rateWorkingDays;
 
-  const hasFeatureType = items.some((it: any) => /^feature$/i.test(it.workType));
+  const hasFeatureType = childSource.some((it: any) => /^feature$/i.test(it.workType));
   const isFeature = (it: any) =>
     hasFeatureType ? /^feature$/i.test(it.workType) : /^epic$/i.test(it.workType);
 
   const isFutureDated = (it: any) =>
     !!it.dueDate && new Date(it.dueDate).getTime() >= startOfToday;
+
+  const childrenByParent = new Map<string, any[]>();
+  childSource.forEach((it: any) => {
+    if (!it.parentKey) return;
+    if (/^sub-?task$/i.test(it.workType)) return;
+    if (!childrenByParent.has(it.parentKey)) childrenByParent.set(it.parentKey, []);
+    childrenByParent.get(it.parentKey)!.push(it);
+  });
+
+  const remainingUnder = (
+    item: any,
+    seen = new Set<string>()
+  ): { remaining: number; hasEstimate: boolean } => {
+    if (seen.has(item.key)) return { remaining: 0, hasEstimate: false };
+    seen.add(item.key);
+    const children = childrenByParent.get(item.key) || [];
+    if (children.length === 0) {
+      const sp = item.storyPoints || 0;
+      return { remaining: isDoneStatus(item.status) ? 0 : sp, hasEstimate: sp > 0 };
+    }
+    let remaining = 0;
+    let hasEstimate = false;
+    for (const child of children) {
+      const childResult = remainingUnder(child, seen);
+      hasEstimate = hasEstimate || childResult.hasEstimate;
+      if (!isDoneStatus(child.status)) remaining += childResult.remaining;
+    }
+    if (!hasEstimate && (item.storyPoints || 0) > 0) {
+      return {
+        remaining: isDoneStatus(item.status) ? 0 : item.storyPoints || 0,
+        hasEstimate: true,
+      };
+    }
+    return { remaining, hasEstimate };
+  };
 
   const planned = items.filter(
     (it: any) => isFeature(it) && !isDoneStatus(it.status) && isFutureDated(it)
@@ -112,36 +180,51 @@ function computeFuturePredictability(items: any[]) {
     (it: any) => isFeature(it) && !isDoneStatus(it.status) && !isFutureDated(it) && !!it.dueDate
   );
 
-  const onTimeCount = planned.filter((it: any) => {
-    const remaining = it.storyPoints || 0;
+  const forecastable = planned.filter((it: any) => remainingUnder(it).hasEstimate);
+  const onTimeCount = forecastable.filter((it: any) => {
+    const { remaining } = remainingUnder(it);
     if (dailyRate <= 0) return remaining === 0;
-    const days = Math.ceil((new Date(it.dueDate).getTime() - startOfToday) / DAY_MS);
+    const days = workingDaysBetween(startOfToday, new Date(it.dueDate).getTime());
     return remaining <= dailyRate * days;
   }).length;
 
   const reasons = new Map<string, string>();
   planned.forEach((it: any) => {
-    const remaining = it.storyPoints || 0;
-    if (dailyRate <= 0) {
-      reasons.set(it.key, remaining === 0 ? "On Forecast" : "At Risk (no recent delivery rate)");
+    const { remaining, hasEstimate } = remainingUnder(it);
+    if (!hasEstimate) {
+      reasons.set(it.key, "No Estimate (add story points to child work)");
       return;
     }
-    const days = Math.ceil((new Date(it.dueDate).getTime() - startOfToday) / DAY_MS);
+    if (dailyRate <= 0) {
+      reasons.set(
+        it.key,
+        remaining === 0 ? "On Forecast (no remaining work)" : "At Risk (no recent delivery rate)"
+      );
+      return;
+    }
+    const days = workingDaysBetween(startOfToday, new Date(it.dueDate).getTime());
     const capacity = Math.round(dailyRate * days * 10) / 10;
     reasons.set(
       it.key,
       remaining <= dailyRate * days
-        ? `On Forecast (${remaining} SP ≤ ${capacity} SP capacity by due date)`
-        : `At Risk (${remaining} SP > ${capacity} SP capacity by due date)`
+        ? `On Forecast (${remaining} SP ≤ ${capacity} SP capacity in ${days} working days)`
+        : `At Risk (${remaining} SP > ${capacity} SP capacity in ${days} working days)`
     );
   });
   pastDue.forEach((it: any) => reasons.set(it.key, "Past Due (missed due date)"));
 
   return {
     dailyRate: Math.round(dailyRate * 10) / 10,
+    rateWorkingDays,
     plannedCount: planned.length,
+    forecastableCount: forecastable.length,
+    unestimatedCount: planned.length - forecastable.length,
     onTimeCount,
-    score: planned.length > 0 ? Math.round((onTimeCount / planned.length) * 100) : 0,
+    pastDueCount: pastDue.length,
+    score:
+      forecastable.length > 0
+        ? Math.round((onTimeCount / forecastable.length) * 100)
+        : 0,
     reasons,
   };
 }
@@ -217,9 +300,35 @@ function mapIssueToWorkItem(
 }
 
 /**
+ * Sub-tasks often have no sprint/quarter of their own. Inherit those from the
+ * parent before filters run so Developer View stays complete.
+ */
+function inheritParentContext(items: any[]): any[] {
+  const byKey = new Map(items.map((i) => [i.key, i]));
+  return items.map((i) => {
+    if (!/^sub-?task$/i.test(i.workType) || !i.parentKey) return i;
+    const parent = byKey.get(i.parentKey);
+    if (!parent) return i;
+    return {
+      ...i,
+      sprints: i.sprints && i.sprints.length > 0 ? i.sprints : parent.sprints,
+      quarter: i.quarter && i.quarter !== "All" ? i.quarter : parent.quarter,
+      podName: i.podName && i.podName !== i.team ? i.podName : parent.podName,
+      team: i.team || parent.team,
+    };
+  });
+}
+
+/**
  * Calculate simple KPIs from work items.
  */
-function calculateKPIs(items: any[], filters: any, developerSource: any[] = items) {
+function calculateKPIs(
+  items: any[],
+  filters: any,
+  developerSource: any[] = items,
+  forecastSource: any[] = items,
+  forecastChildSource: any[] = forecastSource
+) {
   const totalIssues = items.length;
   const totalStoryPoints = items.reduce(
     (sum, i) => sum + (i.storyPoints || 0),
@@ -414,7 +523,7 @@ function calculateKPIs(items: any[], filters: any, developerSource: any[] = item
         : 0
       : 0;
 
-  const futureForecast = computeFuturePredictability(items);
+  const futureForecast = computeFuturePredictability(forecastSource, forecastChildSource);
 
   // Predictability across the selection: delivered / planned SP.
   const predictabilityScore =
@@ -469,7 +578,7 @@ function calculateKPIs(items: any[], filters: any, developerSource: any[] = item
       completedEstimateSeconds: 0,
     };
     const isSubtask = /^sub-?task$/i.test(it.workType);
-    const done = isDoneStatus(it.status);
+    const done = isSubtask ? isSubtaskDoneStatus(it.status) : isDoneStatus(it.status);
     stat.assigned += 1;
     stat.totalSP += it.storyPoints || 0;
     stat.originalEstimateSeconds += it.originalEstimateSeconds || 0;
@@ -515,7 +624,9 @@ function calculateKPIs(items: any[], filters: any, developerSource: any[] = item
     assignee: i.assignee || "Unassigned",
     priority: i.priority || "Medium",
     createdDate: i.createdDate || "",
-    isDone: isDoneStatus(i.status),
+    isDone: /^sub-?task$/i.test(i.workType)
+      ? isSubtaskDoneStatus(i.status)
+      : isDoneStatus(i.status),
     originalEstimateHours: estimateHours(i.originalEstimateSeconds),
     isSubtask: /^sub-?task$/i.test(i.workType),
   }));
@@ -570,15 +681,19 @@ function calculateKPIs(items: any[], filters: any, developerSource: any[] = item
       },
       {
         title: "Future Predictability",
-        value: `${futureForecast.score}%`,
+        value: futureForecast.forecastableCount > 0 ? `${futureForecast.score}%` : "N/A",
         subtitle:
-          futureForecast.plannedCount > 0
-            ? "Forecast on-time features ÷ planned features (future due dates)"
+          futureForecast.forecastableCount > 0
+            ? "Forecast on-time estimated features ÷ estimated features (future due dates)"
+            : futureForecast.plannedCount > 0
+            ? "No estimated remaining work on planned features"
             : "No late-stage features with future due dates",
         trend: 0,
         trendLabel: "due-date forecast",
         color:
-          futureForecast.score >= 85
+          futureForecast.forecastableCount === 0
+            ? ("blue" as const)
+            : futureForecast.score >= 85
             ? ("green" as const)
             : futureForecast.score >= 50
             ? ("blue" as const)
@@ -623,7 +738,9 @@ function calculateKPIs(items: any[], filters: any, developerSource: any[] = item
     predictability: {
       score: predictabilityScore,
       varianceSP: Math.abs(totalCommittedSP - totalDoneSP),
-      epicsOnSchedule: predictabilityScore,
+      epicsOnSchedule: futureForecast.score,
+      forecastableFeatures: futureForecast.forecastableCount,
+      unestimatedFeatures: futureForecast.unestimatedCount,
       history: sprints.map((s) => ({
         sprint: s.name,
         planned: s.storyPoints,
@@ -688,6 +805,7 @@ function calculateKPIs(items: any[], filters: any, developerSource: any[] = item
       priority: i.priority,
       createdDate: i.createdDate,
       isDone: isDoneStatus(i.status),
+      originalEstimateHours: estimateHours(i.originalEstimateSeconds),
       reason: futureForecast.reasons.get(i.key),
     })),
     developerIssueList,
@@ -718,22 +836,42 @@ resolver.define("getDashboardData", async (req) => {
       config.podField,
     ]);
 
-    const allItems = issues.map((issue) => mapIssueToWorkItem(issue, config));
+    const allItems = inheritParentContext(
+      issues.map((issue) => mapIssueToWorkItem(issue, config))
+    );
 
-    // Apply filters to everything, then keep subtasks only for Developer View.
-    let filteredAll = allItems;
+    // Apply pod/quarter scope first. Future Predictability uses this broader
+    // scope because a feature can span multiple sprints.
+    let filteredScope = allItems;
     if (filters.podId && filters.podId !== "all") {
-      filteredAll = filteredAll.filter((i) => i.podKey === filters.podId);
+      filteredScope = filteredScope.filter((i) => i.podKey === filters.podId);
     }
     if (filters.quarterId && filters.quarterId !== "all") {
-      filteredAll = filteredAll.filter((i) => i.quarter === filters.quarterId);
+      filteredScope = filteredScope.filter((i) => i.quarter === filters.quarterId);
     }
+
+    // Sprint filter applies to delivery metrics and Developer View.
+    let filteredAll = filteredScope;
     if (filters.sprintId && filters.sprintId !== "all") {
       filteredAll = filteredAll.filter((i) => i.sprints.includes(filters.sprintId));
     }
 
     const filtered = filteredAll.filter((item) => !/^sub-?task$/i.test(item.workType));
-    const kpis = calculateKPIs(filtered, filters, filteredAll);
+    const forecastScope = filteredScope.filter(
+      (item) => !/^sub-?task$/i.test(item.workType)
+    );
+    const forecastChildScope = allItems.filter(
+      (item) =>
+        !/^sub-?task$/i.test(item.workType) &&
+        (!filters.podId || filters.podId === "all" || item.podKey === filters.podId)
+    );
+    const kpis = calculateKPIs(
+      filtered,
+      filters,
+      filteredAll,
+      forecastScope,
+      forecastChildScope
+    );
 
     return {
       timebox_id: filters.timeboxId || "all",

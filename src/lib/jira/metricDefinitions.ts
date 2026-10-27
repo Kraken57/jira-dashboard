@@ -24,11 +24,11 @@ const DEFINITIONS: Record<string, Omit<MetricInsight, "recent" | "trend">> = {
   },
   "Future Predictability": {
     what:
-      "Percentage of planned features expected to be delivered by their due date. A feature is forecast to finish on time when its estimated remaining work can be completed by its due date based on the team's delivery rate.",
+      "Percentage of estimated planned features expected to be delivered by their due date. Remaining work is the sum of open child story points; capacity uses weekdays and the team's recent delivery rate.",
     formula:
-      "Features forecast to finish on or before due date ÷ planned features with a future due date × 100",
+      "Estimated features forecast on time ÷ estimated features with a future due date × 100",
     howToCompare:
-      "Compare with the 85% target. In the popup, the Reason column separates On Forecast from At Risk features.",
+      "Compare with the 85% target. The popup separates On Forecast, At Risk, No Estimate, and Past Due features.",
     target: { label: "On track", value: 85, unit: "%", direction: "atLeast" },
   },
 

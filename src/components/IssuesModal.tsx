@@ -16,7 +16,7 @@ interface IssuesModalProps {
 }
 
 type StateFilter = "all" | "open" | "done";
-type SortOrder = "default" | "sp-desc" | "sp-asc" | "key";
+type SortOrder = "default" | "sp-desc" | "sp-asc" | "hrs-desc" | "hrs-asc" | "key";
 
 const UNIT_LABEL: Record<"pp" | "%" | "SP", string> = {
   pp: "percentage points",
@@ -57,6 +57,13 @@ export function IssuesModal({
   const totalSP = issues.reduce((a, i) => a + (i.storyPoints || 0), 0);
   const doneIssues = issues.filter((i) => i.isDone);
   const doneSP = doneIssues.reduce((a, i) => a + (i.storyPoints || 0), 0);
+  const totalHours = Math.round(
+    issues.reduce((a, i) => a + (i.originalEstimateHours || 0), 0) * 10
+  ) / 10;
+  const completedHours = Math.round(
+    doneIssues.reduce((a, i) => a + (i.originalEstimateHours || 0), 0) * 10
+  ) / 10;
+  const hasHours = totalHours > 0;
   const completion = issues.length > 0 ? Math.round((doneIssues.length / issues.length) * 100) : 0;
   const hasReason = issues.some((i) => i.reason);
 
@@ -91,11 +98,22 @@ export function IssuesModal({
 
     if (sort === "sp-desc") return [...result].sort((a, b) => b.storyPoints - a.storyPoints);
     if (sort === "sp-asc") return [...result].sort((a, b) => a.storyPoints - b.storyPoints);
+    if (sort === "hrs-desc")
+      return [...result].sort(
+        (a, b) => (b.originalEstimateHours || 0) - (a.originalEstimateHours || 0)
+      );
+    if (sort === "hrs-asc")
+      return [...result].sort(
+        (a, b) => (a.originalEstimateHours || 0) - (b.originalEstimateHours || 0)
+      );
     if (sort === "key") return [...result].sort((a, b) => a.key.localeCompare(b.key));
     return result;
   }, [issues, search, state, status, workType, assignee, sprint, reason, sort]);
 
   const filteredSP = filtered.reduce((a, i) => a + (i.storyPoints || 0), 0);
+  const filteredHours = Math.round(
+    filtered.reduce((a, i) => a + (i.originalEstimateHours || 0), 0) * 10
+  ) / 10;
   const hasFilters =
     search.trim() !== "" ||
     state !== "all" ||
@@ -297,6 +315,16 @@ export function IssuesModal({
         <span>
           <strong className="text-jira-green">{doneSP}</strong> SP delivered
         </span>
+        {hasHours && (
+          <>
+            <span>
+              <strong className="text-jira-text">{totalHours}</strong> hrs original
+            </span>
+            <span>
+              <strong className="text-jira-green">{completedHours}</strong> hrs completed
+            </span>
+          </>
+        )}
       </div>
 
       <div className="px-5 py-3 border-b border-jira-border bg-white space-y-2">
@@ -395,6 +423,8 @@ export function IssuesModal({
             <option value="default">Default order</option>
             <option value="sp-desc">SP high → low</option>
             <option value="sp-asc">SP low → high</option>
+            {hasHours && <option value="hrs-desc">Hours high → low</option>}
+            {hasHours && <option value="hrs-asc">Hours low → high</option>}
             <option value="key">Key A → Z</option>
           </select>
           {hasFilters && (
@@ -410,6 +440,11 @@ export function IssuesModal({
         <p className="text-[11px] text-jira-text-muted">
           Showing <strong className="text-jira-text">{filtered.length}</strong> of {issues.length} items ·{" "}
           <strong className="text-jira-text">{filteredSP}</strong> SP
+          {hasHours && (
+            <>
+              {" "}· <strong className="text-jira-text">{filteredHours}</strong> hrs
+            </>
+          )}
         </p>
       </div>
 
@@ -422,6 +457,7 @@ export function IssuesModal({
               <th className="px-4 py-2.5">Summary</th>
               <th className="px-4 py-2.5">Status</th>
               <th className="px-4 py-2.5 text-center">SP</th>
+              {hasHours && <th className="px-4 py-2.5 text-center">Hours</th>}
               <th className="px-4 py-2.5">Assignee</th>
               <th className="px-4 py-2.5">Sprint</th>
               {hasReason && <th className="px-4 py-2.5">Reason</th>}
@@ -431,7 +467,7 @@ export function IssuesModal({
             {filtered.length === 0 ? (
               <tr>
                 <td
-                  colSpan={hasReason ? 8 : 7}
+                  colSpan={7 + (hasHours ? 1 : 0) + (hasReason ? 1 : 0)}
                   className="px-5 py-10 text-center text-jira-text-muted"
                 >
                   {hasFilters
@@ -473,6 +509,16 @@ export function IssuesModal({
                     </span>
                   </td>
                   <td className="px-4 py-2.5 text-center text-xs font-bold">{issue.storyPoints}</td>
+                  {hasHours && (
+                    <td className="px-4 py-2.5 text-center text-xs whitespace-nowrap">
+                      <span className="font-bold text-jira-text">
+                        {issue.originalEstimateHours || 0} hrs
+                      </span>
+                      <span className="block text-[10px] text-jira-text-light">
+                        {issue.isDone ? "completed" : "original estimate"}
+                      </span>
+                    </td>
+                  )}
                   <td className="px-4 py-2.5 text-xs whitespace-nowrap">{issue.assignee}</td>
                   <td className="px-4 py-2.5 text-xs whitespace-nowrap text-jira-text-muted">
                     {issue.sprint}

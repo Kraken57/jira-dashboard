@@ -174,13 +174,8 @@ export default function DashboardPage() {
         label = "Accepted / completed committed work";
         break;
       case "Future Predictability":
-        issues = all.filter(
-          (i) =>
-            !i.isDone &&
-            !!i.reason &&
-            (i.reason.startsWith("On Forecast") || i.reason.startsWith("At Risk"))
-        );
-        label = "Planned features vs due-date forecast";
+        issues = all.filter((i) => !i.isDone && !!i.reason);
+        label = "Planned and past-due features vs due-date forecast";
         break;
     }
 

@@ -25,6 +25,20 @@ export function DeveloperTab({
       : allDevelopers;
   const totalDevs = developers.length;
   const totalDelivered = developers.reduce((acc, d) => acc + d.deliveredSP, 0);
+  const totalAssignedSP = developers.reduce((acc, d) => acc + d.totalSP, 0);
+  const totalAssigned = developers.reduce((acc, d) => acc + d.assignedIssues, 0);
+  const totalCompleted = developers.reduce((acc, d) => acc + d.completedIssues, 0);
+  const totalAssignedStories = developers.reduce((acc, d) => acc + d.assignedStories, 0);
+  const totalAssignedSubtasks = developers.reduce((acc, d) => acc + d.assignedSubtasks, 0);
+  const totalCompletedStories = developers.reduce((acc, d) => acc + d.completedStories, 0);
+  const totalCompletedSubtasks = developers.reduce((acc, d) => acc + d.completedSubtasks, 0);
+  const totalOriginalHours = Math.round(
+    developers.reduce((acc, d) => acc + d.originalEstimateHours, 0) * 10
+  ) / 10;
+  const totalCompletedHours = Math.round(
+    developers.reduce((acc, d) => acc + d.completedEstimateHours, 0) * 10
+  ) / 10;
+  const overallCompletion = totalAssigned > 0 ? Math.round((totalCompleted / totalAssigned) * 100) : 0;
   const avgSP = totalDevs > 0 ? (totalDelivered / totalDevs).toFixed(1) : 0;
   const scopedIssues =
     developerFilter && developerFilter !== "all"
@@ -115,9 +129,15 @@ export function DeveloperTab({
                   </span>
                 </th>
                 <th className="px-6 py-3 text-right">
-                  <span className="block">Story Points / Hours</span>
+                  <span className="block">Story Points</span>
                   <span className="block text-[10px] font-medium normal-case tracking-normal text-jira-text-light">
-                    Delivered SP · completed / original hrs
+                    Delivered / Assigned
+                  </span>
+                </th>
+                <th className="px-6 py-3 text-right">
+                  <span className="block">Hours</span>
+                  <span className="block text-[10px] font-medium normal-case tracking-normal text-jira-text-light">
+                    Completed / Original estimate
                   </span>
                 </th>
                 <th className="px-6 py-3 text-right">Completion Rate</th>
@@ -164,9 +184,13 @@ export function DeveloperTab({
                   <td className="px-6 py-3 text-right">
                     <p className="text-sm font-bold text-jira-blue">{dev.deliveredSP} SP</p>
                     <p className="text-[11px] text-jira-text-muted mt-0.5">
-                      <span className="font-semibold text-jira-green">{dev.completedEstimateHours}</span>
-                      {" / "}
-                      {dev.originalEstimateHours} hrs
+                      of <span className="font-semibold text-jira-text">{dev.totalSP} SP</span> assigned
+                    </p>
+                  </td>
+                  <td className="px-6 py-3 text-right">
+                    <p className="text-sm font-bold text-jira-green">{dev.completedEstimateHours} hrs</p>
+                    <p className="text-[11px] text-jira-text-muted mt-0.5">
+                      of <span className="font-semibold text-jira-text">{dev.originalEstimateHours} hrs</span> original
                     </p>
                   </td>
                   <td className="px-6 py-3 text-right">
@@ -191,6 +215,32 @@ export function DeveloperTab({
                 </tr>
               ))}
             </tbody>
+            <tfoot className="bg-jira-bg/60 border-t-2 border-jira-border text-xs">
+              <tr className="font-semibold text-jira-text">
+                <td className="px-6 py-3" colSpan={2}>
+                  Team total
+                </td>
+                <td className="px-6 py-3 text-center">
+                  {totalAssigned}
+                  <p className="text-[11px] font-normal text-jira-text-muted mt-0.5">
+                    {totalAssignedStories} stories · {totalAssignedSubtasks} sub-tasks
+                  </p>
+                </td>
+                <td className="px-6 py-3 text-center text-jira-green">
+                  {totalCompleted}
+                  <p className="text-[11px] font-normal text-jira-text-muted mt-0.5">
+                    {totalCompletedStories} stories · {totalCompletedSubtasks} sub-tasks
+                  </p>
+                </td>
+                <td className="px-6 py-3 text-right text-jira-blue">
+                  {totalDelivered} / {totalAssignedSP} SP
+                </td>
+                <td className="px-6 py-3 text-right text-jira-green">
+                  {totalCompletedHours} / {totalOriginalHours} hrs
+                </td>
+                <td className="px-6 py-3 text-right">{overallCompletion}%</td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       </div>
