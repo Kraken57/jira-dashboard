@@ -394,11 +394,14 @@ the table:
 
 | Element | Popup issues |
 |---|---|
-| Active Developers | all issues (or selected developer only) |
-| Avg SP / Developer | `isDone` (selected developer only) |
-| Total Delivered | `isDone` (selected developer only) |
-| Top Contributor | issues assigned to the top developer |
-| Table row | issues assigned to that developer |
+| Active Contributors | Story + Sub-task items (or selected developer only) |
+| Avg SP / Developer | completed Story + Sub-task items |
+| Total Delivered | completed Story + Sub-task items |
+| Table row | Story + Sub-task items assigned to that developer |
+
+The table counts **Story + Sub-task only** and shows the split in each cell.
+`Story Points / Hours` pairs delivered SP with `completed / original` hours from
+Jira’s `timeoriginalestimate`. Completion rate is completed items ÷ assigned items.
 
 ### 7.4 Sprint Analysis (`SprintAnalysisTab`)
 
@@ -715,11 +718,13 @@ cards use the de-duplicated `summary` totals for All Sprints.
 
 ### 9.7 Developer stats
 
-Group `activeItems` by assignee:
+Group Story + Sub-task items by assignee:
 
-- `assignedIssues`, `totalSP`
-- `completedIssues`, `deliveredSP`
-- `completionRate = deliveredSP / totalSP × 100`
+- `assignedIssues` / `completedIssues` (total Story + Sub-task)
+- `assignedStories` / `assignedSubtasks` and completed counterparts
+- `deliveredSP`, `totalSP`
+- `originalEstimateHours` / `completedEstimateHours` from `timeoriginalestimate`
+- `completionRate = completedIssues / assignedIssues × 100`
 - sorted by `deliveredSP` descending
 - unassigned issues are grouped under `"Unassigned"`
 
@@ -790,6 +795,9 @@ Other fields:
 `isDone = DONE_STATUSES.has(status)`. This is the dataset behind every issue popup and the
 Issues tab.
 
+`developerIssueList` is the Story + Sub-task subset used by Developer View. It includes
+`originalEstimateHours` and `isSubtask`, and is the only list that keeps subtasks.
+
 ---
 
 ## 10. Jira mapping rules
@@ -802,7 +810,8 @@ Implemented in `src/lib/jira/jiraService.ts` (local) and `forge/src/index.ts` (F
 - Auth: Basic (`email:apiToken` base64) in local mode; `api.asApp()` in Forge.
 - Pagination: `nextPageToken` until absent (local max 50 pages).
 - Requested fields: `summary`, `status`, `issuetype`, `project`, `parent`, `assignee`,
-  `priority`, `created`, `resolutiondate`, plus the configured SP, Sprint, and POD fields.
+  `priority`, `created`, `resolutiondate`, `timeoriginalestimate`, plus the configured SP,
+  Sprint, and POD fields.
 - `cache: "no-store"` on the local fetch.
 
 The legacy `GET /rest/api/3/search` endpoint is deprecated and returns `410 Gone`. Do not
@@ -823,6 +832,7 @@ use it.
 | `priority` | `fields.priority.name` | `"Medium"` if missing |
 | `createdDate` | `fields.created` | ISO string |
 | `resolutionDate` | `fields.resolutiondate` | ISO string or undefined |
+| `originalEstimateSeconds` | `fields.timeoriginalestimate` | Jira seconds; converted to hours for Developer View |
 
 ### 10.3 Quarter patterns
 
@@ -918,6 +928,7 @@ In a Forge build, this route is replaced by a static 404 stub and is never calle
   trends: TrendsData;
   diagnosis: DiagnosisData;
   issueList: IssueRow[];
+  developerIssueList: IssueRow[];
   metricInsights?: Record<string, MetricInsight>;
   jiraBaseUrl?: string;
 }
@@ -1210,7 +1221,7 @@ does not exist.
 - **`epicsOnSchedule` equals the predictability score**; it is not a separate epic-level
   calculation.
 - **Priority distribution is all issues**, not bugs only, despite the Quality section label.
-- **Subtasks are excluded** from all metrics and issue lists; only Stories, Bugs, Tasks, Features, Epics, etc. are counted.
+- **Subtasks are excluded** from all metrics and issue lists, except Developer View, which explicitly counts Story + Sub-task.
 - **Per-sprint sums can overcount carried work** because an issue can appear in several
   sprints. Executive All-Sprints totals use de-duplicated summary totals to avoid this.
 - **The trend chart’s “moving average” is an expanding average**, unlike the trailing
@@ -1224,7 +1235,7 @@ of:
 
 | Area | Local | Forge today |
 |---|---|---|
-| Developers tab | populated | `developers: []` |
+| Developers tab | populated | populated (Story + Sub-task, original estimate hours) |
 | Sprint Analysis | planned/unplanned, lead time, breakdowns | mostly zeros/empty |
 | Quality | full bug metrics | zeros |
 | Diagnosis | contributors + reasons | minimal, reasons default to “Carried-Over Scope” |

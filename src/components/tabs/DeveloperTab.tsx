@@ -26,7 +26,6 @@ export function DeveloperTab({
   const totalDevs = developers.length;
   const totalDelivered = developers.reduce((acc, d) => acc + d.deliveredSP, 0);
   const avgSP = totalDevs > 0 ? (totalDelivered / totalDevs).toFixed(1) : 0;
-  const topDev = developers[0]?.name || "None";
   const scopedIssues =
     developerFilter && developerFilter !== "all"
       ? issues.filter((i) => i.assignee === developerFilter)
@@ -44,13 +43,13 @@ export function DeveloperTab({
   return (
     <div className="space-y-6">
       {/* KPI Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <button
           type="button"
-          onClick={() => open("Active Developers", `${podName} · all assigned work items`, scopedIssues)}
+          onClick={() => open("Active Contributors", `${podName} · all assigned story and sub-task work`, scopedIssues)}
           className="text-left bg-white border border-jira-border rounded-lg p-4 shadow-sm hover:border-jira-blue/50 transition"
         >
-          <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Active Developers</p>
+          <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Active Contributors</p>
           <p className="text-2xl font-bold text-jira-text mt-1">{totalDevs}</p>
           <p className="text-xs text-jira-text-light mt-1">Contributing in {podName}</p>
         </button>
@@ -84,21 +83,6 @@ export function DeveloperTab({
           <p className="text-2xl font-bold text-jira-green mt-1">{totalDelivered} SP</p>
           <p className="text-xs text-jira-text-light mt-1">Completed story points</p>
         </button>
-        <button
-          type="button"
-          onClick={() =>
-            open(
-              `Top Contributor · ${topDev}`,
-              `${podName} · work items assigned to ${topDev}`,
-              issues.filter((i) => i.assignee === topDev)
-            )
-          }
-          className="text-left bg-white border border-jira-border rounded-lg p-4 shadow-sm hover:border-jira-blue/50 transition"
-        >
-          <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Top Contributor</p>
-          <p className="text-2xl font-bold text-jira-text mt-1 truncate">{topDev}</p>
-          <p className="text-xs text-jira-text-light mt-1">Highest story points delivered</p>
-        </button>
       </div>
 
       {/* Developer Contribution Table */}
@@ -106,7 +90,7 @@ export function DeveloperTab({
         <div className="px-6 py-4 border-b border-jira-border flex items-center justify-between">
           <div>
             <h3 className="text-sm font-bold text-jira-text uppercase tracking-wider">Developer Contribution & Velocity</h3>
-            <p className="text-xs text-jira-text-muted mt-0.5">Individual delivery metrics across issues and story points</p>
+            <p className="text-xs text-jira-text-muted mt-0.5">Story and sub-task delivery, story points, and original estimate hours</p>
           </div>
           <span className="text-xs bg-jira-bg px-2.5 py-1 rounded text-jira-text-muted font-semibold">
             {developers.length} contributors
@@ -118,9 +102,24 @@ export function DeveloperTab({
               <tr>
                 <th className="px-6 py-3">Developer</th>
                 <th className="px-6 py-3">Team / Service</th>
-                <th className="px-6 py-3 text-center">Assigned</th>
-                <th className="px-6 py-3 text-center">Completed</th>
-                <th className="px-6 py-3 text-right">Story Points</th>
+                <th className="px-6 py-3 text-center">
+                  <span className="block">Assigned Work</span>
+                  <span className="block text-[10px] font-medium normal-case tracking-normal text-jira-text-light">
+                    Story / Sub-Task
+                  </span>
+                </th>
+                <th className="px-6 py-3 text-center">
+                  <span className="block">Completed</span>
+                  <span className="block text-[10px] font-medium normal-case tracking-normal text-jira-text-light">
+                    Story / Sub-Task completed
+                  </span>
+                </th>
+                <th className="px-6 py-3 text-right">
+                  <span className="block">Story Points / Hours</span>
+                  <span className="block text-[10px] font-medium normal-case tracking-normal text-jira-text-light">
+                    Delivered SP · completed / original hrs
+                  </span>
+                </th>
                 <th className="px-6 py-3 text-right">Completion Rate</th>
               </tr>
             </thead>
@@ -131,7 +130,7 @@ export function DeveloperTab({
                   onClick={() =>
                     open(
                       `Work items · ${dev.name}`,
-                      `${dev.assignedIssues} assigned · ${dev.deliveredSP} SP delivered`,
+                      `${dev.assignedIssues} story/sub-task items · ${dev.completedIssues} completed · ${dev.deliveredSP} SP delivered`,
                       issues.filter((i) => i.assignee === dev.name)
                     )
                   }
@@ -144,14 +143,39 @@ export function DeveloperTab({
                     <span>{dev.name}</span>
                   </td>
                   <td className="px-6 py-3 text-xs text-jira-text-muted">{dev.team}</td>
-                  <td className="px-6 py-3 text-center text-jira-text font-medium">{dev.assignedIssues}</td>
-                  <td className="px-6 py-3 text-center text-jira-green font-semibold">{dev.completedIssues}</td>
-                  <td className="px-6 py-3 text-right font-bold text-jira-blue">{dev.deliveredSP} SP</td>
+                  <td className="px-6 py-3 text-center">
+                    <p className="text-sm font-semibold text-jira-text">{dev.assignedIssues}</p>
+                    <p className="text-[11px] text-jira-text-muted mt-0.5">
+                      <span className="font-semibold text-jira-blue">{dev.assignedStories}</span> stories ·{" "}
+                      <span className="font-semibold text-jira-amber">{dev.assignedSubtasks}</span> sub-tasks
+                    </p>
+                  </td>
+                  <td className="px-6 py-3 text-center">
+                    <p className="text-sm font-semibold text-jira-green">{dev.completedIssues}</p>
+                    <p className="text-[11px] text-jira-text-muted mt-0.5">
+                      <span className="font-semibold text-jira-green">{dev.completedStories}</span> stories ·{" "}
+                      <span className="font-semibold text-jira-green">{dev.completedSubtasks}</span> sub-tasks
+                    </p>
+                  </td>
+                  <td className="px-6 py-3 text-right">
+                    <p className="text-sm font-bold text-jira-blue">{dev.deliveredSP} SP</p>
+                    <p className="text-[11px] text-jira-text-muted mt-0.5">
+                      <span className="font-semibold text-jira-green">{dev.completedEstimateHours}</span>
+                      {" / "}
+                      {dev.originalEstimateHours} hrs
+                    </p>
+                  </td>
                   <td className="px-6 py-3 text-right">
                     <div className="flex items-center justify-end gap-2">
                       <div className="w-20 bg-jira-bg rounded-full h-1.5 overflow-hidden">
                         <div
-                          className="bg-jira-blue h-1.5 rounded-full"
+                          className={`h-1.5 rounded-full ${
+                            dev.completionRate >= 80
+                              ? "bg-jira-green"
+                              : dev.completionRate >= 50
+                              ? "bg-jira-blue"
+                              : "bg-jira-amber"
+                          }`}
                           style={{ width: `${Math.min(dev.completionRate, 100)}%` }}
                         />
                       </div>

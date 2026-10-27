@@ -101,8 +101,14 @@ export interface DeveloperStat {
   team: string;
   assignedIssues: number;
   completedIssues: number;
+  assignedStories: number;
+  assignedSubtasks: number;
+  completedStories: number;
+  completedSubtasks: number;
   deliveredSP: number;
   totalSP: number;
+  originalEstimateHours: number;
+  completedEstimateHours: number;
   completionRate: number;
 }
 
@@ -150,6 +156,8 @@ export interface IssueRow {
   priority: string;
   createdDate: string;
   isDone: boolean;
+  originalEstimateHours?: number;
+  isSubtask?: boolean;
   reason?: string;
 }
 
@@ -201,6 +209,7 @@ export interface DashboardData {
   trends: TrendsData;
   diagnosis: DiagnosisData;
   issueList: IssueRow[];
+  developerIssueList: IssueRow[];
   metricInsights?: Record<string, MetricInsight>;
   jiraBaseUrl?: string;
 }
@@ -227,4 +236,5 @@ export interface JiraWorkItem {
   resolutionDate?: string;
   createdDate?: string;
   dueDate?: string;
+  originalEstimateSeconds?: number;
 }

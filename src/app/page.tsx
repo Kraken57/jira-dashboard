@@ -300,7 +300,7 @@ export default function DashboardPage() {
               developers={dashboardData.developers}
               podName={selectedPodName}
               developerFilter={filters.developer}
-              issues={dashboardData.issueList}
+              issues={dashboardData.developerIssueList}
               jiraDomain={dashboardData.jiraBaseUrl}
             />
           )}

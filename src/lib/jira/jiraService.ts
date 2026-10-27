@@ -65,6 +65,7 @@ async function fetchAllLiveJiraIssues(): Promise<{
         "created",
         "resolutiondate",
         "duedate",
+        "timeoriginalestimate",
         spField,
         sprintField,
         podField,
@@ -195,6 +196,7 @@ async function fetchAllLiveJiraIssues(): Promise<{
         ? String(fields.resolutiondate)
         : undefined,
       dueDate: fields.duedate ? String(fields.duedate) : undefined,
+      originalEstimateSeconds: Number(fields.timeoriginalestimate) || 0,
       updatedDate: String(fields.updated || ""),
     };
   });

@@ -211,6 +211,7 @@ function mapIssueToWorkItem(
     createdDate: String(fields.created || ""),
     resolutionDate: fields.resolutiondate ? String(fields.resolutiondate) : undefined,
     dueDate: fields.duedate ? String(fields.duedate) : undefined,
+    originalEstimateSeconds: Number(fields.timeoriginalestimate) || 0,
     updatedDate: String(fields.updated || ""),
   };
 }
@@ -218,7 +219,7 @@ function mapIssueToWorkItem(
 /**
  * Calculate simple KPIs from work items.
  */
-function calculateKPIs(items: any[], filters: any) {
+function calculateKPIs(items: any[], filters: any, developerSource: any[] = items) {
   const totalIssues = items.length;
   const totalStoryPoints = items.reduce(
     (sum, i) => sum + (i.storyPoints || 0),
@@ -443,6 +444,82 @@ function calculateKPIs(items: any[], filters: any) {
       .map((q) => ({ id: q, name: q })),
   ];
 
+  // Developer View is Story + Sub-task only. developerSource keeps subtasks,
+  // which are excluded from every other metric.
+  const estimateHours = (seconds: any) =>
+    Math.round(((Number(seconds) || 0) / 3600) * 10) / 10;
+  const devItems = developerSource.filter((i: any) =>
+    /^(story|sub-?task)$/i.test(i.workType)
+  );
+  const devMap = new Map<string, any>();
+  for (const it of devItems) {
+    const name = it.assignee || "Unassigned";
+    const stat = devMap.get(name) || {
+      name,
+      team: it.team || it.podName,
+      assigned: 0,
+      done: 0,
+      stories: 0,
+      subtasks: 0,
+      completedStories: 0,
+      completedSubtasks: 0,
+      deliveredSP: 0,
+      totalSP: 0,
+      originalEstimateSeconds: 0,
+      completedEstimateSeconds: 0,
+    };
+    const isSubtask = /^sub-?task$/i.test(it.workType);
+    const done = isDoneStatus(it.status);
+    stat.assigned += 1;
+    stat.totalSP += it.storyPoints || 0;
+    stat.originalEstimateSeconds += it.originalEstimateSeconds || 0;
+    if (isSubtask) stat.subtasks += 1;
+    else stat.stories += 1;
+    if (done) {
+      stat.done += 1;
+      stat.deliveredSP += it.storyPoints || 0;
+      stat.completedEstimateSeconds += it.originalEstimateSeconds || 0;
+      if (isSubtask) stat.completedSubtasks += 1;
+      else stat.completedStories += 1;
+    }
+    devMap.set(name, stat);
+  }
+  const developers = Array.from(devMap.values())
+    .map((stat) => ({
+      name: stat.name,
+      team: stat.team,
+      assignedIssues: stat.assigned,
+      completedIssues: stat.done,
+      assignedStories: stat.stories,
+      assignedSubtasks: stat.subtasks,
+      completedStories: stat.completedStories,
+      completedSubtasks: stat.completedSubtasks,
+      deliveredSP: Math.round(stat.deliveredSP),
+      totalSP: Math.round(stat.totalSP),
+      originalEstimateHours: estimateHours(stat.originalEstimateSeconds),
+      completedEstimateHours: estimateHours(stat.completedEstimateSeconds),
+      completionRate:
+        stat.assigned > 0 ? Math.round((stat.done / stat.assigned) * 100) : 0,
+    }))
+    .sort((a, b) => b.deliveredSP - a.deliveredSP);
+
+  const developerIssueList = devItems.map((i: any) => ({
+    key: i.key,
+    summary: i.summary,
+    workType: i.workType,
+    status: i.status,
+    storyPoints: i.storyPoints || 0,
+    podKey: i.podKey,
+    podName: i.podName,
+    sprint: i.sprints.length > 0 ? i.sprints.join(", ") : "Backlog",
+    assignee: i.assignee || "Unassigned",
+    priority: i.priority || "Medium",
+    createdDate: i.createdDate || "",
+    isDone: isDoneStatus(i.status),
+    originalEstimateHours: estimateHours(i.originalEstimateSeconds),
+    isSubtask: /^sub-?task$/i.test(i.workType),
+  }));
+
   return {
     summary: {
       totalIssues,
@@ -525,7 +602,7 @@ function calculateKPIs(items: any[], filters: any) {
       done: completedSeries,
       carried: sprints.map((s) => Math.max(s.storyPoints - s.doneStoryPoints, 0)),
     },
-    developers: [],
+    developers,
     sprintAnalysis: {
       scopeChurnPct: 0,
       plannedWorkPct: 100,
@@ -613,6 +690,7 @@ function calculateKPIs(items: any[], filters: any) {
       isDone: isDoneStatus(i.status),
       reason: futureForecast.reasons.get(i.key),
     })),
+    developerIssueList,
   };
 }
 
@@ -634,28 +712,28 @@ resolver.define("getDashboardData", async (req) => {
       "created",
       "resolutiondate",
       "duedate",
+      "timeoriginalestimate",
       config.storyPointsField,
       config.sprintField,
       config.podField,
     ]);
 
-    const items = issues
-      .map((issue) => mapIssueToWorkItem(issue, config))
-      .filter((item) => !/^sub-?task$/i.test(item.workType));
+    const allItems = issues.map((issue) => mapIssueToWorkItem(issue, config));
 
-    // Apply filters
-    let filtered = items;
+    // Apply filters to everything, then keep subtasks only for Developer View.
+    let filteredAll = allItems;
     if (filters.podId && filters.podId !== "all") {
-      filtered = filtered.filter((i) => i.podKey === filters.podId);
+      filteredAll = filteredAll.filter((i) => i.podKey === filters.podId);
     }
     if (filters.quarterId && filters.quarterId !== "all") {
-      filtered = filtered.filter((i) => i.quarter === filters.quarterId);
+      filteredAll = filteredAll.filter((i) => i.quarter === filters.quarterId);
     }
     if (filters.sprintId && filters.sprintId !== "all") {
-      filtered = filtered.filter((i) => i.sprints.includes(filters.sprintId));
+      filteredAll = filteredAll.filter((i) => i.sprints.includes(filters.sprintId));
     }
 
-    const kpis = calculateKPIs(filtered, filters);
+    const filtered = filteredAll.filter((item) => !/^sub-?task$/i.test(item.workType));
+    const kpis = calculateKPIs(filtered, filters, filteredAll);
 
     return {
       timebox_id: filters.timeboxId || "all",
@@ -673,6 +751,7 @@ resolver.define("getDashboardData", async (req) => {
       trends: kpis.trends,
       diagnosis: kpis.diagnosis,
       issueList: kpis.issueList,
+      developerIssueList: kpis.developerIssueList,
       summary: kpis.summary,
       calculated_at: new Date().toISOString(),
       jiraBaseUrl: (process.env.JIRA_HOST || "").replace(/\/+$/, ""),

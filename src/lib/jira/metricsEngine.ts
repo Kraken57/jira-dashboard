@@ -258,6 +258,16 @@ export function computeDashboardData(
     return true;
   });
 
+  // Developer View is explicitly Story + Sub-task. Subtasks are kept out of
+  // every other metric, but contributors need their real execution items.
+  const developerItems = items.filter((item) => {
+    if (!/^(story|sub-?task)$/i.test(item.workType)) return false;
+    if (podId !== "all" && item.podKey !== podId) return false;
+    if (quarterId !== "all" && item.quarter !== quarterId) return false;
+    if (sprintId !== "all" && !matchesSprint(item.sprints, sprintId)) return false;
+    return true;
+  });
+
   // 3. Compute Summary Counts
   let totalStoryPoints = 0;
   let completedStoryPoints = 0;
@@ -619,16 +629,57 @@ export function computeDashboardData(
     },
   ];
 
-  // 7. Developer Breakdown
-  const devMap = new Map<string, { assigned: number; done: number; deliveredSP: number; totalSP: number; team: string }>();
-  activeItems.forEach((it) => {
+  // 7. Developer Breakdown (Story + Sub-task only)
+  const estimateHours = (seconds?: number) =>
+    Math.round(((seconds || 0) / 3600) * 10) / 10;
+
+  const devMap = new Map<
+    string,
+    {
+      assigned: number;
+      done: number;
+      stories: number;
+      subtasks: number;
+      completedStories: number;
+      completedSubtasks: number;
+      deliveredSP: number;
+      totalSP: number;
+      originalEstimateSeconds: number;
+      completedEstimateSeconds: number;
+      team: string;
+    }
+  >();
+  developerItems.forEach((it) => {
     const devName = it.assignee || "Unassigned";
-    const existing = devMap.get(devName) || { assigned: 0, done: 0, deliveredSP: 0, totalSP: 0, team: it.team || it.podName };
+    const existing =
+      devMap.get(devName) || {
+        assigned: 0,
+        done: 0,
+        stories: 0,
+        subtasks: 0,
+        completedStories: 0,
+        completedSubtasks: 0,
+        deliveredSP: 0,
+        totalSP: 0,
+        originalEstimateSeconds: 0,
+        completedEstimateSeconds: 0,
+        team: it.team || it.podName,
+      };
+    const isSubtask = /^sub-?task$/i.test(it.workType);
+    const isDone = DONE_STATUSES.has(it.status);
+
     existing.assigned += 1;
     existing.totalSP += it.storyPoints || 0;
-    if (DONE_STATUSES.has(it.status)) {
+    existing.originalEstimateSeconds += it.originalEstimateSeconds || 0;
+    if (isSubtask) existing.subtasks += 1;
+    else existing.stories += 1;
+
+    if (isDone) {
       existing.done += 1;
       existing.deliveredSP += it.storyPoints || 0;
+      existing.completedEstimateSeconds += it.originalEstimateSeconds || 0;
+      if (isSubtask) existing.completedSubtasks += 1;
+      else existing.completedStories += 1;
     }
     devMap.set(devName, existing);
   });
@@ -639,9 +690,16 @@ export function computeDashboardData(
       team: stat.team,
       assignedIssues: stat.assigned,
       completedIssues: stat.done,
+      assignedStories: stat.stories,
+      assignedSubtasks: stat.subtasks,
+      completedStories: stat.completedStories,
+      completedSubtasks: stat.completedSubtasks,
       deliveredSP: Math.round(stat.deliveredSP),
       totalSP: Math.round(stat.totalSP),
-      completionRate: stat.totalSP > 0 ? Math.round((stat.deliveredSP / stat.totalSP) * 100) : 0,
+      originalEstimateHours: estimateHours(stat.originalEstimateSeconds),
+      completedEstimateHours: estimateHours(stat.completedEstimateSeconds),
+      completionRate:
+        stat.assigned > 0 ? Math.round((stat.done / stat.assigned) * 100) : 0,
     }))
     .sort((a, b) => b.deliveredSP - a.deliveredSP);
 
@@ -1122,6 +1180,23 @@ export function computeDashboardData(
     reason: futurePredictability.reasons.get(it.key),
   }));
 
+  const developerIssueList: IssueRow[] = developerItems.map((it) => ({
+    key: it.key,
+    summary: it.summary,
+    workType: it.workType,
+    status: it.status,
+    storyPoints: it.storyPoints || 0,
+    podKey: it.podKey,
+    podName: it.podName,
+    sprint: it.sprints.length > 0 ? it.sprints.join(", ") : "Backlog",
+    assignee: it.assignee || "Unassigned",
+    priority: it.priority || "Medium",
+    createdDate: it.createdDate || "",
+    isDone: DONE_STATUSES.has(it.status),
+    originalEstimateHours: estimateHours(it.originalEstimateSeconds),
+    isSubtask: /^sub-?task$/i.test(it.workType),
+  }));
+
   // Sprint → team mapping, so the sprint filter shows whose sprint it is.
   const sprintTeams = new Map<string, Set<string>>();
   activeItems.forEach((it) => {
@@ -1159,6 +1234,7 @@ export function computeDashboardData(
     trends,
     diagnosis,
     issueList,
+    developerIssueList,
     metricInsights,
   };
 }
