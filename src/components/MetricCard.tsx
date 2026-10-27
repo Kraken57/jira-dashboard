@@ -61,9 +61,12 @@ export function MetricCard({
   onOpen,
 }: MetricCardProps) {
   const c = colorMap[color];
-  const isUp = trend > 0;
-  const isFlat = trend === 0;
-  const isGood = trendGood === "down" ? trend < 0 : trend > 0;
+  // Arrow and color describe performance direction, not raw movement.
+  // For lower-is-better metrics (carry over), a decrease is an improvement.
+  const trendDirection = trendGood === "down" ? -trend : trend;
+  const isUp = trendDirection > 0;
+  const isFlat = trendDirection === 0;
+  const isGood = trendDirection > 0;
   const Icon = ICONS[title];
 
   return (
@@ -111,6 +114,7 @@ export function MetricCard({
         <span>
           {trendText ??
             `${isFlat ? "0" : isUp ? "+" : ""}${trend}${trendUnit}`}
+          {!isFlat && trendText ? ` · ${isUp ? "better" : "worse"}` : ""}
         </span>
         <span className="text-jira-text-muted">{trendLabel}</span>
       </div>

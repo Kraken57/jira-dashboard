@@ -667,18 +667,23 @@ export function computeDashboardData(
     );
   }
 
-  // Show the actual values behind the arrow instead of "pp" deltas.
-  const sayDoTrendText =
-    hasComparison && currentCompare && prevCompare
-      ? `${Math.round(sayDoOf(currentCompare))}% (was ${Math.round(sayDoOf(prevCompare))}%)`
-      : "No previous sprint";
-  const carryTrendText =
-    hasComparison && currentCompare && prevCompare
-      ? `${Math.round(carryOf(currentCompare))}% (was ${Math.round(carryOf(prevCompare))}%)`
-      : "No previous sprint";
-  const velocityTrendText = hasComparison
-    ? `${Math.round(velocityCompareCurrent)} SP (was ${Math.round(velocityComparePrevious)} SP)`
-    : "No previous sprint";
+  // Show the size of the change; the card appends better/worse.
+  const trendText = (delta: number, unit: string) =>
+    !hasComparison
+      ? "No previous sprint"
+      : delta === 0
+      ? "No change"
+      : `${Math.abs(Math.round(delta))} ${unit}`;
+  const sayDoTrendText = trendText(sayDoTrend, "pts");
+  const carryTrendText = trendText(
+    carryTrend,
+    Math.abs(carryTrend) === 1 ? "pt" : "pts"
+  );
+  const velocityTrendText = !hasComparison
+    ? "No previous sprint"
+    : velocityCompareCurrent === velocityComparePrevious
+    ? "No change"
+    : `${Math.abs(Math.round(velocityCompareCurrent - velocityComparePrevious))} SP`;
 
   const predictabilityScore =
     scopeCommittedSP > 0 ? Math.round((scopeDoneSP / scopeCommittedSP) * 100) : 0; // (kept for the Predictability tab)
@@ -699,11 +704,9 @@ export function computeDashboardData(
       ? "No estimated features"
       : "No planned features";
 
-  const trendLabelFor = (delta: number) =>
+  const trendLabelFor = () =>
     !prevCompare || !currentCompare
-      ? "no previous sprint"
-      : delta === 0
-      ? `no change vs ${prevCompare.name}`
+      ? ""
       : `${currentCompare.name} vs ${prevCompare.name}`;
 
   const metrics: MetricCardData[] = [
@@ -712,7 +715,7 @@ export function computeDashboardData(
       value: `${sayDoRatio}%`,
       subtitle: "Completed committed SP ÷ committed SP",
       trend: sayDoTrend,
-      trendLabel: trendLabelFor(sayDoTrend),
+      trendLabel: trendLabelFor(),
       trendUnit: "pp",
       trendText: sayDoTrendText,
       color: sayDoRatio >= 80 ? "green" : sayDoRatio >= 65 ? "blue" : "red",
@@ -724,7 +727,7 @@ export function computeDashboardData(
       value: `${carryOver}%`,
       subtitle: "Spilled-over committed SP ÷ committed SP",
       trend: carryTrend,
-      trendLabel: trendLabelFor(carryTrend),
+      trendLabel: trendLabelFor(),
       trendUnit: "pp",
       trendText: carryTrendText,
       color: carryOver <= 18 ? "green" : carryOver <= 28 ? "blue" : "red",
@@ -741,7 +744,7 @@ export function computeDashboardData(
             : `SP completed across ${windowNames.length} sprints`
           : "SP completed in selected sprint",
       trend: effectiveVelocityTrendPct,
-      trendLabel: trendLabelFor(effectiveVelocityTrendPct),
+      trendLabel: trendLabelFor(),
       trendUnit: "%",
       trendText: velocityTrendText,
       color: "blue",
@@ -1344,7 +1347,7 @@ export function computeDashboardData(
   };
 
   // 13. Issue Explorer List
-  const issueList: IssueRow[] = activeItems.map((it) => ({
+  const toIssueRow = (it: JiraWorkItem): IssueRow => ({
     key: it.key,
     summary: it.summary,
     workType: it.workType,
@@ -1359,7 +1362,22 @@ export function computeDashboardData(
     isDone: DONE_STATUSES.has(it.status),
     originalEstimateHours: estimateHours(it.originalEstimateSeconds),
     reason: futurePredictability.reasons.get(it.key),
-  }));
+  });
+  const issueList: IssueRow[] = activeItems.map(toIssueRow);
+
+  // Pod View shows feature-level work for the selected pod. Features usually
+  // have no quarter/sprint of their own (and are often not linked to stories),
+  // so quarter/sprint filters must not hide them.
+  const featureTypeRe = workItems.some((it) => /^feature$/i.test(it.workType))
+    ? /^feature$/i
+    : /^epic$/i;
+  const podFeatureList: IssueRow[] = workItems
+    .filter(
+      (it) =>
+        (podId === "all" || it.podKey === podId) &&
+        featureTypeRe.test(it.workType)
+    )
+    .map(toIssueRow);
 
   const developerIssueList: IssueRow[] = developerItems.map((it) => ({
     key: it.key,
@@ -1418,6 +1436,7 @@ export function computeDashboardData(
     diagnosis,
     issueList,
     developerIssueList,
+    podFeatureList,
     metricInsights,
   };
 }

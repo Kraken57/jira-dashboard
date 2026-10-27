@@ -380,7 +380,7 @@ Four stat cards, a work-type selector, and a workflow pie chart:
 
 | Element | Action |
 |---|---|
-| Total Features | opens `Feature` items (falls back to `Epic` when the site has no Feature type) |
+| Total Features | opens `Feature` items (falls back to `Epic` when the site has no Feature type). Features are pod-level and stay visible under quarter/sprint filters because they usually have no quarter/sprint field. |
 | Total Stories | opens `workType === "Story"` |
 | Completed Stories | opens stories with `isDone` |
 | In Flight | opens stories with `!isDone` |
@@ -654,10 +654,14 @@ For **one specific sprint**, the totals come from that sprint's stats.
 
 | Card | Formula | Trend | Color rule |
 |---|---|---|---|
-| Say/Do Ratio | `doneSP / committedSP × 100` | latest plotted sprint vs the one before it, shown as `current% (was previous%)` | ≥80 green, ≥65 blue, else red |
-| Sprint Carry Over | `carriedSP / committedSP × 100` | latest plotted sprint vs the one before it, shown as `current% (was previous%)` | ≤18 green, ≤28 blue, else red |
-| Avg. Sprint Velocity | Global All/All/All: mean of each pod’s average sprint SP, counting only accepted items with SP > 0. Otherwise the card is titled **Total Sprint Velocity** and shows `doneSP` for the period | latest plotted sprint vs the one before it, shown as `current SP (was previous SP)` | always blue |
+| Say/Do Ratio | `doneSP / committedSP × 100` | size of the change from the previous sprint, shown as `N pts` plus `better`/`worse` | ≥80 green, ≥65 blue, else red |
+| Sprint Carry Over | `carriedSP / committedSP × 100` | size of the change from the previous sprint, shown as `N pt(s)` plus `better`/`worse` | ≤18 green, ≤28 blue, else red |
+| Avg. Sprint Velocity | Global All/All/All: mean of each pod’s average sprint SP, counting only accepted items with SP > 0. Otherwise the card is titled **Total Sprint Velocity** and shows `doneSP` for the period | change in SP from the previous sprint, shown as `N SP` plus `better`/`worse` | always blue |
 | Future Predictability | on-time-forecast estimated features / estimated features (future due dates) × 100 | `on time of estimated` features; not sprint-trended | ≥85 green, ≥50 blue, else red |
+
+The trend arrow and color describe **performance direction**, not raw movement: green/up means
+better, red/down means worse. For Sprint Carry Over (lower is better) a decrease is shown as
+an up/green improvement, and an increase is shown as a down/red regression.
 
 **Future Predictability math** (different from Say/Do):
 
@@ -1173,7 +1177,7 @@ flattened into key/title/status/category/points/owner.
 | Dev server shows stale code | Old Next process still bound to the port | Kill all Next processes and use a fresh port |
 | Next fails to start after copying `node_modules` | OS-specific SWC binary | Delete `node_modules`, reinstall in the current OS |
 | Forge build fails on `/api/jira` | Route not statically exportable | Use `pnpm run build:forge`, not `next build` |
-| Local dashboard says `/api/jira` is disabled | An interrupted Forge build left the 404 stub | Restore with `mv src/app/api/jira/route.ts.localhost.bak src/app/api/jira/route.ts`, or rerun `pnpm run build:forge` |
+| Local dashboard says `/api/jira` is disabled | An interrupted Forge build left the 404 stub | `pnpm dev`/`pnpm build` auto-restore it via `scripts/ensure-local-route.mjs`; manual fallback: `git checkout -- src/app/api/jira/route.ts` |
 | Forge page loads but data fails | Bridge invoke failed | Check `forge logs`, Forge variables, scopes |
 | Banner: “Could not load dashboard data” | API returned 500; banner shows the Jira error detail | Fix the reported env/JQL/field issue, then Retry |
 

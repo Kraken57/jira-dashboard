@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "predev": "node scripts/ensure-local-route.mjs",
     "build": "next build",
+    "prebuild": "node scripts/ensure-local-route.mjs",
     "build:forge": "node scripts/build-forge.mjs",
     "start": "next start",
     "lint": "eslint",

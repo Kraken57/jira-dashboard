@@ -527,18 +527,23 @@ function calculateKPIs(
         : 0
       : 0;
 
-  const sayDoTrendText =
-    lastSprint && prevSprint
-      ? `${sprintSayDo(lastSprint)}% (was ${sprintSayDo(prevSprint)}%)`
-      : "No previous sprint";
-  const carryTrendText =
-    lastSprint && prevSprint
-      ? `${sprintCarry(lastSprint)}% (was ${sprintCarry(prevSprint)}%)`
-      : "No previous sprint";
+  const trendText = (delta: number, unit: string) =>
+    !lastSprint || !prevSprint
+      ? "No previous sprint"
+      : delta === 0
+      ? "No change"
+      : `${Math.abs(Math.round(delta))} ${unit}`;
+  const sayDoTrendText = trendText(sayDoTrend, "pts");
+  const carryTrendText = trendText(
+    carryTrend,
+    Math.abs(carryTrend) === 1 ? "pt" : "pts"
+  );
   const velocityTrendText =
-    lastSprint && prevSprint
-      ? `${Math.round(velocityCompareCurrent)} SP (was ${Math.round(velocityComparePrevious)} SP)`
-      : "No previous sprint";
+    !lastSprint || !prevSprint
+      ? "No previous sprint"
+      : velocityCompareCurrent === velocityComparePrevious
+      ? "No change"
+      : `${Math.abs(Math.round(velocityCompareCurrent - velocityComparePrevious))} SP`;
 
   const futureForecast = computeFuturePredictability(forecastSource, forecastChildSource);
   const futureTrendText =
@@ -654,6 +659,32 @@ function calculateKPIs(
     isSubtask: /^sub-?task$/i.test(i.workType),
   }));
 
+  // Features usually have no quarter/sprint of their own (and are often not
+  // linked to stories), so quarter/sprint filters must not hide them.
+  const featureRe = forecastChildSource.some((i: any) =>
+    /^feature$/i.test(i.workType)
+  )
+    ? /^feature$/i
+    : /^epic$/i;
+  const podFeatureList = forecastChildSource
+    .filter((i: any) => featureRe.test(i.workType))
+    .map((i: any) => ({
+      key: i.key,
+      summary: i.summary,
+      workType: i.workType,
+      status: i.status,
+      storyPoints: i.storyPoints || 0,
+      podKey: i.podKey,
+      podName: i.podName,
+      sprint: i.sprints.length > 0 ? i.sprints.join(", ") : "Backlog",
+      assignee: i.assignee || "Unassigned",
+      priority: i.priority || "Medium",
+      createdDate: i.createdDate || "",
+      isDone: isDoneStatus(i.status),
+      originalEstimateHours: estimateHours(i.originalEstimateSeconds),
+      reason: futureForecast.reasons.get(i.key),
+    }));
+
   return {
     summary: {
       totalIssues,
@@ -675,7 +706,7 @@ function calculateKPIs(
         value: `${savedSayDo}%`,
         subtitle: "Completed committed SP ÷ committed SP",
         trend: sayDoTrend,
-        trendLabel: sayDoTrend === 0 ? "no change vs last sprint" : "vs last sprint",
+        trendLabel: lastSprint && prevSprint ? "vs last sprint" : "",
         trendText: sayDoTrendText,
         color: savedSayDo >= 80 ? ("green" as const) : savedSayDo >= 65 ? ("blue" as const) : ("red" as const),
         trendGood: "up" as const,
@@ -686,7 +717,7 @@ function calculateKPIs(
         value: `${savedCarry}%`,
         subtitle: "Spilled-over committed SP ÷ committed SP",
         trend: carryTrend,
-        trendLabel: carryTrend === 0 ? "no change vs last sprint" : "vs last sprint",
+        trendLabel: lastSprint && prevSprint ? "vs last sprint" : "",
         trendText: carryTrendText,
         color: savedCarry <= 18 ? ("green" as const) : savedCarry <= 28 ? ("blue" as const) : ("red" as const),
         trendGood: "down" as const,
@@ -699,7 +730,7 @@ function calculateKPIs(
           ? `Average SP per sprint across ${velocityPodCount} pods`
           : "SP completed in latest sprint",
         trend: velocityTrendPct,
-        trendLabel: velocityTrendPct === 0 ? "no change vs last sprint" : "vs last sprint",
+        trendLabel: lastSprint && prevSprint ? "vs last sprint" : "",
         trendText: velocityTrendText,
         color: "blue" as const,
         trendGood: "up" as const,
@@ -822,6 +853,7 @@ function calculateKPIs(
           reason: "Carried-Over Scope",
         })),
     },
+    podFeatureList,
     issueList: items.map((i) => ({
       key: i.key,
       summary: i.summary,
@@ -890,7 +922,7 @@ resolver.define("getDashboardData", async (req) => {
     const forecastScope = filteredScope.filter(
       (item) => !/^sub-?task$/i.test(item.workType)
     );
-    const forecastChildScope = allItems.filter(
+    const forecastChildSource = allItems.filter(
       (item) =>
         !/^sub-?task$/i.test(item.workType) &&
         (!filters.podId || filters.podId === "all" || item.podKey === filters.podId)
@@ -900,7 +932,7 @@ resolver.define("getDashboardData", async (req) => {
       filters,
       filteredAll,
       forecastScope,
-      forecastChildScope
+      forecastChildSource
     );
 
     return {

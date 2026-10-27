@@ -214,6 +214,7 @@ export interface DashboardData {
   diagnosis: DiagnosisData;
   issueList: IssueRow[];
   developerIssueList: IssueRow[];
+  podFeatureList?: IssueRow[];
   metricInsights?: Record<string, MetricInsight>;
   jiraBaseUrl?: string;
 }

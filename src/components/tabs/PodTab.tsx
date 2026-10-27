@@ -35,9 +35,12 @@ export function PodTab({ data, podName }: PodTabProps) {
   const isFeatureType = (i: IssueRow) => /^feature$/i.test(i.workType);
   const isEpicType = (i: IssueRow) => /^epic$/i.test(i.workType);
   // Sites without a Feature issue type track feature-level work as Epics.
-  const features = issues.some(isFeatureType)
-    ? issues.filter(isFeatureType)
-    : issues.filter(isEpicType);
+  // podFeatureList keeps features visible when a quarter/sprint is selected,
+  // because features usually have no quarter/sprint field of their own.
+  const featureSource = data.podFeatureList ?? issues;
+  const features = featureSource.some(isFeatureType)
+    ? featureSource.filter(isFeatureType)
+    : featureSource.filter(isEpicType);
   const stories = issues.filter((i) => /^story$/i.test(i.workType));
   const completedFeatures = features.filter((i) => i.isDone);
   const completedStories = stories.filter((i) => i.isDone);
@@ -111,7 +114,7 @@ export function PodTab({ data, podName }: PodTabProps) {
           <button
             type="button"
             onClick={() =>
-              open("Total Features", `${podName} · feature-level items in scope`, features)
+              open("Total Features", `${podName} · feature-level items in pod`, features)
             }
             className="text-left p-4 bg-jira-bg rounded-lg border border-jira-border/50 hover:border-jira-blue/50 hover:shadow-sm transition"
           >
