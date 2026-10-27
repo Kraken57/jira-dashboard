@@ -38,7 +38,7 @@ A read-only sprint-performance dashboard for Jira Cloud.
 
 - It pulls issues from Jira with a JQL query.
 - It computes delivery metrics in memory.
-- It renders eight tabs (Executive, Pod, Developer, Sprint, Quality, Predictability,
+- It renders seven tabs (Executive, Pod, Developer, Quality, Predictability,
   Delivery Diagnosis, Issues).
 - Every KPI card and most table rows are **clickable** and open a popup with the exact
   work items behind that number.
@@ -290,7 +290,6 @@ Each tab declares which filters it shows:
 | Executive Summary | Pod, Quarter, Sprint |
 | Pod View | Pod, Quarter, Sprint |
 | Developer View | Pod, Quarter, Sprint, **Developer** |
-| Sprint Analysis | Pod, Quarter, Sprint |
 | Quality | Pod, Quarter, Sprint |
 | Predictability | Pod, Quarter |
 | Delivery Diagnosis | Pod, Quarter, Sprint, **Status** |
@@ -387,6 +386,9 @@ Four stat cards, a work-type selector, and a workflow pie chart:
 | Work-type row | selects that type and renders its workflow pie on the right |
 | Pie slice / legend row | opens the matching `workType` + `status` issues |
 
+The pie uses a fixed high-contrast palette so every status segment and its legend
+marker stay distinguishable.
+
 ### 7.3 Developer View (`DeveloperTab`)
 
 Cards and table rows open `IssuesModal`. The Developer filter scopes both the cards and
@@ -402,19 +404,9 @@ the table:
 The table counts **Story + Sub-task only** and shows the split in each cell.
 `Story Points / Hours` pairs delivered SP with `completed / original` hours from
 Jira’s `timeoriginalestimate`. Completion rate is completed items ÷ assigned items.
+Developer rows are tinted **yellow above 70%** and **red at 70% or below**.
 
-### 7.4 Sprint Analysis (`SprintAnalysisTab`)
-
-| Element | Popup issues |
-|---|---|
-| Sprint Scope Churn (N/A) | all |
-| Planned Work Share | all |
-| Avg Cycle Time (N/A) | `isDone` |
-| Avg Lead Time | `isDone` |
-| Work-type row | matching `workType` |
-| Status row | matching `status` |
-
-### 7.5 Quality (`QualityTab`)
+### 7.4 Quality (`QualityTab`)
 
 | Element | Popup issues |
 |---|---|
@@ -427,13 +419,13 @@ Jira’s `timeoriginalestimate`. Completion rate is completed items ÷ assigned 
 > The priority section is labelled “Defect Severity”, but the data counts **all work items**
 > by priority, not only bugs. See [Known limitations](#17-known-limitations-and-parity-gaps).
 
-### 7.6 Predictability (`PredictabilityTab`)
+### 7.5 Predictability (`PredictabilityTab`)
 
 Cards do **not** open issue lists. They open `DetailModal` with the iteration history table
 (planned, delivered, Say/Do) for the current scope. The same table is also shown on the
 page.
 
-### 7.7 Delivery Diagnosis (`DiagnosisTab`)
+### 7.6 Delivery Diagnosis (`DiagnosisTab`)
 
 | Element | Popup |
 |---|---|
@@ -446,7 +438,7 @@ page.
 
 The Status filter applies to the cards and the bottom table.
 
-### 7.8 Executive trend charts (`TrendsCharts`)
+### 7.7 Executive trend charts (`TrendsCharts`)
 
 Two read-only charts sit below Team Velocity and Sprint Delivery Overview on the
 Executive Summary:
@@ -458,7 +450,7 @@ Executive Summary:
 
 There is no separate Trends tab.
 
-### 7.9 Issues (`IssuesTab`)
+### 7.8 Issues (`IssuesTab`)
 
 Full explorer with client-side search (key, summary, assignee), type filter, status filter,
 and 25-row pagination. Jira keys link to `${jiraBaseUrl}/browse/${key}`.
@@ -728,7 +720,7 @@ Group Story + Sub-task items by assignee:
 - sorted by `deliveredSP` descending
 - unassigned issues are grouped under `"Unassigned"`
 
-### 9.8 Sprint Analysis
+### 9.8 Sprint analysis data (Pod View)
 
 | Metric | Rule |
 |---|---|

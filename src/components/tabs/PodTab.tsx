@@ -8,6 +8,21 @@ import { IssuesModal } from "@/components/IssuesModal";
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
+const PIE_COLORS = [
+  "#2563eb", // blue
+  "#16a34a", // green
+  "#f59e0b", // amber
+  "#dc2626", // red
+  "#7c3aed", // violet
+  "#0891b2", // cyan
+  "#ea580c", // orange
+  "#db2777", // pink
+  "#4f46e5", // indigo
+  "#65a30d", // lime
+  "#0d9488", // teal
+  "#9333ea", // purple
+];
+
 interface PodTabProps {
   data: DashboardData;
   podName: string;
@@ -61,20 +76,12 @@ export function PodTab({ data, podName }: PodTabProps) {
   });
 
   const typeStatuses = Array.from(statusCounts.entries())
-    .map(([status, stat]) => ({
-      status,
-      count: stat.count,
-      color:
-        sprintAnalysis.statusBreakdown.find((s) => s.status === status)?.color ||
-        (stat.isDone
-          ? "#0e7c3e"
-          : /progress|development|review/i.test(status)
-          ? "#0052cc"
-          : /test/i.test(status)
-          ? "#f2a900"
-          : "#585f6b"),
-    }))
-    .sort((a, b) => b.count - a.count);
+    .map(([status, stat]) => ({ status, count: stat.count }))
+    .sort((a, b) => b.count - a.count)
+    .map((stat, index) => ({
+      ...stat,
+      color: PIE_COLORS[index % PIE_COLORS.length],
+    }));
 
   const openStatus = (status: string) =>
     open(

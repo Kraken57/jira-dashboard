@@ -11,7 +11,6 @@ import { fetchDashboardData } from "@/lib/api";
 import { DashboardData, SprintOption, IssueRow } from "@/lib/jira/types";
 import { PodTab } from "@/components/tabs/PodTab";
 import { DeveloperTab } from "@/components/tabs/DeveloperTab";
-import { SprintAnalysisTab } from "@/components/tabs/SprintAnalysisTab";
 import { QualityTab } from "@/components/tabs/QualityTab";
 import { PredictabilityTab } from "@/components/tabs/PredictabilityTab";
 import { TrendsCharts } from "@/components/TrendsCharts";
@@ -22,7 +21,6 @@ const TABS = [
   { id: "executive", label: "Executive Summary" },
   { id: "pod", label: "Pod View" },
   { id: "developer", label: "Developer View" },
-  { id: "sprint", label: "Sprint Analysis" },
   { id: "quality", label: "Quality" },
   { id: "predictability", label: "Predictability" },
   { id: "diagnosis", label: "Delivery Diagnosis" },
@@ -35,7 +33,6 @@ const TAB_FILTERS: Record<string, FilterKey[]> = {
   executive: ["pod", "quarter", "sprint"],
   pod: ["pod", "quarter", "sprint"],
   developer: ["pod", "quarter", "sprint", "developer"],
-  sprint: ["pod", "quarter", "sprint"],
   quality: ["pod", "quarter", "sprint"],
   predictability: ["pod", "quarter"],
   diagnosis: ["pod", "quarter", "sprint", "status"],
@@ -301,14 +298,6 @@ export default function DashboardPage() {
               podName={selectedPodName}
               developerFilter={filters.developer}
               issues={dashboardData.developerIssueList}
-              jiraDomain={dashboardData.jiraBaseUrl}
-            />
-          )}
-
-          {activeTab === "sprint" && dashboardData && (
-            <SprintAnalysisTab
-              data={dashboardData.sprintAnalysis}
-              issues={dashboardData.issueList}
               jiraDomain={dashboardData.jiraBaseUrl}
             />
           )}

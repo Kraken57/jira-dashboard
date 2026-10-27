@@ -134,7 +134,11 @@ export function DeveloperTab({
                       issues.filter((i) => i.assignee === dev.name)
                     )
                   }
-                  className="hover:bg-jira-bg/30 transition-colors cursor-pointer"
+                  className={`transition-colors cursor-pointer ${
+                    dev.completionRate > 70
+                      ? "bg-yellow-100 hover:bg-yellow-200/70"
+                      : "bg-red-100 hover:bg-red-200/70"
+                  }`}
                 >
                   <td className="px-6 py-3 font-semibold text-jira-text flex items-center gap-2.5">
                     <span className="w-7 h-7 rounded-full bg-jira-blue-bg text-jira-blue flex items-center justify-center text-xs font-bold shrink-0">
