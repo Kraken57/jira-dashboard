@@ -240,8 +240,13 @@ export function computeDashboardData(
 ): DashboardData {
   const { podId, quarterId, sprintId } = filters;
 
+  // Subtasks are execution breakdowns of a parent item; counting them would
+  // double-count story points and clutter the issue lists. They are excluded
+  // from every metric, popup, and type filter.
+  const workItems = items.filter((item) => !/^sub-?task$/i.test(item.workType));
+
   // 1. Scoped items by Pod & Quarter
-  const scopedItems = items.filter((item) => {
+  const scopedItems = workItems.filter((item) => {
     if (podId !== "all" && item.podKey !== podId) return false;
     if (quarterId !== "all" && item.quarter !== quarterId) return false;
     return true;
@@ -1071,8 +1076,8 @@ export function computeDashboardData(
   ];
 
   return {
-    pods: derivePods(items),
-    quarters: deriveQuarters(items),
+    pods: derivePods(workItems),
+    quarters: deriveQuarters(workItems),
     sprints,
     metrics,
     velocity,

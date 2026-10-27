@@ -365,8 +365,8 @@ navigates to another tab and never triggers a new Jira request.
 
 | Card | Popup issue list | Popup subtitle |
 |---|---|---|
-| Say/Do Ratio | all issues in scope | “Committed work items (done vs open)” |
-| Sprint Carry Over | `!isDone` | “Unfinished / spilled-over committed work” |
+| Say/Do Ratio | `isDone` only | “Accepted / completed committed work” |
+| Sprint Carry Over | `!isDone` | “Not accepted / spilled-over committed work” |
 | Team/Epic Velocity | `isDone` | “Completed work items” |
 | Future Predictability | open features with a due date | “Planned features vs due-date forecast” |
 
@@ -1215,6 +1215,7 @@ does not exist.
 - **`epicsOnSchedule` equals the predictability score**; it is not a separate epic-level
   calculation.
 - **Priority distribution is all issues**, not bugs only, despite the Quality section label.
+- **Subtasks are excluded** from all metrics and issue lists; only Stories, Bugs, Tasks, Features, Epics, etc. are counted.
 - **Per-sprint sums can overcount carried work** because an issue can appear in several
   sprints. Executive All-Sprints totals use de-duplicated summary totals to avoid this.
 - **Trends “moving average” is an expanding average**, unlike the trailing 3-sprint average

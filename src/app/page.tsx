@@ -153,14 +153,15 @@ export default function DashboardPage() {
     switch (card.title) {
       case "Sprint Carry Over":
         issues = all.filter((i) => !i.isDone);
-        label = "Unfinished / spilled-over committed work";
+        label = "Not accepted / spilled-over committed work";
         break;
       case "Team/Epic Velocity":
         issues = all.filter((i) => i.isDone);
         label = "Completed work items";
         break;
       case "Say/Do Ratio":
-        label = "Committed work items (done vs open)";
+        issues = all.filter((i) => i.isDone);
+        label = "Accepted / completed committed work";
         break;
       case "Future Predictability":
         issues = all.filter(

@@ -571,7 +571,9 @@ resolver.define("getDashboardData", async (req) => {
       config.podField,
     ]);
 
-    const items = issues.map((issue) => mapIssueToWorkItem(issue, config));
+    const items = issues
+      .map((issue) => mapIssueToWorkItem(issue, config))
+      .filter((item) => !/^sub-?task$/i.test(item.workType));
 
     // Apply filters
     let filtered = items;
