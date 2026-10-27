@@ -15,24 +15,32 @@ export async function fetchDashboardData(filters: DashboardFilters): Promise<Das
     throw new Error("fetchDashboardData must be called in the browser");
   }
 
-  // 1. Forge bridge injected globally by the Forge Custom UI runtime
-  const forgeBridge = (window as unknown as {
-    bridge?: { invoke: (fn: string, payload?: unknown) => Promise<DashboardData> };
-  }).bridge;
-  if (forgeBridge && typeof forgeBridge.invoke === "function") {
-    try {
-      return await forgeBridge.invoke("getDashboardData", filters);
-    } catch (err) {
-      console.warn("Forge bridge invoke failed, falling back to REST endpoint:", err);
-    }
-  }
+  // Forge Custom UI always runs inside an iframe. Localhost does not, so only
+  // try the bridge there instead of letting @forge/bridge fail on every load.
+  const inForgeIframe = window.self !== window.top;
 
-  // 2. @forge/bridge invoke (dynamic import keeps it out of the SSR bundle)
-  try {
-    const { invoke } = await import("@forge/bridge");
-    return await invoke("getDashboardData", filters);
-  } catch {
-    // Not in a Forge context, fall through to REST
+  if (inForgeIframe) {
+    // 1. Forge bridge injected globally by the Forge Custom UI runtime
+    const forgeBridge = (window as unknown as {
+      bridge?: { invoke: (fn: string, payload?: unknown) => Promise<DashboardData> };
+    }).bridge;
+    if (forgeBridge && typeof forgeBridge.invoke === "function") {
+      try {
+        return await forgeBridge.invoke("getDashboardData", filters);
+      } catch (err) {
+        console.warn("Forge bridge invoke failed, trying @forge/bridge:", err);
+      }
+    }
+
+    // 2. @forge/bridge invoke (dynamic import keeps it out of the SSR bundle)
+    try {
+      const { invoke } = await import("@forge/bridge");
+      return await invoke("getDashboardData", filters);
+    } catch (err) {
+      throw new Error(
+        `Forge bridge is unavailable: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
   }
 
   // 3. Next.js API route (localhost / standalone)
@@ -42,14 +50,37 @@ export async function fetchDashboardData(filters: DashboardFilters): Promise<Das
     sprint: filters.sprintId,
   });
 
-  const res = await fetch(`${BASE_URL}/api/jira?${params.toString()}`, {
-    headers: { "Content-Type": "application/json" },
-    cache: "no-store",
-  });
-
-  if (!res.ok) {
-    throw new Error(`Failed to fetch dashboard data: ${res.statusText}`);
+  const url = `${BASE_URL.replace(/\/+$/, "")}/api/jira?${params.toString()}`;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      cache: "no-store",
+    });
+  } catch (err) {
+    throw new Error(
+      `Could not reach ${url}. Is the Next.js dev server running? ${err instanceof Error ? err.message : String(err)}`
+    );
   }
 
-  return res.json();
+  const body = await res.text();
+
+  if (!res.ok) {
+    let detail = body;
+    try {
+      const json = JSON.parse(body) as { error?: string; details?: string };
+      detail = json.details || json.error || body;
+    } catch {
+      // Response was HTML or empty; keep the raw text.
+    }
+    throw new Error(
+      `Failed to fetch dashboard data (${res.status}): ${detail.slice(0, 400)}`
+    );
+  }
+
+  try {
+    return JSON.parse(body) as DashboardData;
+  } catch {
+    throw new Error("The dashboard API returned an invalid JSON response.");
+  }
 }

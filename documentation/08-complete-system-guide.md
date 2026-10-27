@@ -376,16 +376,16 @@ latest plotted sprint compared with the one before it, and its label names that 
 
 ### 7.2 Pod View (`PodTab`)
 
-Four stat cards plus work-type and status rows. All open `IssuesModal`:
+Four stat cards, a work-type selector, and a workflow pie chart:
 
-| Element | Popup issues |
+| Element | Action |
 |---|---|
-| Total Features | `Feature` items (falls back to `Epic` when the site has no Feature type) |
-| Total Stories | `workType === "Story"` |
-| Completed Stories | stories with `isDone` |
-| In Flight | stories with `!isDone` |
-| Work-type row | matching `workType` |
-| Status row | matching `status` |
+| Total Features | opens `Feature` items (falls back to `Epic` when the site has no Feature type) |
+| Total Stories | opens `workType === "Story"` |
+| Completed Stories | opens stories with `isDone` |
+| In Flight | opens stories with `!isDone` |
+| Work-type row | selects that type and renders its workflow pie on the right |
+| Pie slice / legend row | opens the matching `workType` + `status` issues |
 
 ### 7.3 Developer View (`DeveloperTab`)
 
@@ -958,7 +958,7 @@ Forge Custom UI requires a static bundle. `scripts/build-forge.mjs`:
    `next.config.ts`.
 4. Writes the bundle to `./out`.
 5. Copies the bundle to `./forge/out`.
-6. Restores the original API route (even if the build fails).
+6. Restores the original API route on success, failure, or Ctrl+C/SIGTERM.
 
 The Forge manifest points `dashboard-ui` and `admin-ui` at `out` (inside `forge/`).
 
@@ -1141,7 +1141,7 @@ flattened into key/title/status/category/points/owner.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `Jira is not configured` | Missing `JIRA_HOST` or token | Fill `.env.local`, restart |
+| `Jira is not configured. Missing …` | Missing `JIRA_HOST`, `JIRA_EMAIL`, or `JIRA_API_TOKEN` | Fill `.env.local`, restart |
 | HTTP 401/403 | Bad email/token, or token expired | Regenerate token; test `/rest/api/3/myself` |
 | `/rest/api/3/field` returns 200 but no custom fields | Invalid token | Fix auth first |
 | HTTP 410 | Using deprecated `GET /search` | Use `POST /rest/api/3/search/jql` |
@@ -1153,7 +1153,9 @@ flattened into key/title/status/category/points/owner.
 | Dev server shows stale code | Old Next process still bound to the port | Kill all Next processes and use a fresh port |
 | Next fails to start after copying `node_modules` | OS-specific SWC binary | Delete `node_modules`, reinstall in the current OS |
 | Forge build fails on `/api/jira` | Route not statically exportable | Use `pnpm run build:forge`, not `next build` |
-| Forge page loads but data fails | Bridge invoke failed, fell back to `/api/jira` (404 in export) | Check resolver logs, Forge variables, scopes |
+| Local dashboard says `/api/jira` is disabled | An interrupted Forge build left the 404 stub | Restore with `mv src/app/api/jira/route.ts.localhost.bak src/app/api/jira/route.ts`, or rerun `pnpm run build:forge` |
+| Forge page loads but data fails | Bridge invoke failed | Check `forge logs`, Forge variables, scopes |
+| Banner: “Could not load dashboard data” | API returned 500; banner shows the Jira error detail | Fix the reported env/JQL/field issue, then Retry |
 
 ---
 

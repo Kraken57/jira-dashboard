@@ -1,4 +1,4 @@
-import { isJiraConfigured, JIRA_CONFIG } from "./config";
+import { isJiraConfigured, missingJiraConfig, JIRA_CONFIG } from "./config";
 import { DashboardData, DashboardFilters, JiraWorkItem, SprintMeta } from "./types";
 import { computeDashboardData } from "./metricsEngine";
 
@@ -87,7 +87,17 @@ async function fetchAllLiveJiraIssues(): Promise<{
     });
 
     if (!response.ok) {
-      throw new Error(`Jira API returned ${response.status}: ${response.statusText}`);
+      const body = await response.text();
+      let detail = body;
+      try {
+        const json = JSON.parse(body) as { errorMessages?: string[]; message?: string };
+        detail = json.errorMessages?.join("; ") || json.message || body;
+      } catch {
+        // Jira sometimes returns HTML for gateway errors.
+      }
+      throw new Error(
+        `Jira API returned ${response.status}: ${String(detail).slice(0, 500)}`
+      );
     }
 
     const json = await response.json();
@@ -212,7 +222,7 @@ export async function getDashboardData(
 ): Promise<DashboardData> {
   if (!isJiraConfigured()) {
     throw new Error(
-      "Jira is not configured. Set JIRA_HOST, JIRA_EMAIL, and JIRA_API_TOKEN in .env.local"
+      `Jira is not configured. Missing ${missingJiraConfig().join(", ")} in .env.local`
     );
   }
 

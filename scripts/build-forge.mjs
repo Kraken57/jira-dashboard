@@ -8,13 +8,42 @@
  *
  * Usage: node scripts/build-forge.mjs
  */
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { cpSync, existsSync, readFileSync, renameSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 const ROUTE = join(process.cwd(), "src", "app", "api", "jira", "route.ts");
 const BACKUP = `${ROUTE}.localhost.bak`;
 const STUB_MARKER = "Static stub for the Forge build";
+
+// Restore the real route even if the build is interrupted (Ctrl+C, killed
+// terminal, or an exception). Without this, a half-finished build leaves the
+// 404 stub in place and `pnpm dev` shows "Failed to fetch dashboard data".
+function restoreRoute() {
+  if (!existsSync(BACKUP)) return;
+  try {
+    rmSync(ROUTE, { force: true });
+    renameSync(BACKUP, ROUTE);
+    console.log("[build-forge] Restored original /api/jira route");
+  } catch (err) {
+    console.error("[build-forge] Could not restore /api/jira route:", err);
+  }
+}
+
+let activeChild = null;
+
+function shutdown(signal, code) {
+  if (activeChild && !activeChild.killed) {
+    activeChild.kill(signal);
+  }
+  restoreRoute();
+  process.exit(code);
+}
+
+process.on("exit", restoreRoute);
+process.on("SIGINT", () => shutdown("SIGINT", 130));
+process.on("SIGTERM", () => shutdown("SIGTERM", 143));
+process.on("SIGHUP", () => shutdown("SIGHUP", 129));
 
 const STUB = `import { NextResponse } from "next/server";
 
@@ -31,16 +60,28 @@ export async function GET() {
 `;
 
 function run(cmd, args, env) {
-  const result = spawnSync(cmd, args, {
-    stdio: "inherit",
-    env: { ...process.env, ...env },
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, {
+      stdio: "inherit",
+      env: { ...process.env, ...env },
+    });
+    activeChild = child;
+
+    child.on("error", (err) => {
+      activeChild = null;
+      reject(err);
+    });
+    child.on("exit", (code, signal) => {
+      activeChild = null;
+      if (signal) {
+        reject(new Error(`Command terminated by ${signal}`));
+      } else if (code !== 0) {
+        reject(new Error(`Command failed with exit code ${code ?? 1}`));
+      } else {
+        resolve();
+      }
+    });
   });
-  if (result.error) {
-    throw result.error;
-  }
-  if (result.status !== 0) {
-    throw new Error(`Command failed with exit code ${result.status ?? 1}`);
-  }
 }
 
 if (!existsSync(ROUTE)) {
@@ -74,9 +115,11 @@ try {
   writeFileSync(ROUTE, STUB, "utf8");
 
   console.log("[build-forge] Building static export into ./out ...");
-  run(process.execPath, [join("node_modules", "next", "dist", "bin", "next"), "build"], {
-    FORGE_BUILD: "true",
-  });
+  await run(
+    process.execPath,
+    [join("node_modules", "next", "dist", "bin", "next"), "build"],
+    { FORGE_BUILD: "true" }
+  );
 
   const forgeOut = join(process.cwd(), "forge", "out");
   console.log("[build-forge] Copying static bundle into forge/out ...");
@@ -84,9 +127,6 @@ try {
   cpSync(join(process.cwd(), "out"), forgeOut, { recursive: true });
 
   console.log("[build-forge] Done. Static bundle is in ./out and ./forge/out");
-} finally {  if (existsSync(BACKUP)) {
-    rmSync(ROUTE, { force: true });
-    renameSync(BACKUP, ROUTE);
-    console.log("[build-forge] Restored original /api/jira route");
-  }
+} finally {
+  restoreRoute();
 }

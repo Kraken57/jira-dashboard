@@ -1,8 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { Pie } from "react-chartjs-2";
+import { Chart as ChartJS, ArcElement, Tooltip, Legend } from "chart.js";
 import { DashboardData, IssueRow } from "@/lib/jira/types";
 import { IssuesModal } from "@/components/IssuesModal";
+
+ChartJS.register(ArcElement, Tooltip, Legend);
 
 interface PodTabProps {
   data: DashboardData;
@@ -29,6 +33,7 @@ export function PodTab({ data, podName }: PodTabProps) {
   const storyCompletionPct = stories.length
     ? Math.round((completedStories.length / stories.length) * 100)
     : 0;
+  const [selectedType, setSelectedType] = useState<string | null>(null);
   const [modal, setModal] = useState<{
     title: string;
     subtitle: string;
@@ -37,6 +42,46 @@ export function PodTab({ data, podName }: PodTabProps) {
 
   const open = (title: string, subtitle: string, list: IssueRow[]) =>
     setModal({ title, subtitle, issues: list });
+
+  const activeType =
+    selectedType &&
+    sprintAnalysis.workTypeBreakdown.some((wt) => wt.type === selectedType)
+      ? selectedType
+      : sprintAnalysis.workTypeBreakdown[0]?.type ?? null;
+
+  const typeIssues = activeType
+    ? issues.filter((i) => i.workType === activeType)
+    : [];
+
+  const statusCounts = new Map<string, { count: number; isDone: boolean }>();
+  typeIssues.forEach((i) => {
+    const current = statusCounts.get(i.status) || { count: 0, isDone: i.isDone };
+    current.count += 1;
+    statusCounts.set(i.status, current);
+  });
+
+  const typeStatuses = Array.from(statusCounts.entries())
+    .map(([status, stat]) => ({
+      status,
+      count: stat.count,
+      color:
+        sprintAnalysis.statusBreakdown.find((s) => s.status === status)?.color ||
+        (stat.isDone
+          ? "#0e7c3e"
+          : /progress|development|review/i.test(status)
+          ? "#0052cc"
+          : /test/i.test(status)
+          ? "#f2a900"
+          : "#585f6b"),
+    }))
+    .sort((a, b) => b.count - a.count);
+
+  const openStatus = (status: string) =>
+    open(
+      `${activeType} · ${status}`,
+      `${podName} · ${status} items`,
+      typeIssues.filter((i) => i.status === status)
+    );
 
   return (
     <div className="space-y-6">
@@ -109,8 +154,8 @@ export function PodTab({ data, podName }: PodTabProps) {
         </div>
       </div>
 
-      {/* Pod Work Composition & Statuses */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* Pod Work Composition & Workflow Progress */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Work items breakdown */}
         <div className="bg-white border border-jira-border rounded-lg p-5 shadow-sm">
           <h3 className="text-sm font-bold text-jira-text uppercase tracking-wider mb-4">
@@ -123,14 +168,13 @@ export function PodTab({ data, podName }: PodTabProps) {
                 <button
                   key={wt.type}
                   type="button"
-                  onClick={() =>
-                    open(
-                      `${wt.type} items`,
-                      `${podName} · ${wt.count} items · ${wt.storyPoints} SP`,
-                      issues.filter((i) => i.workType === wt.type)
-                    )
-                  }
-                  className="w-full text-left space-y-1 rounded hover:bg-jira-bg/50 transition p-1"
+                  onClick={() => setSelectedType(wt.type)}
+                  aria-pressed={activeType === wt.type}
+                  className={`w-full text-left space-y-1 rounded-md border p-2 transition ${
+                    activeType === wt.type
+                      ? "border-jira-blue/40 bg-jira-blue-bg/60"
+                      : "border-transparent hover:bg-jira-bg/60"
+                  }`}
                 >
                   <div className="flex items-center justify-between text-xs">
                     <span className="font-semibold text-jira-text">{wt.type}</span>
@@ -152,43 +196,104 @@ export function PodTab({ data, podName }: PodTabProps) {
           </div>
         </div>
 
-        {/* Workflow State Distribution */}
-        <div className="bg-white border border-jira-border rounded-lg p-5 shadow-sm">
-          <h3 className="text-sm font-bold text-jira-text uppercase tracking-wider mb-4">
-            Workflow Health & Distribution
-          </h3>
-          <div className="space-y-3">
-            {sprintAnalysis.statusBreakdown.map((st) => {
-              const pct = summary.totalIssues > 0 ? Math.round((st.count / summary.totalIssues) * 100) : 0;
-              return (
-                <button
-                  key={st.status}
-                  type="button"
-                  onClick={() =>
-                    open(
-                      st.status,
-                      `${podName} · ${st.count} items in ${st.status}`,
-                      issues.filter((i) => i.status === st.status)
-                    )
-                  }
-                  className="w-full text-left space-y-1 rounded hover:bg-jira-bg/50 transition p-1"
-                >
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-jira-text flex items-center gap-1.5">
-                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: st.color }} />
-                      {st.status}
-                    </span>
-                    <span className="text-jira-text-muted">
-                      {st.count} items ({pct}% of pod)
-                    </span>
-                  </div>
-                  <div className="w-full bg-jira-bg h-2 rounded-full overflow-hidden">
-                    <div className="h-2 rounded-full" style={{ width: `${pct}%`, backgroundColor: st.color }} />
-                  </div>
-                </button>
-              );
-            })}
+        {/* Workflow Progress for the selected work type */}
+        <div className="bg-white border border-jira-border rounded-lg p-5 shadow-sm flex flex-col">
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <div>
+              <h3 className="text-sm font-bold text-jira-text uppercase tracking-wider">
+                Workflow Progress
+              </h3>
+              <p className="text-xs text-jira-text-muted mt-0.5">
+                {activeType
+                  ? `${activeType} · ${typeIssues.length} items`
+                  : "Select a work type on the left"}
+              </p>
+            </div>
+            {activeType && (
+              <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-jira-blue-bg text-jira-blue border border-jira-blue/20 shrink-0">
+                {typeStatuses.length} statuses
+              </span>
+            )}
           </div>
+
+          {activeType && typeIssues.length > 0 ? (
+            <>
+              <div className="relative h-56 min-w-0">
+                <Pie
+                  data={{
+                    labels: typeStatuses.map((s) => s.status),
+                    datasets: [
+                      {
+                        data: typeStatuses.map((s) => s.count),
+                        backgroundColor: typeStatuses.map((s) => s.color),
+                        borderColor: "#ffffff",
+                        borderWidth: 2,
+                        hoverOffset: 10,
+                      },
+                    ],
+                  }}
+                  options={{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    layout: { padding: 4 },
+                    plugins: {
+                      legend: { display: false },
+                      tooltip: {
+                        callbacks: {
+                          label: (ctx) => {
+                            const value = Number(ctx.raw) || 0;
+                            const pct = typeIssues.length
+                              ? Math.round((value / typeIssues.length) * 100)
+                              : 0;
+                            return ` ${ctx.label}: ${value} (${pct}%)`;
+                          },
+                        },
+                      },
+                    },
+                    onHover: (event, elements) => {
+                      const target = event.native?.target as HTMLElement | undefined;
+                      if (target) {
+                        target.style.cursor = elements.length ? "pointer" : "default";
+                      }
+                    },
+                    onClick: (_event, elements) => {
+                      const index = elements[0]?.index;
+                      if (index === undefined) return;
+                      const status = typeStatuses[index]?.status;
+                      if (status) openStatus(status);
+                    },
+                  }}
+                />
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                {typeStatuses.map((s) => (
+                  <button
+                    key={s.status}
+                    type="button"
+                    onClick={() => openStatus(s.status)}
+                    className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-jira-bg transition"
+                    title={`Open ${s.count} ${activeType} items in ${s.status}`}
+                  >
+                    <span
+                      className="w-2.5 h-2.5 rounded-full shrink-0"
+                      style={{ backgroundColor: s.color }}
+                    />
+                    <span className="text-xs text-jira-text truncate">{s.status}</span>
+                    <span className="ml-auto text-[11px] font-semibold text-jira-text-muted">
+                      {s.count}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-1 items-center justify-center text-xs text-jira-text-muted py-10">
+              {activeType
+                ? "No work items for this type in the current filter."
+                : "Select a work type to see its workflow progress."}
+            </div>
+          )}
         </div>
       </div>
 

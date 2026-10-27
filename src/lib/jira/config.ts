@@ -1,11 +1,19 @@
 export const JIRA_CONFIG = {
-  host: process.env.JIRA_HOST || "",
-  email: process.env.JIRA_EMAIL || "ahmad.saad@edulevel.ai",
-  apiToken: process.env.JIRA_API_TOKEN || "",
+  host: (process.env.JIRA_HOST || "").trim().replace(/\/+$/, ""),
+  email: (process.env.JIRA_EMAIL || "").trim(),
+  apiToken: (process.env.JIRA_API_TOKEN || "").trim(),
 };
 
+export function missingJiraConfig(): string[] {
+  return [
+    !JIRA_CONFIG.host && "JIRA_HOST",
+    !JIRA_CONFIG.email && "JIRA_EMAIL",
+    !JIRA_CONFIG.apiToken && "JIRA_API_TOKEN",
+  ].filter(Boolean) as string[];
+}
+
 export function isJiraConfigured(): boolean {
-  return Boolean(JIRA_CONFIG.host && JIRA_CONFIG.apiToken);
+  return missingJiraConfig().length === 0;
 }
 
 export function isForgeEnvironment(): boolean {

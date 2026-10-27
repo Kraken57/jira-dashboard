@@ -55,6 +55,8 @@ export default function DashboardPage() {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [sprintOptions, setSprintOptions] = useState<SprintOption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [issueModal, setIssueModal] = useState<{
     title: string;
     subtitle: string;
@@ -76,20 +78,33 @@ export default function DashboardPage() {
 
     async function loadData() {
       setIsLoading(true);
+      setError(null);
       try {
         const base = { podId: baseFilters.pod, quarterId: baseFilters.quarter };
-        const [data, allSprints] = await Promise.all([
+        const [primary, secondary] = await Promise.allSettled([
           fetchDashboardData({ ...base, sprintId: effectiveSprint }),
           effectiveSprint === "all"
             ? Promise.resolve(null)
             : fetchDashboardData({ ...base, sprintId: "all" }),
         ]);
+
         if (cancelled) return;
+        if (primary.status === "rejected") throw primary.reason;
+
+        const data = primary.value;
+        const allSprints = secondary.status === "fulfilled" ? secondary.value : null;
         setDashboardData(data);
-        setSprintOptions((allSprints ?? data).sprints);
-        setIsLoading(false);
+        if (allSprints) {
+          setSprintOptions(allSprints.sprints);
+        } else if (effectiveSprint === "all") {
+          setSprintOptions(data.sprints);
+        }
       } catch (err) {
         console.error("Failed to load dashboard data:", err);
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to load dashboard data");
+        }
+      } finally {
         if (!cancelled) setIsLoading(false);
       }
     }
@@ -99,7 +114,7 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [baseFilters.pod, baseFilters.quarter, effectiveSprint]);
+  }, [baseFilters.pod, baseFilters.quarter, effectiveSprint, reloadKey]);
 
   const updateFilter = (key: FilterKey, value: string) => {
     if (key === "pod" || key === "quarter" || key === "sprint") {
@@ -219,6 +234,22 @@ export default function DashboardPage() {
             </div>
           )}
         </div>
+
+        {error && (
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-lg border border-jira-red/30 bg-jira-red-bg px-4 py-3">
+            <div>
+              <p className="text-sm font-bold text-jira-red">Could not load dashboard data</p>
+              <p className="text-xs text-jira-text-muted mt-0.5 break-words">{error}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setReloadKey((k) => k + 1)}
+              className="self-start sm:self-auto text-xs font-semibold px-3 py-1.5 rounded-md bg-white border border-jira-red/30 text-jira-red hover:bg-jira-red/10 transition"
+            >
+              Retry
+            </button>
+          </div>
+        )}
 
         {/* Tab Navigation */}
         <TabBar tabs={TABS} active={activeTab} onChange={setActiveTab} />
