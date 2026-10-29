@@ -175,7 +175,10 @@ export default function DashboardPage() {
         label = "Accepted / completed committed work";
         break;
       case "Future Predictability":
-        issues = all.filter((i) => !i.isDone && !!i.reason);
+        // The card computes over the scope-aware feature pool (features often
+        // lack sprint/quarter of their own), so the popup must read the same
+        // pool, not issueList — otherwise it shows "No work items".
+        issues = (dashboardData.podFeatureList ?? all).filter((i) => i.reason);
         label = "Planned and past-due features vs due-date forecast";
         break;
     }
