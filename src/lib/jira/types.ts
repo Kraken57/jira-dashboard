@@ -159,6 +159,7 @@ export interface IssueRow {
   assignee: string;
   priority: string;
   createdDate: string;
+  dueDate?: string;
   isDone: boolean;
   originalEstimateHours?: number;
   isSubtask?: boolean;

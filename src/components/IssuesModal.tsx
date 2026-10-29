@@ -66,6 +66,7 @@ export function IssuesModal({
   const hasHours = totalHours > 0;
   const completion = issues.length > 0 ? Math.round((doneIssues.length / issues.length) * 100) : 0;
   const hasReason = issues.some((i) => i.reason);
+  const hasDueDate = issues.some((i) => i.dueDate);
 
   const statuses = useMemo(() => unique(issues.map((i) => i.status)), [issues]);
   const workTypes = useMemo(() => unique(issues.map((i) => i.workType)), [issues]);
@@ -456,6 +457,7 @@ export function IssuesModal({
               <th className="px-4 py-2.5">Summary</th>
               <th className="px-4 py-2.5">Status</th>
               <th className="px-4 py-2.5 text-center">SP</th>
+              {hasDueDate && <th className="px-4 py-2.5">Due Date</th>}
               {hasHours && <th className="px-4 py-2.5 text-center">Hours</th>}
               <th className="px-4 py-2.5">Assignee</th>
               <th className="px-4 py-2.5">Sprint</th>
@@ -466,7 +468,7 @@ export function IssuesModal({
             {filtered.length === 0 ? (
               <tr>
                 <td
-                  colSpan={7 + (hasHours ? 1 : 0) + (hasReason ? 1 : 0)}
+                  colSpan={7 + (hasHours ? 1 : 0) + (hasReason ? 1 : 0) + (hasDueDate ? 1 : 0)}
                   className="px-5 py-10 text-center text-jira-text-muted"
                 >
                   {hasFilters
@@ -508,6 +510,11 @@ export function IssuesModal({
                     </span>
                   </td>
                   <td className="px-4 py-2.5 text-center text-xs font-bold">{issue.storyPoints}</td>
+                  {hasDueDate && (
+                    <td className="px-4 py-2.5 text-xs whitespace-nowrap text-jira-text-muted">
+                      {issue.dueDate ? new Date(issue.dueDate).toLocaleDateString() : "—"}
+                    </td>
+                  )}
                   {hasHours && (
                     <td className="px-4 py-2.5 text-center text-xs whitespace-nowrap">
                       <span className="font-bold text-jira-text">

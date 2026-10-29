@@ -549,7 +549,35 @@ function calculateKPIs(
       ? "No change"
       : `${Math.abs(Math.round(velocityCompareCurrent - velocityComparePrevious))} SP`;
 
-  const futureForecast = computeFuturePredictability(forecastSource, forecastChildSource);
+  // Features often have no quarter/sprint of their own. A feature counts as
+  // "planned" in the current scope when it is in scope itself or is an
+  // ancestor of an item in the current scope.
+  const featureRe = forecastChildSource.some((i: any) =>
+    /^feature$/i.test(i.workType)
+  )
+    ? /^feature$/i
+    : /^epic$/i;
+  const featureByKey = new Map(forecastChildSource.map((i: any) => [i.key, i]));
+  const activeKeys = new Set(items.map((i: any) => i.key));
+  const featureKeys = new Set<string>();
+  for (const item of items) {
+    let cursor: any = item;
+    const seen = new Set<string>();
+    while (cursor && !seen.has(cursor.key)) {
+      seen.add(cursor.key);
+      if (featureRe.test(cursor.workType)) {
+        featureKeys.add(cursor.key);
+        break;
+      }
+      cursor = cursor.parentKey ? featureByKey.get(cursor.parentKey) : undefined;
+    }
+  }
+  const podFeaturePool = forecastChildSource.filter(
+    (i: any) =>
+      featureRe.test(i.workType) &&
+      (activeKeys.has(i.key) || featureKeys.has(i.key))
+  );
+  const futureForecast = computeFuturePredictability(podFeaturePool, forecastChildSource);
   const futureTrendText =
     futureForecast.forecastableCount > 0
       ? `${futureForecast.onTimeCount} of ${futureForecast.forecastableCount}`
@@ -663,35 +691,7 @@ function calculateKPIs(
     isSubtask: /^sub-?task$/i.test(i.workType),
   }));
 
-  // Features often have no quarter/sprint of their own, so include any
-  // feature that is an ancestor of an item in the current scope. Features
-  // with no link and no sprint stay in the All/All view only.
-  const featureByKey = new Map(forecastChildSource.map((i: any) => [i.key, i]));
-  const featureRe = forecastChildSource.some((i: any) =>
-    /^feature$/i.test(i.workType)
-  )
-    ? /^feature$/i
-    : /^epic$/i;
-  const activeKeys = new Set(items.map((i: any) => i.key));
-  const featureKeys = new Set<string>();
-  for (const item of items) {
-    let cursor: any = item;
-    const seen = new Set<string>();
-    while (cursor && !seen.has(cursor.key)) {
-      seen.add(cursor.key);
-      if (featureRe.test(cursor.workType)) {
-        featureKeys.add(cursor.key);
-        break;
-      }
-      cursor = cursor.parentKey ? featureByKey.get(cursor.parentKey) : undefined;
-    }
-  }
-  const podFeatureList = forecastChildSource
-    .filter(
-      (i: any) =>
-        featureRe.test(i.workType) &&
-        (activeKeys.has(i.key) || featureKeys.has(i.key))
-    )
+  const podFeatureList = podFeaturePool
     .map((i: any) => ({
       key: i.key,
       summary: i.summary,
@@ -704,6 +704,7 @@ function calculateKPIs(
       assignee: i.assignee || "Unassigned",
       priority: i.priority || "Medium",
       createdDate: i.createdDate || "",
+      dueDate: i.dueDate || "",
       isDone: isDoneStatus(i.status),
       originalEstimateHours: estimateHours(i.originalEstimateSeconds),
       reason: futureForecast.reasons.get(i.key),
@@ -890,6 +891,7 @@ function calculateKPIs(
       assignee: i.assignee,
       priority: i.priority,
       createdDate: i.createdDate,
+      dueDate: i.dueDate || "",
       isDone: isDoneStatus(i.status),
       originalEstimateHours: estimateHours(i.originalEstimateSeconds),
       reason: futureForecast.reasons.get(i.key),
