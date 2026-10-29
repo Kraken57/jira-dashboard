@@ -19,10 +19,15 @@ export function DeveloperTab({
   issues = [],
   jiraDomain,
 }: DeveloperTabProps) {
-  const developers =
-    developerFilter && developerFilter !== "all"
-      ? allDevelopers.filter((d) => d.name === developerFilter)
-      : allDevelopers;
+  // Alphabetical so people can find a developer quickly.
+  const developers = [...allDevelopers]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .filter(
+      (d) =>
+        !developerFilter ||
+        developerFilter === "all" ||
+        d.name === developerFilter
+    );
   const totalDevs = developers.length;
   const totalDelivered = developers.reduce((acc, d) => acc + d.deliveredSP, 0);
   const totalAssignedSP = developers.reduce((acc, d) => acc + d.totalSP, 0);
@@ -154,11 +159,7 @@ export function DeveloperTab({
                       issues.filter((i) => i.assignee === dev.name)
                     )
                   }
-                  className={`transition-colors cursor-pointer ${
-                    dev.completionRate > 70
-                      ? "bg-yellow-100 hover:bg-yellow-200/70"
-                      : "bg-red-100 hover:bg-red-200/70"
-                  }`}
+                  className="transition-colors cursor-pointer hover:bg-jira-bg"
                 >
                   <td className="px-6 py-3 font-semibold text-jira-text flex items-center gap-2.5">
                     <span className="w-7 h-7 rounded-full bg-jira-blue-bg text-jira-blue flex items-center justify-center text-xs font-bold shrink-0">
