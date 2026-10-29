@@ -44,7 +44,6 @@ export function DeveloperTab({
     developers.reduce((acc, d) => acc + d.completedEstimateHours, 0) * 10
   ) / 10;
   const overallCompletion = totalAssigned > 0 ? Math.round((totalCompleted / totalAssigned) * 100) : 0;
-  const avgSP = totalDevs > 0 ? (totalDelivered / totalDevs).toFixed(1) : 0;
   const scopedIssues =
     developerFilter && developerFilter !== "all"
       ? issues.filter((i) => i.assignee === developerFilter)
@@ -62,7 +61,7 @@ export function DeveloperTab({
   return (
     <div className="space-y-6">
       {/* KPI Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <button
           type="button"
           onClick={() => open("Active Contributors", `${podName} · all assigned story and sub-task work`, scopedIssues)}
@@ -71,21 +70,6 @@ export function DeveloperTab({
           <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Active Contributors</p>
           <p className="text-2xl font-bold text-jira-text mt-1">{totalDevs}</p>
           <p className="text-xs text-jira-text-light mt-1">Contributing in {podName}</p>
-        </button>
-        <button
-          type="button"
-          onClick={() =>
-            open(
-              "Avg SP / Developer",
-              `${podName} · completed work items`,
-              scopedIssues.filter((i) => i.isDone)
-            )
-          }
-          className="text-left bg-white border border-jira-border rounded-lg p-4 shadow-sm hover:border-jira-blue/50 transition"
-        >
-          <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Avg SP / Developer</p>
-          <p className="text-2xl font-bold text-jira-blue mt-1">{avgSP} pts</p>
-          <p className="text-xs text-jira-text-light mt-1">Delivered this period</p>
         </button>
         <button
           type="button"
