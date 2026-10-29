@@ -50,9 +50,17 @@ const Dropdown = forwardRef<HTMLDivElement, DropdownProps>(({ label, items, onCh
                     : "text-jira-text hover:bg-jira-bg/50"
                 }`}
               >
-                <div className="flex flex-col">
-                  <span className="font-medium">{item.name}</span>
-                  {item.sub && <span className="text-xs text-jira-text-muted">{item.sub}</span>}
+                <div className="flex w-full items-center justify-between gap-2 min-w-0">
+                  <span className="font-medium truncate">{item.name}</span>
+                  {item.sub && (
+                    <span
+                      className={`text-xs whitespace-nowrap shrink-0 ${
+                        value === item.id ? "text-white/75" : "text-jira-text-muted"
+                      }`}
+                    >
+                      {item.sub}
+                    </span>
+                  )}
                 </div>
               </button>
             ))}
