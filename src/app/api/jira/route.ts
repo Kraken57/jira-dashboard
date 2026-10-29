@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDashboardData } from "@/lib/jira/jiraService";
+import { getDashboardData, getRawFeed } from "@/lib/jira/jiraService";
 
 /**
  * Localhost / standalone mode only.
@@ -14,6 +14,18 @@ export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
+
+    // Raw feed: the browser computes every filter itself. One request per TTL
+    // window, then filter clicks never touch the network again.
+    if (searchParams.get("raw") === "1") {
+      const feed = await getRawFeed();
+      return NextResponse.json(feed, {
+        status: 200,
+        headers: { "Cache-Control": "no-store, max-age=0" },
+      });
+    }
+
+    // Legacy per-filter compute path (fallback; reads the same disk cache).
     const podId = searchParams.get("pod") || "all";
     const quarterId = searchParams.get("quarter") || "all";
     const sprintId = searchParams.get("sprint") || "all";

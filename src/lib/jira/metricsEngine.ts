@@ -1,6 +1,7 @@
 import {
   ContributorSlippage,
   DashboardData,
+  MetricConfig,
   DashboardFilters,
   DeliveryChartData,
   DeveloperStat,
@@ -23,16 +24,29 @@ import {
 } from "./types";
 
 /**
- * Statuses that count as "delivered". Jira workflow status names differ per
- * site, so they are administrator-configurable via JIRA_DONE_STATUSES.
- * Format: comma-separated list, e.g. "Done,Accepted,Released,Closed".
+ * Site-tunable rules that feed the metrics. The server resolves these from
+ * env and passes them down (the raw feed carries them so the browser computes
+ * with the exact same rules); defaults match the documented env fallbacks.
  */
-export const DONE_STATUSES = new Set(
-  (process.env.JIRA_DONE_STATUSES || "Done,Accepted,Released,Closed,Resolved")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean)
-);
+export function resolveMetricConfig(): MetricConfig {
+  return {
+    doneStatuses: (process.env.JIRA_DONE_STATUSES || "Done,Accepted,Released,Closed,Resolved")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+    subtaskDoneStatuses: (
+      process.env.JIRA_SUBTASK_DONE_STATUSES ||
+      "Done,Closed,Resolved,Completed,Released,Accepted"
+    )
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+    sprintWindow: Math.max(1, Number(process.env.JIRA_SPRINT_WINDOW || 5)),
+    nextSprintRevealDays: Number(process.env.JIRA_NEXT_SPRINT_REVEAL_DAYS || 5),
+  };
+}
+
+const DEFAULT_METRIC_CONFIG: MetricConfig = resolveMetricConfig();
 
 /**
  * Derive sprint names from the actual data so the dashboard works with any
@@ -49,20 +63,6 @@ function sprintDisplayName(name: string): string {
     .trim();
   return stripped || name;
 }
-
-/**
- * How many recent sprints to plot. Keeps the charts readable instead of
- * plotting every historical sprint.
- */
-const SPRINT_WINDOW = Math.max(1, Number(process.env.JIRA_SPRINT_WINDOW || 5));
-
-/**
- * A future (zero-work or planned) sprint is only surfaced when the active
- * sprint is this close to ending.
- */
-const NEXT_SPRINT_REVEAL_DAYS = Number(
-  process.env.JIRA_NEXT_SPRINT_REVEAL_DAYS || 5
-);
 
 function sprintOrderKey(name: string, meta?: SprintMeta): number {
   const year = Number(name.match(/(\d{4})/)?.[1] || 0);
@@ -91,25 +91,6 @@ function pctChange(current: number, previous: number): number {
 
 const DAY_MS = 86_400_000;
 const RATE_WINDOW_DAYS = 30;
-
-/**
- * Statuses that close a sub-task. Sub-tasks often use a simpler workflow than
- * their parent story, so a site that only treats "Accepted" as done for stories
- * would otherwise show every sub-task as incomplete.
- */
-const SUBTASK_DONE_STATUSES = new Set(
-  (
-    process.env.JIRA_SUBTASK_DONE_STATUSES ||
-    "Done,Closed,Resolved,Completed,Released,Accepted"
-  )
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean)
-);
-
-function isSubtaskDoneStatus(status: string): boolean {
-  return DONE_STATUSES.has(status) || SUBTASK_DONE_STATUSES.has(status);
-}
 
 function isWeekend(date: Date): boolean {
   const day = date.getDay();
@@ -324,9 +305,19 @@ function matchesSprint(itemSprints: string[] | undefined | null, target: string)
 export function computeDashboardData(
   items: JiraWorkItem[],
   filters: DashboardFilters,
-  sprintMeta: Record<string, SprintMeta> = {}
+  sprintMeta: Record<string, SprintMeta> = {},
+  config: MetricConfig = DEFAULT_METRIC_CONFIG
 ): DashboardData {
   const { podId, quarterId, sprintId } = filters;
+  const DONE_STATUSES = new Set(config.doneStatuses);
+  const SUBTASK_DONE_STATUSES = new Set(config.subtaskDoneStatuses);
+  // How many recent sprints to plot; a future sprint is surfaced when the
+  // active sprint is this close to ending.
+  const SPRINT_WINDOW = Math.max(1, Number(config.sprintWindow) || 1);
+  const NEXT_SPRINT_REVEAL_DAYS = Math.max(0, Number(config.nextSprintRevealDays) || 0);
+  // Sub-tasks often use a simpler workflow than their parent story.
+  const isSubtaskDoneStatus = (status: string) =>
+    DONE_STATUSES.has(status) || SUBTASK_DONE_STATUSES.has(status);
 
   // Subtasks are execution breakdowns of a parent item; counting them would
   // double-count story points and clutter the issue lists. They are excluded

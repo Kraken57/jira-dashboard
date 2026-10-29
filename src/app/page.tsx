@@ -1,14 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { TabBar } from "@/components/TabBar";
 import { MetricCard } from "@/components/MetricCard";
 import { VelocityGrid } from "@/components/VelocityGrid";
 import { TabFilters, FilterKey, FilterState, FilterOption } from "@/components/TabFilters";
 import { IssuesModal } from "@/components/IssuesModal";
-import { fetchDashboardData } from "@/lib/api";
-import { DashboardData, SprintOption, IssueRow } from "@/lib/jira/types";
+import {
+  fetchRawFeed,
+  isRawFeedStale,
+  readSessionRawFeed,
+  writeSessionRawFeed,
+} from "@/lib/api";
+import { computeDashboardData } from "@/lib/jira/metricsEngine";
+import { DashboardData, RawFeedPayload, IssueRow } from "@/lib/jira/types";
 import { PodTab } from "@/components/tabs/PodTab";
 import { DeveloperTab } from "@/components/tabs/DeveloperTab";
 import { QualityTab } from "@/components/tabs/QualityTab";
@@ -49,8 +55,8 @@ export default function DashboardPage() {
     Record<string, typeof EXTRA_DEFAULT>
   >(() => Object.fromEntries(TABS.map((t) => [t.id, { ...EXTRA_DEFAULT }])));
 
-  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
-  const [sprintOptions, setSprintOptions] = useState<SprintOption[]>([]);
+  const [feed, setFeed] = useState<RawFeedPayload | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -60,58 +66,95 @@ export default function DashboardPage() {
     issues: IssueRow[];
   } | null>(null);
 
+  // Tabs without a sprint filter always look at the whole window.
+  const effectiveSprint = TAB_FILTERS[activeTab]?.includes("sprint")
+    ? baseFilters.sprint
+    : "all";
+
+  // Browser-side compute: every filter click re-derives from the raw feed
+  // with zero network. The all-scope pass keeps the sprint dropdown populated
+  // under pod/quarter filters (replaces the old second parallel request).
+  const allSprintData: DashboardData | null = useMemo(
+    () =>
+      feed
+        ? computeDashboardData(
+            feed.items,
+            { podId: "all", quarterId: "all", sprintId: "all" },
+            feed.sprintMeta,
+            feed.config
+          )
+        : null,
+    [feed]
+  );
+
+  const dashboardData: DashboardData | null = useMemo(() => {
+    if (!feed) return null;
+    return {
+      ...computeDashboardData(
+        feed.items,
+        {
+          podId: baseFilters.pod,
+          quarterId: baseFilters.quarter,
+          sprintId: effectiveSprint,
+        },
+        feed.sprintMeta,
+        feed.config
+      ),
+      jiraBaseUrl: feed.jiraBaseUrl,
+    };
+  }, [feed, baseFilters.pod, baseFilters.quarter, effectiveSprint]);
+
+  const feedAgeMin =
+    feed ? Math.max(0, Math.round((Date.now() - feed.fetchedAt) / 60000)) : 0;
+
   const filterKeys = TAB_FILTERS[activeTab] || [];
   const filters: FilterState = {
     ...baseFilters,
     ...extraFilters[activeTab],
   };
-  // Tabs without a sprint filter always look at the whole window.
-  const effectiveSprint = filterKeys.includes("sprint")
-    ? baseFilters.sprint
-    : "all";
-
   useEffect(() => {
     let cancelled = false;
 
-    async function loadData() {
-      setIsLoading(true);
-      setError(null);
+    async function loadRaw(hard: boolean) {
+      // Tab copy: an instant restore so refresh never waits when fresh.
+      const cached = hard ? null : readSessionRawFeed();
+      if (cached) {
+        setFeed(cached);
+        setIsLoading(false);
+        if (isRawFeedStale(cached)) setRefreshing(true);
+      } else {
+        setIsLoading(true);
+      }
+
       try {
-        const base = { podId: baseFilters.pod, quarterId: baseFilters.quarter };
-        const [primary, secondary] = await Promise.allSettled([
-          fetchDashboardData({ ...base, sprintId: effectiveSprint }),
-          effectiveSprint === "all"
-            ? Promise.resolve(null)
-            : fetchDashboardData({ ...base, sprintId: "all" }),
-        ]);
-
+        const next = await fetchRawFeed();
         if (cancelled) return;
-        if (primary.status === "rejected") throw primary.reason;
-
-        const data = primary.value;
-        const allSprints = secondary.status === "fulfilled" ? secondary.value : null;
-        setDashboardData(data);
-        if (allSprints) {
-          setSprintOptions(allSprints.sprints);
-        } else if (effectiveSprint === "all") {
-          setSprintOptions(data.sprints);
-        }
+        writeSessionRawFeed(next);
+        setFeed(next);
+        setRefreshing(false);
       } catch (err) {
         console.error("Failed to load dashboard data:", err);
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Failed to load dashboard data");
+        }
+        // Never blank the tab on refresh failure: keep the copy on screen.
+        if (!cached) {
+          setFeed(null);
+          setIsLoading(false);
+        } else {
+          setRefreshing(false);
         }
       } finally {
         if (!cancelled) setIsLoading(false);
       }
     }
 
-    loadData();
+    loadRaw(reloadKey > 0);
 
     return () => {
       cancelled = true;
     };
-  }, [baseFilters.pod, baseFilters.quarter, effectiveSprint, reloadKey]);
+  }, [reloadKey]);
 
   const updateFilter = (key: FilterKey, value: string) => {
     if (key === "pod" || key === "quarter" || key === "sprint") {
@@ -138,7 +181,7 @@ export default function DashboardPage() {
 
   const pods = dashboardData?.pods || [];
   const quarters = dashboardData?.quarters || [];
-  const sprints = sprintOptions.length ? sprintOptions : dashboardData?.sprints || [];
+  const sprints = allSprintData?.sprints || [];
   const metrics = dashboardData?.metrics || [];
   const selectedPodName = pods.find((p) => p.id === baseFilters.pod)?.name || "All Pods";
   const selectedQuarterName =
@@ -226,6 +269,15 @@ export default function DashboardPage() {
               <span className="w-2 h-2 rounded-full bg-jira-blue animate-pulse" />
               <span>
                 {dashboardData.summary.totalIssues} work items • {dashboardData.summary.totalStoryPoints} SP tracked
+              </span>
+              <span className="text-jira-text-muted">
+                {refreshing
+                  ? "• snapshot updating…"
+                  : feed
+                  ? `• snapshot ${feedAgeMin}m old${
+                      feed.source === "jira-live" ? " (fresh)" : ""
+                    }`
+                  : ""}
               </span>
             </div>
           )}

@@ -58,3 +58,4 @@ $RECYCLE.BIN/
 
 # Forge build backup
 src/app/api/jira/route.ts.localhost.bak
+.cache/

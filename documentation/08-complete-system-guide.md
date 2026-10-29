@@ -229,6 +229,28 @@ Browser
                     React state → tabs → cards → popups
 ```
 
+### 5.1.1 Raw-feed mode (default since the caching rework)
+
+The dashboard no longer fetches one `DashboardData` per filter click. It fetches
+the **raw feed** once per 5-minute window and computes every filter/tab/popup in
+the browser with the same pure `computeDashboardData` (the site's env rules —
+done statuses, sprint window — travel inside the feed as `config`).
+
+- Local: `GET /api/jira?raw=1` → `RawFeedPayload` (`items`, `sprintMeta`,
+  `jiraBaseUrl`, `fetchedAt`, `config`, `source`, `ageMs`). The feed is cached
+  in the gitignored disk file `.cache/jira-feed.json.deflate` (not RAM): fresh
+  (≤5 min) is served instantly, stale (≤30 min) is served instantly and
+  refreshed in the background, older blocks on one live fetch.
+- Forge: `invoke("getRawFeed")` — same contract, cached in app storage (KVS,
+  zlib-deflated, chunked under `raw-feed-v1-part-*` with commit marker
+  `raw-feed-v1-meta`).
+- The browser mirrors the feed in `sessionStorage` (`jira-raw-feed-v1`, tab
+  scope, wiped on tab close), so page refresh renders instantly and
+  revalidates quietly. The header chip shows the snapshot age and whether a
+  background refresh is running.
+- The per-filter `GET /api/jira?pod=…` path and the Forge
+  `getDashboardData` resolver remain as untouched fallbacks.
+
 ### 5.2 Forge mode
 
 ```

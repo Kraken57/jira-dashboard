@@ -6,6 +6,7 @@
  */
 import Resolver from "@forge/resolver";
 import api, { storage, route } from "@forge/api";
+import zlib from "node:zlib";
 import { JiraClient } from "./api/jiraClient";
 
 const resolver = new Resolver();
@@ -321,6 +322,33 @@ function inheritParentContext(items: any[]): any[] {
       team: i.team || parent.team,
     };
   });
+}
+
+/**
+ * Sprint ordering metadata for the raw feed (name -> dates). The Jira sprint
+ * field objects carry state/start/end when present; names alone still sort
+ * via the metricsEngine regex keys.
+ */
+function collectSprintMeta(
+  issues: any[],
+  sprintField: string = "customfield_10020"
+): Record<string, any> {
+  const meta: Record<string, any> = {};
+  for (const issue of issues) {
+    const sprintObj = issue.fields?.[sprintField];
+    if (!Array.isArray(sprintObj)) continue;
+    for (const s of sprintObj) {
+      if (s && typeof s.name === "string" && !meta[s.name]) {
+        meta[s.name] = {
+          name: s.name,
+          state: s.state,
+          startDate: s.startDate,
+          endDate: s.endDate,
+        };
+      }
+    }
+  }
+  return meta;
 }
 
 /**
@@ -900,6 +928,114 @@ function calculateKPIs(
   };
 }
 
+/**
+ * Raw feed (same contract as the local /api/jira?raw=1 path):
+ * unfiltered items + sprint metadata, served from app storage (KVS) when it
+ * is fresh enough, refreshed on demand otherwise. Values are zlib-deflated
+ * and chunked because KVS caps individual values.
+ */
+const FEED_META_KEY = "raw-feed-v1-meta";
+const FEED_PART_KEY = "raw-feed-v1-part-";
+// ponytail: 60 KB chunks (~80 KB base64); tighten to 100 KB for fewer parts
+// only if a future feed actually outgrows this by 3-4x.
+const FEED_PART_BYTES = 60 * 1024;
+const FEED_TTL_MS = 5 * 60 * 1000;
+const FEED_STALE_OK_MS = 30 * 60 * 1000;
+
+// Shared with the resolver's metric behavior; mirrors the env rules so the
+// browser computes with identical rules in both local and Forge modes.
+function resolveFeedConfig() {
+  return {
+    doneStatuses: DONE_STATUSES ? Array.from(DONE_STATUSES) : ["Done", "Accepted"],
+    subtaskDoneStatuses: SUBTASK_DONE_STATUSES
+      ? Array.from(SUBTASK_DONE_STATUSES)
+      : ["Done", "Closed", "Resolved", "Completed", "Released", "Accepted"],
+    sprintWindow: 5,
+    nextSprintRevealDays: 5,
+  };
+}
+
+interface FeedMeta {
+  fetchedAt: number;
+  parts: number;
+}
+
+interface FeedEnvelope {
+  items: any[];
+  sprintMeta: Record<string, any>;
+  jiraBaseUrl: string;
+  fetchedAt: number;
+  config: ReturnType<typeof resolveFeedConfig>;
+}
+
+async function fetchAndStoreFeed(): Promise<FeedEnvelope> {
+  const config = await getFieldConfig();
+  const issues = await jiraClient.searchIssuesJql(config.jql, [
+    "summary",
+    "status",
+    "issuetype",
+    "project",
+    "parent",
+    "customfield_10014",
+    "assignee",
+    "priority",
+    "created",
+    "resolutiondate",
+    "duedate",
+    "timeoriginalestimate",
+    config.storyPointsField,
+    config.sprintField,
+    config.podField,
+  ]);
+  const envelope: FeedEnvelope = {
+    items: inheritParentContext(
+      issues.map((issue: any) => mapIssueToWorkItem(issue, config))
+    ),
+    sprintMeta: collectSprintMeta(issues, config.sprintField),
+    jiraBaseUrl: (process.env.JIRA_HOST || "").replace(/\/+$/, ""),
+    fetchedAt: Date.now(),
+    config: resolveFeedConfig(),
+  };
+
+  const compressed = zlib
+    .deflateSync(Buffer.from(JSON.stringify(envelope)))
+    .toString("base64");
+  const parts: string[] = [];
+  for (let i = 0; i < compressed.length; i += FEED_PART_BYTES) {
+    parts.push(compressed.slice(i, i + FEED_PART_BYTES));
+  }
+
+  // Write data parts first, meta last: meta becomes the "commit marker".
+  await Promise.all(
+    parts.map((part, i) => storage.set(`${FEED_PART_KEY}${i + 1}`, part))
+  );
+  const meta: FeedMeta = { fetchedAt: envelope.fetchedAt, parts: parts.length };
+  // A shrinking feed leaves stray old parts; clear them before committing.
+  const previous = await storage.get(FEED_META_KEY).catch(() => undefined);
+  if (previous && typeof previous.parts === "number") {
+    for (let i = parts.length + 1; i <= previous.parts; i++) {
+      await storage.delete(`${FEED_PART_KEY}${i}`).catch(() => undefined);
+    }
+  }
+  await storage.set(FEED_META_KEY, meta);
+  return envelope;
+}
+
+async function assembleFeed(meta: FeedMeta): Promise<FeedEnvelope | null> {
+  const chunks: string[] = [];
+  for (let i = 1; i <= meta.parts; i++) {
+    const part = await storage.get(`${FEED_PART_KEY}${i}`).catch(() => undefined);
+    if (typeof part !== "string") return null;
+    chunks.push(part);
+  }
+  try {
+    const json = zlib.inflateSync(Buffer.from(chunks.join(""), "base64")).toString("utf8");
+    return JSON.parse(json) as FeedEnvelope;
+  } catch {
+    return null;
+  }
+}
+
 resolver.define("getDashboardData", async (req) => {
   const filters = (req.payload || {}) as Record<string, string>;
 
@@ -989,6 +1125,51 @@ resolver.define("getDashboardData", async (req) => {
     return {
       error: err instanceof Error ? err.message : "Unknown error",
       source: "live_jira",
+    };
+  }
+});
+
+
+resolver.define("getRawFeed", async () => {
+  try {
+    const metaRaw = await storage.get(FEED_META_KEY).catch(() => undefined);
+    const meta =
+      metaRaw && typeof metaRaw.fetchedAt === "number" && typeof metaRaw.parts === "number"
+        ? (metaRaw as FeedMeta)
+        : null;
+
+    if (meta) {
+      const ageMs = Date.now() - meta.fetchedAt;
+      if (ageMs <= FEED_TTL_MS) {
+        const envelope = await assembleFeed(meta);
+        if (envelope) {
+          return { ...envelope, source: "kvs", ageMs };
+        }
+      } else if (ageMs <= FEED_STALE_OK_MS) {
+        // # ponytail: Forge may cut post-response promises; if it does, the
+        // next open pays the refresh instead of this user (still never both).
+        void fetchAndStoreFeed().catch((err: unknown) =>
+          console.warn("[feed] background refresh failed:", err)
+        );
+        const envelope = await assembleFeed(meta);
+        if (envelope) {
+          return { ...envelope, source: "kvs-stale", ageMs };
+        }
+      }
+    }
+
+    // No commit marker (or unreadable parts): one live fetch, like first load.
+    const envelope = await fetchAndStoreFeed();
+    return {
+      ...envelope,
+      source: "forge-live",
+      ageMs: Date.now() - envelope.fetchedAt,
+    };
+  } catch (err) {
+    console.error("Forge raw feed resolver error:", err);
+    return {
+      error: err instanceof Error ? err.message : "Unknown error",
+      source: "forge-live",
     };
   }
 });

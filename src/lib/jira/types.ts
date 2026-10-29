@@ -53,6 +53,29 @@ export interface MetricInsight {
   takeaways?: string[];
 }
 
+export interface MetricConfig {
+  doneStatuses: string[];
+  subtaskDoneStatuses: string[];
+  sprintWindow: number;
+  nextSprintRevealDays: number;
+}
+
+/**
+ * The raw feed: unfiltered work items + sprint metadata, fetched once per
+ * TTL window. The client computes every filter with computeDashboardData.
+ * `source` tells the UI which backend served it (disk file, KVS cupboard,
+ * or a live Jira download).
+ */
+export interface RawFeedPayload {
+  items: JiraWorkItem[];
+  sprintMeta: Record<string, SprintMeta>;
+  jiraBaseUrl: string;
+  fetchedAt: number;
+  config: MetricConfig;
+  source: "disk" | "disk-stale" | "jira-live" | "kvs" | "kvs-stale" | "forge-live";
+  ageMs?: number;
+}
+
 export interface MetricCardData {
   title: string;
   value: string | number;

@@ -1,6 +1,10 @@
 import { isJiraConfigured, missingJiraConfig, JIRA_CONFIG } from "./config";
 import { DashboardData, DashboardFilters, JiraWorkItem, SprintMeta } from "./types";
-import { computeDashboardData } from "./metricsEngine";
+import { computeDashboardData, resolveMetricConfig } from "./metricsEngine";
+import { RawFeedPayload } from "./types";
+import { deflateSync, inflateSync } from "node:zlib";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 /**
  * Derive the enterprise quarter id from a Jira sprint name.
@@ -216,16 +220,104 @@ async function fetchAllLiveJiraIssues(): Promise<{
  * No dummy data, no CSV, no JSON fallback.
  * If Jira is not configured, throws an error.
  *
- * Raw issues are cached in memory for a short TTL so changing a filter does not
- * re-download the whole portfolio from Jira on every request.
+ * The raw feed is cached on disk (not RAM) for a short TTL, so changing a
+ * filter does not re-download the portfolio and a server restart keeps its
+ * copy. When the copy is stale it is served immediately and refreshed in the
+ * background; an in-flight guard makes parallel requests share one refresh.
  */
-const CACHE_TTL_MS = Number(process.env.JIRA_CACHE_TTL_MS || 300000);
-let cache: {
-  at: number;
-  items: JiraWorkItem[];
-  sprintMeta: Record<string, SprintMeta>;
-} | null = null;
+const CACHE_TTL_MS = Number(process.env.JIRA_CACHE_TTL_MS || 300000); // 5 min
+const STALE_MAX_MS = Number(process.env.JIRA_CACHE_STALE_MAX_MS || 1800000); // 30 min
+const CACHE_FILE = join(process.cwd(), ".cache", "jira-feed.json.deflate");
 
+let inflightFetch: Promise<RawFeedPayload> | null = null;
+
+function readDiskFeed(): RawFeedPayload | null {
+  try {
+    if (!existsSync(CACHE_FILE)) return null;
+    const feed = JSON.parse(
+      inflateSync(readFileSync(CACHE_FILE)).toString("utf8")
+    ) as RawFeedPayload;
+    if (!Array.isArray(feed.items)) return null;
+    return feed;
+  } catch {
+    // Corrupt/half-written file: ignore, we will fetch live.
+    return null;
+  }
+}
+
+function writeDiskFeed(feed: RawFeedPayload): void {
+  try {
+    mkdirSync(join(CACHE_FILE, ".."), { recursive: true });
+    writeFileSync(
+      CACHE_FILE,
+      deflateSync(Buffer.from(JSON.stringify(feed)))
+    );
+  } catch (err) {
+    console.warn("[jiraService] Could not write feed cache:", err);
+  }
+}
+
+async function fetchLiveFeed(): Promise<RawFeedPayload> {
+  const live = await fetchAllLiveJiraIssues();
+  return {
+    items: live.items,
+    sprintMeta: live.sprintMeta,
+    jiraBaseUrl: (JIRA_CONFIG.host || "").replace(/\/+$/, ""),
+    fetchedAt: Date.now(),
+    config: resolveMetricConfig(),
+    source: "jira-live",
+  };
+}
+
+// Dedupes concurrent refreshes. This guards work in flight, it caches nothing.
+async function withInflight(job: () => Promise<RawFeedPayload>): Promise<RawFeedPayload> {
+  if (!inflightFetch) {
+    inflightFetch = job().finally(() => {
+      inflightFetch = null;
+    });
+  }
+  return inflightFetch;
+}
+
+/**
+ * Raw feed for the browser: unfiltered items + sprint metadata.
+ * - fresh copy on disk -> serve instantly
+ * - stale copy (<= 30 min old) -> serve it AND refresh quietly in background
+ * - no/too-old copy -> block on one live Jira fetch (the only slow moment)
+ */
+export async function getRawFeed(): Promise<RawFeedPayload> {
+  if (!isJiraConfigured()) {
+    throw new Error(
+      `Jira is not configured. Missing ${missingJiraConfig().join(", ")} in .env.local`
+    );
+  }
+
+  const disk = readDiskFeed();
+  const ageMs = disk ? Date.now() - disk.fetchedAt : Infinity;
+
+  if (disk && ageMs <= CACHE_TTL_MS) {
+    return { ...disk, source: "disk", ageMs };
+  }
+
+  if (disk && ageMs <= STALE_MAX_MS) {
+    // Serve stale now; refresh quietly. Never make the user wait here.
+    void withInflight(fetchLiveFeed).then(writeDiskFeed).catch((err) => {
+      console.warn("[jiraService] Background feed refresh failed:", err);
+    });
+    return { ...disk, source: "disk-stale", ageMs };
+  }
+
+  // # ponytail: single global refresh guard; per-account keys only if the
+  // refresh queue ever contends across Jira instances (it cannot today).
+  const feed = await withInflight(fetchLiveFeed);
+  writeDiskFeed(feed);
+  return { ...feed, source: "jira-live", ageMs: Date.now() - feed.fetchedAt };
+}
+
+/**
+ * Legacy per-filter compute path (kept as fallback, reads the same disk cache;
+ * blocks on a fresh fetch when the copy is stale).
+ */
 export async function getDashboardData(
   filters: DashboardFilters = { podId: "all", quarterId: "all", sprintId: "all" }
 ): Promise<DashboardData> {
@@ -235,15 +327,14 @@ export async function getDashboardData(
     );
   }
 
-  const now = Date.now();
-  if (!cache || now - cache.at > CACHE_TTL_MS) {
-    const live = await fetchAllLiveJiraIssues();
-    cache = { at: now, items: live.items, sprintMeta: live.sprintMeta };
-  }
+  const disk = readDiskFeed();
+  const fresh = disk && Date.now() - disk.fetchedAt <= CACHE_TTL_MS;
+  const feed = fresh
+    ? (disk as RawFeedPayload)
+    : await withInflight(fetchLiveFeed).then((f) => (writeDiskFeed(f), f));
 
-  const baseUrl = (JIRA_CONFIG.host || "").replace(/\/+$/, "");
   return {
-    ...computeDashboardData(cache.items, filters, cache.sprintMeta),
-    jiraBaseUrl: baseUrl,
+    ...computeDashboardData(feed.items, filters, feed.sprintMeta, feed.config),
+    jiraBaseUrl: feed.jiraBaseUrl,
   };
 }
