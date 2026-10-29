@@ -62,7 +62,7 @@ export function DeveloperTab({
   return (
     <div className="space-y-6">
       {/* KPI Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <button
           type="button"
           onClick={() => open("Active Contributors", `${podName} · all assigned story and sub-task work`, scopedIssues)}
@@ -101,6 +101,25 @@ export function DeveloperTab({
           <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Total Delivered</p>
           <p className="text-2xl font-bold text-jira-green mt-1">{totalDelivered} SP</p>
           <p className="text-xs text-jira-text-light mt-1">Completed story points</p>
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            open(
+              "Throughput",
+              `${podName} · completed work items`,
+              scopedIssues.filter((i) => i.isDone)
+            )
+          }
+          className="text-left bg-white border border-jira-border rounded-lg p-4 shadow-sm hover:border-jira-amber/50 transition"
+        >
+          <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Throughput</p>
+          <p className="text-2xl font-bold text-jira-text mt-1">
+            {totalDevs > 0 ? (totalDelivered / totalDevs).toFixed(1) : 0} SP
+          </p>
+          <p className="text-xs text-jira-text-light mt-1">
+            Delivered SP ÷ {totalDevs} contributors
+          </p>
         </button>
       </div>
 

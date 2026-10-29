@@ -39,6 +39,12 @@ const DEFINITIONS: Record<string, Omit<MetricInsight, "recent" | "trend">> = {
     target: { label: "On track", value: 85, unit: "%", direction: "atLeast" },
   },
 
+  "Throughput": {
+    what: "Team throughput: average meaningful story points delivered per active contributor in the current scope.",
+    formula: "Total delivered story points ÷ number of active contributors",
+    howToCompare:
+      "Compare across pods after filtering to one team. A steady throughput with stable Say/Do is healthier than a spike followed by carry over.",
+  },
   "Total Work Items": {
     what: "Every work item in the current Pod, Quarter, and Sprint scope.",
     howToCompare:
