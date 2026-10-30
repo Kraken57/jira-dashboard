@@ -12,11 +12,12 @@ import { IssuesModal } from "@/components/IssuesModal";
 interface QualityTabProps {
   data: QualityData;
   qaCapacity?: QaCapacityData;
+  qaRosterConfigured?: number;
   issues?: IssueRow[];
   jiraDomain?: string;
 }
 
-export function QualityTab({ data, qaCapacity, issues = [], jiraDomain }: QualityTabProps) {
+export function QualityTab({ data, qaCapacity, qaRosterConfigured = 0, issues = [], jiraDomain }: QualityTabProps) {
   const [modal, setModal] = useState<{
     title: string;
     subtitle: string;
@@ -29,10 +30,11 @@ export function QualityTab({ data, qaCapacity, issues = [], jiraDomain }: Qualit
     setModal({ title, subtitle, issues: list });
 
   const openMember = (m: QaMemberStat) => {
+    const names = new Set([m.name, ...(m.aliasNames ?? [])]);
     open(
       `QA Workload · ${m.name}`,
       `${m.assignedIssues} items · ${m.podNames.join(", ") || m.podKeys.join(", ") || "no pod"} · ${m.allocatedHours} of ${m.capacityHours} hrs allocated · ${m.testCases} test case${m.testCases === 1 ? "" : "s"}`,
-      issues.filter((i) => i.assignee === m.name)
+      issues.filter((i) => names.has(i.assignee))
     );
   };
 
@@ -47,7 +49,7 @@ export function QualityTab({ data, qaCapacity, issues = [], jiraDomain }: Qualit
   return (
     <div className="space-y-6">
       {/* ---- QA Team Capacity & Workload (phase 1) ---- */}
-      {qaCapacity && qaCapacity.members.length > 0 && (
+      {qaCapacity && (qaCapacity.members.length > 0 || qaRosterConfigured > 0) && (
         <>
           <div className="bg-white border border-jira-border rounded-lg p-5 shadow-sm">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-jira-border pb-4 mb-4">
@@ -71,7 +73,9 @@ export function QualityTab({ data, qaCapacity, issues = [], jiraDomain }: Qualit
                     "Total QA Capacity",
                     `${qaCapacity.members.length} members · header rows below show per-person splits`,
                     qaCapacity.members.flatMap((m) =>
-                      issues.filter((i) => i.assignee === m.name)
+                      issues.filter(
+                        (i) => new Set([m.name, ...(m.aliasNames ?? [])]).has(i.assignee)
+                      )
                     )
                   )
                 }
@@ -88,7 +92,11 @@ export function QualityTab({ data, qaCapacity, issues = [], jiraDomain }: Qualit
                     "Allocated Hours",
                     `Open assigned work across ${qaCapacity.members.length} QA members`,
                     qaCapacity.members.flatMap((m) =>
-                      issues.filter((i) => i.assignee === m.name && !i.isDone)
+                      issues.filter(
+                        (i) =>
+                          new Set([m.name, ...(m.aliasNames ?? [])]).has(i.assignee) &&
+                          !i.isDone
+                      )
                     )
                   )
                 }
@@ -106,7 +114,10 @@ export function QualityTab({ data, qaCapacity, issues = [], jiraDomain }: Qualit
                     "Open work on support-type issues",
                     qaCapacity.members.flatMap((m) =>
                       issues.filter(
-                        (i) => i.assignee === m.name && !i.isDone && /^support/i.test(i.workType)
+                        (i) =>
+                          new Set([m.name, ...(m.aliasNames ?? [])]).has(i.assignee) &&
+                          !i.isDone &&
+                          /^support/i.test(i.workType)
                       )
                     )
                   )
@@ -124,7 +135,11 @@ export function QualityTab({ data, qaCapacity, issues = [], jiraDomain }: Qualit
                     "Available Capacity",
                     `Work you can still assign across ${qaCapacity.members.length} members`,
                     qaCapacity.members.flatMap((m) =>
-                      issues.filter((i) => i.assignee === m.name && !i.isDone)
+                      issues.filter(
+                        (i) =>
+                          new Set([m.name, ...(m.aliasNames ?? [])]).has(i.assignee) &&
+                          !i.isDone
+                      )
                     )
                   )
                 }
@@ -151,6 +166,13 @@ export function QualityTab({ data, qaCapacity, issues = [], jiraDomain }: Qualit
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-jira-border/60">
+                  {qaCapacity.members.length === 0 && (
+                    <tr>
+                      <td colSpan={8} className="px-4 py-6 text-center text-xs text-jira-text-muted">
+                        No workload rows to show — see the note below the table.
+                      </td>
+                    </tr>
+                  )}
                   {qaCapacity.members.map((m) => (
                     <tr
                       key={m.name}
@@ -193,6 +215,20 @@ export function QualityTab({ data, qaCapacity, issues = [], jiraDomain }: Qualit
                 </tbody>
               </table>
             </div>
+            {qaCapacity.members.length === 0 && (
+              <div className="mt-4 rounded-md border border-jira-amber/40 bg-jira-amber/10 px-4 py-3">
+                <p className="text-xs font-bold text-jira-text">
+                  No Jira issues matched the configured QA roster.
+                </p>
+                <p className="text-[11px] text-jira-text-muted mt-1">
+                  Check that <code className="font-mono break-all">JIRA_QA_MEMBERS</code> is deployed to the
+                  currently running app version (Forge variables are baked in at deploy time —
+                  re-run <code className="font-mono">forge deploy</code> after{" "}
+                  <code className="font-mono">forge variables set</code>), and that the names
+                  match Jira display names for these members.
+                </p>
+              </div>
+            )}
           </div>
         </>
       )}

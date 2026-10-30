@@ -397,6 +397,7 @@ function buildQaCapacity(items: any[]): any {
     string,
     {
       name: string;
+      aliasNames: string[];
       podKeys: string[];
       podNames: string[];
       assigned: number;
@@ -408,15 +409,33 @@ function buildQaCapacity(items: any[]): any {
     }
   >();
 
+  // Roster seed + tolerant matching, mirroring metricsEngine: dots/spaces
+  // differences between the configured list and Jira displayNames are ignored.
+  const norm = (n: string) => n.toLowerCase().replace(/[\s.]|-/g, "");
+  const normMembers = config.qaMembers.map(norm);
+  config.qaMembers.forEach((name: string) =>
+    byName.set(name, {
+      name,
+      aliasNames: [],
+      podKeys: [],
+      podNames: [],
+      assigned: 0,
+      allocatedSeconds: 0,
+      completedSeconds: 0,
+      supportedSeconds: 0,
+      testCases: 0,
+      openTestCases: 0,
+    })
+  );
+
   const track = (assignee: string) => {
-    const key =
-      config.qaMembers.find(
-        (n) => n.toLowerCase() === assignee.toLowerCase()
-      ) ?? assignee;
+    const idx = normMembers.indexOf(norm(assignee));
+    const key = idx !== -1 ? config.qaMembers[idx] : assignee;
     let entry = byName.get(key);
     if (!entry) {
       entry = {
         name: key,
+        aliasNames: [],
         podKeys: [],
         podNames: [],
         assigned: 0,
@@ -438,19 +457,14 @@ function buildQaCapacity(items: any[]): any {
     const isSupport = supportTypes.has(workType);
     if (isTest) {
       // Auto-detect roster: Test issue assignment qualifies a member.
-    } else if (config.qaMembers.length > 0) {
-      if (
-        !config.qaMembers.some(
-          (n) => n.toLowerCase() === assignee.toLowerCase()
-        )
-      ) {
-        continue;
-      }
+    } else if (normMembers.length > 0) {
+      if (!normMembers.includes(norm(assignee))) continue;
     } else {
       continue;
     }
 
     const entry = track(assignee);
+    if (!entry.aliasNames.includes(assignee)) entry.aliasNames.push(assignee);
     if (!entry.podKeys.includes(item.podKey)) entry.podKeys.push(item.podKey);
     if (!entry.podNames.includes(item.podName)) entry.podNames.push(item.podName);
     entry.assigned += 1;
@@ -474,6 +488,7 @@ function buildQaCapacity(items: any[]): any {
       const availableHours = roundHrs(Math.max(0, capacityPerMember - load));
       return {
         name: entry.name,
+        aliasNames: entry.aliasNames,
         podKeys: entry.podKeys,
         podNames: entry.podNames,
         assignedIssues: entry.assigned,

@@ -153,6 +153,8 @@ export interface SprintAnalysisData {
 
 export interface QaMemberStat {
   name: string;
+  /** Actual Jira assignee strings this member matched (may differ in dots/spaces). */
+  aliasNames?: string[];
   podKeys: string[];
   podNames: string[];
   assignedIssues: number;

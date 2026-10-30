@@ -87,6 +87,22 @@ export default function DashboardPage() {
     [feed]
   );
 
+  // Dropdown sources are scoped to the selected pod/quarter (sprint excluded)
+  // so the sprint list shows the pod's own sprints, not other pods'.
+  const dropdownData: DashboardData | null = useMemo(() => {
+    if (!feed || !Array.isArray(feed.items)) return null;
+    return computeDashboardData(
+      feed.items,
+      {
+        podId: baseFilters.pod,
+        quarterId: "all",
+        sprintId: "all",
+      },
+      feed.sprintMeta,
+      feed.config
+    );
+  }, [feed, baseFilters.pod]);
+
   const dashboardData: DashboardData | null = useMemo(() => {
     if (!feed || !Array.isArray(feed.items)) return null;
     return {
@@ -183,8 +199,8 @@ export default function DashboardPage() {
   };
 
   const pods = dashboardData?.pods || [];
-  const quarters = dashboardData?.quarters || [];
-  const sprints = allSprintData?.sprints || [];
+  const quarters = dropdownData?.quarters || [];
+  const sprints = dropdownData?.sprints || []
   const metrics = dashboardData?.metrics || [];
   const selectedPodName = pods.find((p) => p.id === baseFilters.pod)?.name || "All Pods";
   const selectedQuarterName =
@@ -360,6 +376,7 @@ export default function DashboardPage() {
             <QualityTab
               data={dashboardData.quality}
               qaCapacity={dashboardData.qaCapacity}
+              qaRosterConfigured={feed?.config?.qaMembers?.length ?? 0}
               issues={dashboardData.issueList}
               jiraDomain={dashboardData.jiraBaseUrl}
             />

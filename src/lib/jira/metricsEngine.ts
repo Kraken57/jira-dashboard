@@ -344,6 +344,7 @@ function buildQaCapacity(
 
   interface MemberEntry {
     name: string;
+    aliasNames: string[];
     podKeys: string[];
     podNames: string[];
     assigned: number;
@@ -355,14 +356,39 @@ function buildQaCapacity(
   }
   const byName = new Map<string, MemberEntry>();
 
+  // Name matching tolerates dots/spaces differences between the configured
+  // list and Jira displayNames ("Sandeep.Annaldas" == "Sandeep Annaldas").
+  const norm = (n: string) => n.toLowerCase().replace(/[\s.]/g, "");
+  const normMembers = config.qaMembers.map(norm);
+
+  // Roster pre-seeded from the configured list so every QA member is visible
+  // even in scopes where they currently hold no matching issues.
+  config.qaMembers.forEach((name) =>
+    byName.set(name, {
+      name,
+      aliasNames: [],
+      podKeys: [],
+      podNames: [],
+      assigned: 0,
+      allocatedSeconds: 0,
+      completedSeconds: 0,
+      supportedSeconds: 0,
+      testCases: 0,
+      openTestCases: 0,
+    })
+  );
+
   const track = (assignee: string): MemberEntry => {
+    const idx = normMembers.indexOf(norm(assignee));
     const key =
-      config.qaMembers.find((n) => n.toLowerCase() === assignee.toLowerCase()) ??
-      assignee;
+      idx !== -1
+        ? config.qaMembers[idx]
+        : (config.qaMembers.find((n) => norm(n) === norm(assignee)) ?? assignee);
     let entry = byName.get(key);
     if (!entry) {
       entry = {
         name: key,
+        aliasNames: [],
         podKeys: [],
         podNames: [],
         assigned: 0,
@@ -385,14 +411,14 @@ function buildQaCapacity(
 
     if (isTest) {
       // Auto-detect: anyone assigned a Test issue joins the roster.
-    } else if (config.qaMembers.length > 0) {
-      if (!config.qaMembers.some((n) => n.toLowerCase() === assignee.toLowerCase()))
-        continue;
+    } else if (normMembers.length > 0) {
+      if (!normMembers.includes(norm(assignee))) continue;
     } else {
       continue;
     }
 
     const entry = track(assignee);
+    if (!entry.aliasNames.includes(assignee)) entry.aliasNames.push(assignee);
     if (!entry.podKeys.includes(item.podKey)) entry.podKeys.push(item.podKey);
     if (!entry.podNames.includes(item.podName)) entry.podNames.push(item.podName);
     entry.assigned += 1;
@@ -421,6 +447,7 @@ function buildQaCapacity(
         Math.round(Math.max(0, capacityHoursPerMember - load) * 10) / 10;
       return {
         name: entry.name,
+        aliasNames: entry.aliasNames,
         podKeys: entry.podKeys,
         podNames: entry.podNames,
         assignedIssues: entry.assigned,
@@ -481,6 +508,12 @@ export function computeDashboardData(
     if (quarterId !== "all" && item.quarter !== quarterId) return false;
     return true;
   });
+
+  // Pod-only scope: quarter and sprint dropdowns are built from this so the
+  // lists follow the selected pod without being narrowed by other filters.
+  const podScopedItems = workItems.filter(
+    (item) => podId === "all" || item.podKey === podId
+  );
 
   // 2. Active items filtered by selected sprint
   const activeItems = scopedItems.filter((item) => {
@@ -1562,9 +1595,10 @@ export function computeDashboardData(
     config
   );
 
-  // Sprint → team mapping, so the sprint filter shows whose sprint it is.
+  // Sprint → team mapping, from the pod-only scope so the dropdown keeps the
+  // pod's full sprint list even when a specific sprint is selected.
   const sprintTeams = new Map<string, Set<string>>();
-  activeItems.forEach((it) => {
+  podScopedItems.forEach((it) => {
     const team = it.team || it.podName;
     (it.sprints || []).forEach((s) => {
       const key = s.trim();
@@ -1574,10 +1608,12 @@ export function computeDashboardData(
     });
   });
 
-  // Sprints filter list — only sprints that have work and are inside the plot window.
+  // Sprints filter list — only sprints that exist for the selected pod
+  // (and inside the plot window), so switching pods never shows other pods' sprints.
+  const scopedSprintNames = windowNames.filter((name) => sprintTeams.has(name));
   const sprints: SprintOption[] = [
-    { id: "all", name: "All Sprints", sub: `Latest ${windowNames.length} sprints` },
-    ...windowNames.map((name, i) => ({
+    { id: "all", name: "All Sprints", sub: `Latest ${scopedSprintNames.length} sprints` },
+    ...scopedSprintNames.map((name, i) => ({
       id: name,
       name: sprintDisplayName(name),
       sub: Array.from(sprintTeams.get(name) || []).join(", ") || `Sprint ${i + 1}`,
@@ -1586,7 +1622,7 @@ export function computeDashboardData(
 
   return {
     pods: derivePods(workItems),
-    quarters: deriveQuarters(workItems),
+    quarters: deriveQuarters(podScopedItems),
     sprints,
     metrics,
     velocity,
