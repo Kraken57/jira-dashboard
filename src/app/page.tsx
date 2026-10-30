@@ -359,6 +359,7 @@ export default function DashboardPage() {
           {activeTab === "quality" && dashboardData && (
             <QualityTab
               data={dashboardData.quality}
+              qaCapacity={dashboardData.qaCapacity}
               issues={dashboardData.issueList}
               jiraDomain={dashboardData.jiraBaseUrl}
             />

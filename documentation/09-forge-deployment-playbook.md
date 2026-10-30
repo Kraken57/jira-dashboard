@@ -69,6 +69,10 @@ forge variables set --environment development JIRA_SPRINT_FIELD JIRA_SPRINT_FIEL
 forge variables set --environment development JIRA_POD_FIELD JIRA_POD_FIELD
 forge variables set --environment development JIRA_DONE_STATUSES "DONE_STATUSES"
 forge variables set --environment development JIRA_SUBTASK_DONE_STATUSES "Done,Closed,Resolved,Completed,Released,Accepted"
+forge variables set --environment development JIRA_QA_CAPACITY_HOURS_PER_WEEK 40
+forge variables set --environment development JIRA_QA_TEST_ISSUE_TYPES "Test"
+forge variables set --environment development JIRA_QA_SUPPORT_ISSUE_TYPES "Support"
+forge variables set --environment development JIRA_QA_MEMBERS "Sandeep Annaldas,Arun Aare,Naman Goel,Anantha Garapati,Roja PS,Sahaj Arora,Durga Sridhar Kaligotla"
 forge variables list --environment development     # verify
 ```
 
@@ -105,7 +109,7 @@ After later code changes: re-run `pnpm run build:forge` → `forge deploy` → h
 
 ```bash
 forge variables set --environment production JIRA_HOST https://YOUR_SITE.atlassian.net
-# …repeat every variable from §4 with --environment production
+# …repeat every variable from (including the four QA-capacity ones) §4 with --environment production
 forge deploy --environment production --approve MAJOR_VERSION_RULE
 forge install --site YOUR_SITE.atlassian.net --product jira --environment production
 # …or --upgrade if it was already installed

@@ -1,16 +1,22 @@
 "use client";
 
 import { useState } from "react";
-import { IssueRow, QualityData } from "@/lib/jira/types";
+import {
+  IssueRow,
+  QualityData,
+  QaCapacityData,
+  QaMemberStat,
+} from "@/lib/jira/types";
 import { IssuesModal } from "@/components/IssuesModal";
 
 interface QualityTabProps {
   data: QualityData;
+  qaCapacity?: QaCapacityData;
   issues?: IssueRow[];
   jiraDomain?: string;
 }
 
-export function QualityTab({ data, issues = [], jiraDomain }: QualityTabProps) {
+export function QualityTab({ data, qaCapacity, issues = [], jiraDomain }: QualityTabProps) {
   const [modal, setModal] = useState<{
     title: string;
     subtitle: string;
@@ -22,9 +28,176 @@ export function QualityTab({ data, issues = [], jiraDomain }: QualityTabProps) {
   const open = (title: string, subtitle: string, list: IssueRow[]) =>
     setModal({ title, subtitle, issues: list });
 
+  const openMember = (m: QaMemberStat) => {
+    open(
+      `QA Workload · ${m.name}`,
+      `${m.assignedIssues} items · ${m.podNames.join(", ") || m.podKeys.join(", ") || "no pod"} · ${m.allocatedHours} of ${m.capacityHours} hrs allocated · ${m.testCases} test case${m.testCases === 1 ? "" : "s"}`,
+      issues.filter((i) => i.assignee === m.name)
+    );
+  };
+
+  // Utilization bar color: green under 70% load, amber 70-100, red over.
+  const loadColor = (pct: number) =>
+    pct <= 70
+      ? "bg-jira-green"
+      : pct <= 100
+      ? "bg-jira-amber"
+      : "bg-jira-red";
+
   return (
     <div className="space-y-6">
-      {/* Quality KPI Cards */}
+      {/* ---- QA Team Capacity & Workload (phase 1) ---- */}
+      {qaCapacity && qaCapacity.members.length > 0 && (
+        <>
+          <div className="bg-white border border-jira-border rounded-lg p-5 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-jira-border pb-4 mb-4">
+              <div>
+                <h2 className="text-base font-bold text-jira-text">QA Team Capacity &amp; Workload</h2>
+                <p className="text-xs text-jira-text-muted mt-0.5">
+                  {qaCapacity.members.length} members · weekly capacity {qaCapacity.totalCapacityHours} hrs ·{" "}
+                  {qaCapacity.testCasesTotal} test cases tracked
+                </p>
+              </div>
+              <span className="text-xs font-semibold px-3 py-1 bg-jira-blue-bg text-jira-blue rounded-full border border-jira-blue/20 self-start sm:self-auto">
+                {qaCapacity.availableHours} hrs available
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+              <button
+                type="button"
+                onClick={() =>
+                  open(
+                    "Total QA Capacity",
+                    `${qaCapacity.members.length} members · header rows below show per-person splits`,
+                    qaCapacity.members.flatMap((m) =>
+                      issues.filter((i) => i.assignee === m.name)
+                    )
+                  )
+                }
+                className="text-left p-4 bg-jira-bg rounded-lg border border-jira-border/50 hover:border-jira-blue/50 hover:shadow-sm transition"
+              >
+                <p className="text-xs uppercase text-jira-text-muted font-bold">Total QA Capacity</p>
+                <p className="text-2xl font-bold text-jira-text mt-1">{qaCapacity.totalCapacityHours} hrs</p>
+                <p className="text-[11px] text-jira-text-light mt-1">Per member · weekly</p>
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  open(
+                    "Allocated Hours",
+                    `Open assigned work across ${qaCapacity.members.length} QA members`,
+                    qaCapacity.members.flatMap((m) =>
+                      issues.filter((i) => i.assignee === m.name && !i.isDone)
+                    )
+                  )
+                }
+                className="text-left p-4 bg-jira-bg rounded-lg border border-jira-border/50 hover:border-jira-blue/50 hover:shadow-sm transition"
+              >
+                <p className="text-xs uppercase text-jira-text-muted font-bold">Allocated</p>
+                <p className="text-2xl font-bold text-jira-blue mt-1">{qaCapacity.allocatedHours} hrs</p>
+                <p className="text-[11px] text-jira-text-light mt-1">Open assigned work</p>
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  open(
+                    "Supported Load",
+                    "Open work on support-type issues",
+                    qaCapacity.members.flatMap((m) =>
+                      issues.filter(
+                        (i) => i.assignee === m.name && !i.isDone && /^support/i.test(i.workType)
+                      )
+                    )
+                  )
+                }
+                className="text-left p-4 bg-jira-bg rounded-lg border border-jira-border/50 hover:border-jira-amber/50 hover:shadow-sm transition"
+              >
+                <p className="text-xs uppercase text-jira-text-muted font-bold">Supported Load</p>
+                <p className="text-2xl font-bold text-jira-amber mt-1">{qaCapacity.supportedHours} hrs</p>
+                <p className="text-[11px] text-jira-text-light mt-1">Open support-type work</p>
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  open(
+                    "Available Capacity",
+                    `Work you can still assign across ${qaCapacity.members.length} members`,
+                    qaCapacity.members.flatMap((m) =>
+                      issues.filter((i) => i.assignee === m.name && !i.isDone)
+                    )
+                  )
+                }
+                className="text-left p-4 bg-jira-bg rounded-lg border border-jira-border/50 hover:border-jira-green/50 hover:shadow-sm transition"
+              >
+                <p className="text-xs uppercase text-jira-text-muted font-bold">Available</p>
+                <p className="text-2xl font-bold text-jira-green mt-1">{qaCapacity.availableHours} hrs</p>
+                <p className="text-[11px] text-jira-text-light mt-1">Capacity minus load</p>
+              </button>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-jira-bg text-jira-text-muted text-xs uppercase border-b border-jira-border font-semibold">
+                  <tr>
+                    <th className="px-4 py-2.5">Member</th>
+                    <th className="px-4 py-2.5">Teams</th>
+                    <th className="px-4 py-2.5 text-center">Assigned</th>
+                    <th className="px-4 py-2.5 text-center">Allocated</th>
+                    <th className="px-4 py-2.5 text-center">Supported</th>
+                    <th className="px-4 py-2.5 text-center">Available</th>
+                    <th className="px-4 py-2.5 text-center">Test Cases</th>
+                    <th className="px-4 py-2.5">Load</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-jira-border/60">
+                  {qaCapacity.members.map((m) => (
+                    <tr
+                      key={m.name}
+                      onClick={() => openMember(m)}
+                      className="transition-colors cursor-pointer hover:bg-jira-bg"
+                    >
+                      <td className="px-4 py-3 font-semibold text-xs">{m.name}</td>
+                      <td className="px-4 py-3 text-xs text-jira-text-muted">
+                        {m.podNames.join(", ") || m.podKeys.join(", ") || "—"}
+                      </td>
+                      <td className="px-4 py-3 text-center text-xs font-semibold">{m.assignedIssues}</td>
+                      <td className="px-4 py-3 text-center text-xs">{m.allocatedHours} hrs</td>
+                      <td className="px-4 py-3 text-center text-xs">{m.supportedHours} hrs</td>
+                      <td className="px-4 py-3 text-center text-xs font-bold text-jira-green">
+                        {m.availableHours} hrs
+                      </td>
+                      <td className="px-4 py-3 text-center text-xs">
+                        {m.testCases}
+                        {m.openTestCases < m.testCases && (
+                          <span className="text-[10px] text-jira-text-light ml-1">
+                            ({m.testCases - m.openTestCases} done)
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 min-w-[130px]">
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-2 bg-jira-border/40 rounded-full overflow-hidden">
+                            <div
+                              className={`h-2 ${loadColor(m.utilisationPct)} rounded-full`}
+                              style={{ width: `${Math.min(m.utilisationPct, 100)}%` }}
+                            />
+                          </div>
+                          <span className="text-[11px] font-bold text-jira-text-muted w-8 text-right">
+                            {m.utilisationPct}%
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ---- Existing defect metrics (kept below) ---- */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <button
           type="button"

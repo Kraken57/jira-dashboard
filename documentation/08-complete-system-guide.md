@@ -658,6 +658,31 @@ activeItems  = scopedItems where sprint matches (or all)
 Everything below is computed from `activeItems`, except the dropdown option lists, which
 use all items.
 
+JIRA_NEXT_SPRINT_REVEAL_DAYS=5
+The Quality tab QA-capacity math reads these (documented in 09 as well):
+
+```env
+# ---- QA Team Capacity & Workload (Quality tab) ----
+# Weekly capacity per member (default 40 = 8h x 5 days)
+JIRA_QA_CAPACITY_HOURS_PER_WEEK=40
+# Issue types Zephyr uses for test cases (comma-separated)
+JIRA_QA_TEST_ISSUE_TYPES=Test
+# Issue types counted as "supported load" (comma-separated)
+JIRA_QA_SUPPORT_ISSUE_TYPES=Support
+# Optional explicit QA member names, comma-separated (Jira displayName spelling).
+# Leave empty to auto-detect members from assigned Test-type issues.
+JIRA_QA_MEMBERS=
+# Weekly capacity per member (default 40 = 8h x 5 days)
+JIRA_QA_CAPACITY_HOURS_PER_WEEK=40
+# Issue types Zephyr uses for test cases (comma-separated)
+JIRA_QA_TEST_ISSUE_TYPES=Test
+# Issue types counted as "supported load" (comma-separated)
+JIRA_QA_SUPPORT_ISSUE_TYPES=Support
+# Optional explicit QA member names, comma-separated (Jira displayName spelling).
+# Leave empty to auto-detect members from assigned Test-type issues.
+JIRA_QA_MEMBERS=
+```
+
 ### 9.3 Summary
 
 ```ts

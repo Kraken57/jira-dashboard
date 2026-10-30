@@ -58,6 +58,10 @@ export interface MetricConfig {
   subtaskDoneStatuses: string[];
   sprintWindow: number;
   nextSprintRevealDays: number;
+  qaCapacityHoursPerWeek: number;
+  qaTestIssueTypes: string[];
+  qaSupportIssueTypes: string[];
+  qaMembers: string[];
 }
 
 /**
@@ -147,6 +151,30 @@ export interface SprintAnalysisData {
   statusBreakdown: { status: string; count: number; color: string }[];
 }
 
+export interface QaMemberStat {
+  name: string;
+  podKeys: string[];
+  podNames: string[];
+  assignedIssues: number;
+  allocatedHours: number;
+  completedHours: number;
+  supportedHours: number;
+  availableHours: number;
+  testCases: number;
+  openTestCases: number;
+  capacityHours: number;
+  utilisationPct: number;
+}
+
+export interface QaCapacityData {
+  members: QaMemberStat[];
+  totalCapacityHours: number;
+  allocatedHours: number;
+  supportedHours: number;
+  availableHours: number;
+  testCasesTotal: number;
+}
+
 export interface QualityData {
   defectDensity: number;
   totalBugs: number;
@@ -233,6 +261,7 @@ export interface DashboardData {
   developers: DeveloperStat[];
   sprintAnalysis: SprintAnalysisData;
   quality: QualityData;
+  qaCapacity?: QaCapacityData;
   predictability: PredictabilityData;
   trends: TrendsData;
   diagnosis: DiagnosisData;

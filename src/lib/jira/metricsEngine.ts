@@ -13,6 +13,8 @@ import {
   MetricInsight,
   PodOption,
   PredictabilityData,
+  QaCapacityData,
+  QaMemberStat,
   QualityData,
   QuarterOption,
   SprintAnalysisData,
@@ -43,6 +45,19 @@ export function resolveMetricConfig(): MetricConfig {
       .filter(Boolean),
     sprintWindow: Math.max(1, Number(process.env.JIRA_SPRINT_WINDOW || 5)),
     nextSprintRevealDays: Number(process.env.JIRA_NEXT_SPRINT_REVEAL_DAYS || 5),
+    qaCapacityHoursPerWeek: Math.max(0, Number(process.env.JIRA_QA_CAPACITY_HOURS_PER_WEEK ?? 40)),
+    qaTestIssueTypes: (process.env.JIRA_QA_TEST_ISSUE_TYPES || "Test")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+    qaSupportIssueTypes: (process.env.JIRA_QA_SUPPORT_ISSUE_TYPES || "Support")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+    qaMembers: (process.env.JIRA_QA_MEMBERS || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
   };
 }
 
@@ -300,6 +315,142 @@ function matchesSprint(itemSprints: string[] | undefined | null, target: string)
     const itemS = s.trim().toLowerCase();
     return itemS === t || itemS.includes(t) || t.includes(itemS);
   });
+}
+
+/**
+ * QA Team Capacity & Workload (phase 1) - plain Jira data only.
+ * Zephyr Essential stores test cases as Jira issues of the configured Test
+ * types, so test-case counts and hour math both come from the same scoped
+ * items the rest of the dashboard shares.
+ * - Members: configured JIRA_QA_MEMBERS names + anyone assigned a Test
+ *   issue in scope (auto-detected).
+ * - Allocated hours = original estimates on open items (incl. sub-tasks).
+ * - Completed hours = estimates on done items in scope.
+ * - Supported hours = open estimates on the support issue types.
+ * - Available = max(0, capacity - allocated - supported).
+ */
+function buildQaCapacity(
+  items: JiraWorkItem[],
+  isDone: (status: string) => boolean,
+  estimateHours: (seconds?: number) => number,
+  config: MetricConfig
+): QaCapacityData {
+  const capacityHoursPerMember =
+    Math.round(config.qaCapacityHoursPerWeek * 10) / 10;
+  const testTypes = new Set(config.qaTestIssueTypes.map((t) => t.toLowerCase()));
+  const supportTypes = new Set(
+    config.qaSupportIssueTypes.map((t) => t.toLowerCase())
+  );
+
+  interface MemberEntry {
+    name: string;
+    podKeys: string[];
+    podNames: string[];
+    assigned: number;
+    allocatedSeconds: number;
+    completedSeconds: number;
+    supportedSeconds: number;
+    testCases: number;
+    openTestCases: number;
+  }
+  const byName = new Map<string, MemberEntry>();
+
+  const track = (assignee: string): MemberEntry => {
+    const key =
+      config.qaMembers.find((n) => n.toLowerCase() === assignee.toLowerCase()) ??
+      assignee;
+    let entry = byName.get(key);
+    if (!entry) {
+      entry = {
+        name: key,
+        podKeys: [],
+        podNames: [],
+        assigned: 0,
+        allocatedSeconds: 0,
+        completedSeconds: 0,
+        supportedSeconds: 0,
+        testCases: 0,
+        openTestCases: 0,
+      };
+      byName.set(key, entry);
+    }
+    return entry;
+  };
+
+  for (const item of items) {
+    const assignee = item.assignee || "Unassigned";
+    const workType = item.workType.toLowerCase();
+    const isTest = testTypes.has(workType);
+    const isSupport = supportTypes.has(workType);
+
+    if (isTest) {
+      // Auto-detect: anyone assigned a Test issue joins the roster.
+    } else if (config.qaMembers.length > 0) {
+      if (!config.qaMembers.some((n) => n.toLowerCase() === assignee.toLowerCase()))
+        continue;
+    } else {
+      continue;
+    }
+
+    const entry = track(assignee);
+    if (!entry.podKeys.includes(item.podKey)) entry.podKeys.push(item.podKey);
+    if (!entry.podNames.includes(item.podName)) entry.podNames.push(item.podName);
+    entry.assigned += 1;
+    const seconds = item.originalEstimateSeconds || 0;
+    if (isTest) entry.testCases += 1;
+    if (isDone(item.status)) {
+      entry.completedSeconds += seconds;
+      continue;
+    }
+    entry.allocatedSeconds += seconds;
+    if (isSupport) entry.supportedSeconds += seconds;
+    if (isTest) entry.openTestCases += 1;
+  }
+
+  const members: QaMemberStat[] = Array.from(byName.values())
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((entry) => {
+      const allocatedHours =
+        Math.round(estimateHours(entry.allocatedSeconds) * 10) / 10;
+      const completedHours =
+        Math.round(estimateHours(entry.completedSeconds) * 10) / 10;
+      const supportedHours =
+        Math.round(estimateHours(entry.supportedSeconds) * 10) / 10;
+      const load = Math.round((allocatedHours + supportedHours) * 10) / 10;
+      const availableHours =
+        Math.round(Math.max(0, capacityHoursPerMember - load) * 10) / 10;
+      return {
+        name: entry.name,
+        podKeys: entry.podKeys,
+        podNames: entry.podNames,
+        assignedIssues: entry.assigned,
+        allocatedHours,
+        completedHours,
+        supportedHours,
+        availableHours,
+        testCases: entry.testCases,
+        openTestCases: entry.openTestCases,
+        capacityHours: capacityHoursPerMember,
+        utilisationPct:
+          capacityHoursPerMember > 0
+            ? Math.min(200, Math.round((load / capacityHoursPerMember) * 100))
+            : 0,
+      };
+    });
+
+  const totalCapacityHours =
+    Math.round(members.length * capacityHoursPerMember * 10) / 10;
+  const sum = (field: keyof QaMemberStat) =>
+    Math.round(members.reduce((acc, m) => acc + Number(m[field]), 0) * 10) / 10;
+
+  return {
+    members,
+    totalCapacityHours,
+    allocatedHours: sum("allocatedHours"),
+    supportedHours: sum("supportedHours"),
+    availableHours: sum("availableHours"),
+    testCasesTotal: members.reduce((a, m) => a + m.testCases, 0),
+  };
 }
 
 export function computeDashboardData(
@@ -1403,6 +1554,14 @@ export function computeDashboardData(
     isSubtask: /^sub-?task$/i.test(it.workType),
   }));
 
+  // ---- QA Team Capacity & Workload --------------------------------------
+  const qaCapacity = buildQaCapacity(
+    activeItems,
+    (status) => DONE_STATUSES.has(status) || isSubtaskDoneStatus(status),
+    estimateHours,
+    config
+  );
+
   // Sprint → team mapping, so the sprint filter shows whose sprint it is.
   const sprintTeams = new Map<string, Set<string>>();
   activeItems.forEach((it) => {
@@ -1436,6 +1595,7 @@ export function computeDashboardData(
     developers,
     sprintAnalysis,
     quality,
+    qaCapacity,
     predictability,
     trends,
     diagnosis,

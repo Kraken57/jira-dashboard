@@ -369,6 +369,142 @@ function collectSprintMeta(
 /**
  * Calculate simple KPIs from work items.
  */
+/**
+ * QA Team Capacity & Workload (phase 1) - mirrors src/lib/jira/metricsEngine
+ * (Zephyr Essential test cases are ordinary Jira Test-type issues, so Jira
+ * issue data alone carries both hours and test-case counts).
+ */
+
+/**
+ * QA Team Capacity & Workload (phase 1) - mirrors src/lib/jira/metricsEngine.
+ * Zephyr Essential test cases are ordinary Jira Test-type issues, so issue
+ * data alone carries both hours and test-case counts. Members come from the
+ * configured name list plus anyone assigned a Test issue in scope.
+ */
+const hrsFromSeconds = (seconds: number) =>
+  Math.round(((Number(seconds) || 0) / 3600) * 10) / 10;
+
+function buildQaCapacity(items: any[]): any {
+  const config = resolveFeedConfig();
+  const capacityPerMember =
+    Math.round(config.qaCapacityHoursPerWeek * 10) / 10;
+  const testTypes = new Set(config.qaTestIssueTypes.map((t) => t.toLowerCase()));
+  const supportTypes = new Set(
+    config.qaSupportIssueTypes.map((t) => t.toLowerCase())
+  );
+
+  const byName = new Map<
+    string,
+    {
+      name: string;
+      podKeys: string[];
+      podNames: string[];
+      assigned: number;
+      allocatedSeconds: number;
+      completedSeconds: number;
+      supportedSeconds: number;
+      testCases: number;
+      openTestCases: number;
+    }
+  >();
+
+  const track = (assignee: string) => {
+    const key =
+      config.qaMembers.find(
+        (n) => n.toLowerCase() === assignee.toLowerCase()
+      ) ?? assignee;
+    let entry = byName.get(key);
+    if (!entry) {
+      entry = {
+        name: key,
+        podKeys: [],
+        podNames: [],
+        assigned: 0,
+        allocatedSeconds: 0,
+        completedSeconds: 0,
+        supportedSeconds: 0,
+        testCases: 0,
+        openTestCases: 0,
+      };
+      byName.set(key, entry);
+    }
+    return entry;
+  };
+
+  for (const item of items) {
+    const assignee = String(item.assignee || "Unassigned");
+    const workType = String(item.workType || "").toLowerCase();
+    const isTest = testTypes.has(workType);
+    const isSupport = supportTypes.has(workType);
+    if (isTest) {
+      // Auto-detect roster: Test issue assignment qualifies a member.
+    } else if (config.qaMembers.length > 0) {
+      if (
+        !config.qaMembers.some(
+          (n) => n.toLowerCase() === assignee.toLowerCase()
+        )
+      ) {
+        continue;
+      }
+    } else {
+      continue;
+    }
+
+    const entry = track(assignee);
+    if (!entry.podKeys.includes(item.podKey)) entry.podKeys.push(item.podKey);
+    if (!entry.podNames.includes(item.podName)) entry.podNames.push(item.podName);
+    entry.assigned += 1;
+    const seconds = item.originalEstimateSeconds || 0;
+    if (isTest) entry.testCases += 1;
+    if (isDoneStatus(item.status) || isSubtaskDoneStatus(item.status)) {
+      entry.completedSeconds += seconds;
+      continue;
+    }
+    entry.allocatedSeconds += seconds;
+    if (isSupport) entry.supportedSeconds += seconds;
+    if (isTest) entry.openTestCases += 1;
+  }
+
+  const roundHrs = (n: number) => Math.round(n * 10) / 10;
+  const members = Array.from(byName.values())
+    .map((entry) => {
+      const allocatedHours = roundHrs(hrsFromSeconds(entry.allocatedSeconds));
+      const supportedHours = roundHrs(hrsFromSeconds(entry.supportedSeconds));
+      const load = roundHrs(allocatedHours + supportedHours);
+      const availableHours = roundHrs(Math.max(0, capacityPerMember - load));
+      return {
+        name: entry.name,
+        podKeys: entry.podKeys,
+        podNames: entry.podNames,
+        assignedIssues: entry.assigned,
+        allocatedHours,
+        completedHours: roundHrs(hrsFromSeconds(entry.completedSeconds)),
+        supportedHours,
+        availableHours,
+        testCases: entry.testCases,
+        openTestCases: entry.openTestCases,
+        capacityHours: capacityPerMember,
+        utilisationPct:
+          capacityPerMember > 0
+            ? Math.min(200, Math.round((load / capacityPerMember) * 100))
+            : 0,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const sum = (field: "allocatedHours" | "supportedHours" | "availableHours") =>
+    roundHrs(members.reduce((acc, m) => acc + (m[field] as number), 0));
+
+  return {
+    members,
+    totalCapacityHours: roundHrs(members.length * capacityPerMember),
+    allocatedHours: sum("allocatedHours"),
+    supportedHours: sum("supportedHours"),
+    availableHours: sum("availableHours"),
+    testCasesTotal: members.reduce((acc, m) => acc + m.testCases, 0),
+  };
+}
+
 function calculateKPIs(
   items: any[],
   filters: any,
@@ -922,6 +1058,7 @@ function calculateKPIs(
         })),
     },
     podFeatureList,
+    qaCapacity: buildQaCapacity(items),
     issueList: items.map((i) => ({
       key: i.key,
       summary: i.summary,
@@ -968,6 +1105,23 @@ function resolveFeedConfig() {
       : ["Done", "Closed", "Resolved", "Completed", "Released", "Accepted"],
     sprintWindow: 5,
     nextSprintRevealDays: 5,
+    qaCapacityHoursPerWeek: Math.max(0, Number(process.env.JIRA_QA_CAPACITY_HOURS_PER_WEEK ?? 40)),
+    qaTestIssueTypes: (
+      process.env.JIRA_QA_TEST_ISSUE_TYPES || "Test"
+    )
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean),
+    qaSupportIssueTypes: (
+      process.env.JIRA_QA_SUPPORT_ISSUE_TYPES || "Support"
+    )
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean),
+    qaMembers: (process.env.JIRA_QA_MEMBERS || "")
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean),
   };
 }
 
