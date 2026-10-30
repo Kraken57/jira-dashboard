@@ -2,6 +2,14 @@ import { DashboardData, DashboardFilters, RawFeedPayload } from "./jira/types";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "";
 
+// @forge/bridge v7 may wrap resolver payloads in { body, metadata }; unwrap.
+function unwrapBody<D>(response: unknown): D {
+  if (response && typeof response === "object" && "body" in response) {
+    return (response as { body: D }).body;
+  }
+  return response as D;
+}
+
 /**
  * Universal fetch client:
  * - Inside Atlassian Forge iframe: Uses @forge/bridge invoke('getDashboardData')
@@ -35,7 +43,9 @@ export async function fetchDashboardData(filters: DashboardFilters): Promise<Das
     // 2. @forge/bridge invoke (dynamic import keeps it out of the SSR bundle)
     try {
       const { invoke } = await import("@forge/bridge");
-      return await invoke("getDashboardData", filters);
+      return unwrapBody(
+        (await invoke("getDashboardData", filters)) as DashboardData
+      );
     } catch (err) {
       throw new Error(
         `Forge bridge is unavailable: ${err instanceof Error ? err.message : String(err)}`
@@ -125,7 +135,12 @@ export async function fetchRawFeed(): Promise<RawFeedPayload> {
   const inForgeIframe = window.self !== window.top;
   if (inForgeIframe) {
     const { invoke } = await import("@forge/bridge");
-    return invoke("getRawFeed");
+    const feed = (await invoke("getRawFeed")) as RawFeedPayload & { error?: string };
+    // The resolver packages its own failures as { error } instead of throwing.
+    if (feed && typeof feed.error === "string") {
+      throw new Error(`Forge raw feed failed: ${feed.error}`);
+    }
+    return feed;
   }
 
   const url = `${BASE_URL.replace(/\/+$/, "")}/api/jira?raw=1`;

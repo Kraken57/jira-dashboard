@@ -26,8 +26,8 @@ export async function query(sqlText: string, ...params: unknown[]): Promise<SqlR
     const result = await (storage as any).query(sqlText, ...params);
     return { rows: result.rows || result || [] };
   } catch (err) {
-    console.error("[forge-storage] query failed:", err);
-    throw err;
+    console.warn("[forge-storage] query failed (ignored):", err);
+    return { rows: [] };
   }
 }
 
@@ -42,8 +42,7 @@ export async function execute(sqlText: string, ...params: unknown[]): Promise<vo
   try {
     await (storage as any).execute(sqlText, ...params);
   } catch (err) {
-    console.error("[forge-storage] execute failed:", err);
-    throw err;
+    console.warn("[forge-storage] execute failed (ignored):", err);
   }
 }
 

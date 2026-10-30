@@ -5,7 +5,8 @@
  * Real Jira data only. No dummy data, no CSV, no JSON fallback.
  */
 import Resolver from "@forge/resolver";
-import api, { storage, route } from "@forge/api";
+import api, { route } from "@forge/api";
+import { kvs } from "./kvsClient";
 import zlib from "node:zlib";
 import { JiraClient } from "./api/jiraClient";
 
@@ -75,17 +76,31 @@ async function getFieldConfig(): Promise<{
   podField: string;
 }> {
   const [jql, spField, sprintField, podField] = await Promise.all([
-    storage.get("jira_jql"),
-    storage.get("jira_story_points_field"),
-    storage.get("jira_sprint_field"),
-    storage.get("jira_pod_field"),
+    kvs.get("jira_jql"),
+    kvs.get("jira_story_points_field"),
+    kvs.get("jira_sprint_field"),
+    kvs.get("jira_pod_field"),
   ]);
 
+  // Precedence: saved admin-page value, then forge variables, then the
+  // app-site defaults the manifest was written for.
   return {
-    jql: (jql as string) || "project in (DTR)",
-    storyPointsField: (spField as string) || "customfield_10078",
-    sprintField: (sprintField as string) || "customfield_10020",
-    podField: (podField as string) || "customfield_10001",
+    jql:
+      (jql as string) ||
+      process.env.JIRA_JQL ||
+      "project in (DTR)",
+    storyPointsField:
+      (spField as string) ||
+      process.env.JIRA_STORY_POINTS_FIELD ||
+      "customfield_10078",
+    sprintField:
+      (sprintField as string) ||
+      process.env.JIRA_SPRINT_FIELD ||
+      "customfield_10020",
+    podField:
+      (podField as string) ||
+      process.env.JIRA_POD_FIELD ||
+      "customfield_10001",
   };
 }
 
@@ -936,9 +951,10 @@ function calculateKPIs(
  */
 const FEED_META_KEY = "raw-feed-v1-meta";
 const FEED_PART_KEY = "raw-feed-v1-part-";
-// ponytail: 60 KB chunks (~80 KB base64); tighten to 100 KB for fewer parts
-// only if a future feed actually outgrows this by 3-4x.
-const FEED_PART_BYTES = 60 * 1024;
+// Legacy @forge/api storage caps a single persisted value at ~128 KB raw.
+// 90 KB compressed -> ~120 KB base64, under the cap; a 930-item feed still
+// needs a single part. Raise to ~175 KB after the @forge/kvs flip (240 KiB).
+const FEED_PART_BYTES = 90 * 1024;
 const FEED_TTL_MS = 5 * 60 * 1000;
 const FEED_STALE_OK_MS = 30 * 60 * 1000;
 
@@ -1007,24 +1023,26 @@ async function fetchAndStoreFeed(): Promise<FeedEnvelope> {
 
   // Write data parts first, meta last: meta becomes the "commit marker".
   await Promise.all(
-    parts.map((part, i) => storage.set(`${FEED_PART_KEY}${i + 1}`, part))
+    parts.map((part, i) => kvs.set(`${FEED_PART_KEY}${i + 1}`, part))
   );
   const meta: FeedMeta = { fetchedAt: envelope.fetchedAt, parts: parts.length };
   // A shrinking feed leaves stray old parts; clear them before committing.
-  const previous = await storage.get(FEED_META_KEY).catch(() => undefined);
+  const previous = (await kvs.get(FEED_META_KEY).catch(
+    () => undefined
+  )) as FeedMeta | undefined;
   if (previous && typeof previous.parts === "number") {
     for (let i = parts.length + 1; i <= previous.parts; i++) {
-      await storage.delete(`${FEED_PART_KEY}${i}`).catch(() => undefined);
+      await kvs.delete(`${FEED_PART_KEY}${i}`).catch(() => undefined);
     }
   }
-  await storage.set(FEED_META_KEY, meta);
+  await kvs.set(FEED_META_KEY, meta);
   return envelope;
 }
 
 async function assembleFeed(meta: FeedMeta): Promise<FeedEnvelope | null> {
   const chunks: string[] = [];
   for (let i = 1; i <= meta.parts; i++) {
-    const part = await storage.get(`${FEED_PART_KEY}${i}`).catch(() => undefined);
+    const part = await kvs.get(`${FEED_PART_KEY}${i}`).catch(() => undefined);
     if (typeof part !== "string") return null;
     chunks.push(part);
   }
@@ -1132,7 +1150,9 @@ resolver.define("getDashboardData", async (req) => {
 
 resolver.define("getRawFeed", async () => {
   try {
-    const metaRaw = await storage.get(FEED_META_KEY).catch(() => undefined);
+    const metaRaw = (await kvs.get(FEED_META_KEY).catch(
+      () => undefined
+    )) as FeedMeta | undefined;
     const meta =
       metaRaw && typeof metaRaw.fetchedAt === "number" && typeof metaRaw.parts === "number"
         ? (metaRaw as FeedMeta)

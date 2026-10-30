@@ -11,21 +11,21 @@ modules:
       resource: admin-ui
       resolver:
         function: admin-resolver
-  trigger:
-    - key: issue-change-trigger
-      function: issue-event-handler
-      events:
-        - avi:jira:created:issue
-        - avi:jira:updated:issue
-        - avi:jira:deleted:issue
-  scheduledTrigger:
-    - key: incremental-reconciliation
-      function: sync-orchestrator
-      interval: hour
-  consumer:
-    - key: jira-sync-consumer
-      queue: jira-kpi-sync
-      function: sync-worker
+  # trigger:
+  #   - key: issue-change-trigger
+  #     function: issue-event-handler
+  #     events:
+  #       - avi:jira:created:issue
+  #       - avi:jira:updated:issue
+  #       - avi:jira:deleted:issue
+  # scheduledTrigger:
+  #   - key: incremental-reconciliation
+  #     function: sync-orchestrator
+  #     interval: hour
+  # consumer:
+  #   - key: jira-sync-consumer
+  #     queue: jira-kpi-sync
+  #     function: sync-worker
   function:
     - key: dashboard-resolver
       handler: index.handler
@@ -35,10 +35,8 @@ modules:
       handler: events/issues.handler
     - key: sync-orchestrator
       handler: sync/orchestrator.handler
-      timeoutSeconds: 900
     - key: sync-worker
       handler: sync/worker.handler
-      timeoutSeconds: 900
   sql:
     - key: main
       engine: mysql

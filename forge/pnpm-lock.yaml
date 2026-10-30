@@ -9,7 +9,7 @@ importers:
   .:
     dependencies:
       '@forge/api':
-        specifier: ^5.1.0
+        specifier: ^5.3.0
         version: 5.3.0
       '@forge/resolver':
         specifier: ^1.6.0

@@ -76,7 +76,7 @@ export default function DashboardPage() {
   // under pod/quarter filters (replaces the old second parallel request).
   const allSprintData: DashboardData | null = useMemo(
     () =>
-      feed
+      feed && Array.isArray(feed.items)
         ? computeDashboardData(
             feed.items,
             { podId: "all", quarterId: "all", sprintId: "all" },
@@ -88,7 +88,7 @@ export default function DashboardPage() {
   );
 
   const dashboardData: DashboardData | null = useMemo(() => {
-    if (!feed) return null;
+    if (!feed || !Array.isArray(feed.items)) return null;
     return {
       ...computeDashboardData(
         feed.items,
@@ -128,6 +128,9 @@ export default function DashboardPage() {
 
       try {
         const next = await fetchRawFeed();
+        if (!next || !Array.isArray(next.items)) {
+          throw new Error("Raw feed response is missing its items array.");
+        }
         if (cancelled) return;
         writeSessionRawFeed(next);
         setFeed(next);

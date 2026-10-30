@@ -14,6 +14,10 @@ const isForgeBuild = process.env.FORGE_BUILD === "true";
 
 const nextConfig: NextConfig = {
   output: isForgeBuild ? "export" : undefined,
+  // Forge Custom UI serves this bundle from a nested path, so asset URLs must
+  // be relative ("./_next/..."); absolute "/_next/..." 404s and strips all
+  // CSS/JS from the page.
+  assetPrefix: isForgeBuild ? "./" : undefined,
   turbopack: {
     rules: {
       "*.css": {

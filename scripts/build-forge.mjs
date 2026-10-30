@@ -9,7 +9,8 @@
  * Usage: node scripts/build-forge.mjs
  */
 import { spawn } from "node:child_process";
-import { cpSync, existsSync, readFileSync, renameSync, writeFileSync, rmSync } from "node:fs";
+import { cpSync, existsSync, readFileSync, renameSync, writeFileSync, rmSync, readdirSync } from "node:fs";
+import { extname } from "node:path";
 import { join } from "node:path";
 
 const ROUTE = join(process.cwd(), "src", "app", "api", "jira", "route.ts");
@@ -58,6 +59,72 @@ export async function GET() {
   );
 }
 `;
+
+/**
+ * Forge Custom UI serves the bundle from a nested path. Next's export still
+ * emits absolute "/_next/..." references in RSC payloads (_not-found,
+ * prefetch text), which 404 inside the iframe and strip CSS/JS. Rewrite every
+ * text artifact to relative "./_next/..." (idempotent — already-relative
+ * references start with "." and are skipped).
+ */
+function rewriteNextPaths(dir) {
+  // Only markup/stream payloads: Next hardcodes absolute paths there.
+  // NEVER rewrite .js — bundler chunks contain the same string as code
+  // constants (Next's asset-prefix logic) and turning "/_next/" into
+  // "./_next/" inside them corrupts the runtime (invariant throws).
+  const exts = new Set([".html", ".txt"]);
+  let changed = 0;
+  const walk = (root) => {
+    const entries = readdirSync(root, { withFileTypes: true });
+    for (const e of entries) {
+      const full = join(root, e.name);
+      if (e.isDirectory()) {
+        walk(full);
+      } else if (exts.has(extname(e.name))) {
+        const raw = readFileSync(full, "utf8");
+        const next = raw.replace(/(?<![\w./])\/_next\//g, "./_next/");
+        if (next !== raw) {
+          writeFileSync(full, next, "utf8");
+          changed += 1;
+        }
+      }
+    }
+  };
+  walk(dir);
+  console.log(`[build-forge] Rewrote relative asset paths in ${changed} file(s)`);
+}
+
+/**
+ * Next.js inline-configures its asset-prefix runtime to look for "./​_next/"
+ * in the resolved script URL when assetPrefix is relative. Browsers strip
+ * "./" during URL resolution, so the lookup can never succeed ("This is a bug
+ * in Next.js"). Patch the two constants in the built output so the runtime
+ * matches the resolved URL (which always contains "/_next/").
+ */
+function fixAssetPrefixRuntime(dir) {
+  let patched = 0;
+  const walk = (root) => {
+    for (const e of readdirSync(root, { withFileTypes: true })) {
+      const full = join(root, e.name);
+      if (e.isDirectory()) {
+        walk(full);
+      } else if (extname(e.name) === ".js") {
+        const raw = readFileSync(full, "utf8");
+        const next = raw
+          .replace('indexOf("./_next/")', 'indexOf("/_next/")')
+          .replace("to contain './_next/'", "to contain '/_next/'");
+        if (next !== raw) {
+          writeFileSync(full, next, "utf8");
+          patched += 1;
+        }
+      }
+    }
+  };
+  walk(dir);
+  if (patched) {
+    console.log(`[build-forge] Patched asset-prefix runtime in ${patched} chunk(s)`);
+  }
+}
 
 function run(cmd, args, env) {
   return new Promise((resolve, reject) => {
@@ -115,13 +182,24 @@ try {
   writeFileSync(ROUTE, STUB, "utf8");
 
   console.log("[build-forge] Building static export into ./out ...");
+  // Turbopack's chunk-runtime fails on Forge Custom UI: its registerChunk
+  // invariant expects document.currentScript.src to literally contain the
+  // assetPrefix ("./_next/"), which browsers strip during URL resolution.
+  // Webpack's runtime derives publicPath from the real URL instead.
   await run(
     process.execPath,
-    [join("node_modules", "next", "dist", "bin", "next"), "build"],
+    [
+      join("node_modules", "next", "dist", "bin", "next"),
+      "build",
+      "--webpack",
+    ],
     { FORGE_BUILD: "true" }
   );
 
   const forgeOut = join(process.cwd(), "forge", "out");
+  rewriteNextPaths(join(process.cwd(), "out"));
+  fixAssetPrefixRuntime(join(process.cwd(), "out"));
+
   console.log("[build-forge] Copying static bundle into forge/out ...");
   rmSync(forgeOut, { recursive: true, force: true });
   cpSync(join(process.cwd(), "out"), forgeOut, { recursive: true });

@@ -241,9 +241,10 @@ done statuses, sprint window — travel inside the feed as `config`).
   in the gitignored disk file `.cache/jira-feed.json.deflate` (not RAM): fresh
   (≤5 min) is served instantly, stale (≤30 min) is served instantly and
   refreshed in the background, older blocks on one live fetch.
-- Forge: `invoke("getRawFeed")` — same contract, cached in app storage (KVS,
-  zlib-deflated, chunked under `raw-feed-v1-part-*` with commit marker
-  `raw-feed-v1-meta`).
+- Forge: `invoke("getRawFeed")` — same contract, cached in Jira app storage via
+  the supported `@forge/kvs` SDK (zlib-deflated, chunked under
+  `raw-feed-v1-part-*` with commit marker `raw-feed-v1-meta`; values sit well
+  inside the documented 240 KiB per-value and 4,000 r/w-per-minute limits).
 - The browser mirrors the feed in `sessionStorage` (`jira-raw-feed-v1`, tab
   scope, wiped on tab close), so page refresh renders instantly and
   revalidates quietly. The header chip shows the snapshot age and whether a
@@ -1013,56 +1014,105 @@ The Forge manifest points `dashboard-ui` and `admin-ui` at `out` (inside `forge/
 pnpm run build:forge
 ```
 
-Verify `out/` contains `index.html` and static assets.
+Verify `out/` contains `index.html` and static assets. The build rewrites
+every remaining absolute `/_next/...` reference to a relative `./_next/...`
+(`assetPrefix: "./"` plus a sweep in `scripts/build-forge.mjs`) because Forge
+serves the resource from a nested path — absolute URLs 404 and the page renders
+as bare HTML with no CSS/JS
 
 ### 13.3 Configure the Forge app
 
-Set variables in the Forge environment (values live in Atlassian, not in git):
+Run every Forge command from inside `forge/` (the CLI resolves `manifest.yml`
+from the current directory — running it from the repo root fails).
 
 ```bash
 cd forge
-forge login
-forge variables set JIRA_HOST https://your-site.atlassian.net
-forge variables set JIRA_JQL "project in (ABC)"
-forge variables set JIRA_STORY_POINTS_FIELD customfield_10031
-forge variables set JIRA_SPRINT_FIELD customfield_10020
-forge variables set JIRA_POD_FIELD customfield_10050
-forge variables set JIRA_DONE_STATUSES "Done,Accepted,Released,Closed,Resolved"
-forge variables set JIRA_SUBTASK_DONE_STATUSES "Done,Closed,Resolved,Completed,Released,Accepted"
+forge login     # opens a browser; click Allow once
+forge whoami    # verifies the login
 ```
 
-Variables are per environment. `forge deploy`/`forge install` default to the
-`development` environment. For production, add `-e production` to each command.
+Variables use **separate key and value arguments** (no `KEY=value`, no line
+continuations); the environment id comes from `-e`:
 
-`JIRA_HOST` is required for browse links. The resolver does **not** use email/token
-variables; Forge authenticates with `api.asApp()`.
+```bash
+forge variables set -e development JIRA_HOST https://your-site.atlassian.net
+forge variables set -e development JIRA_JQL "project in (ABC)"
+forge variables set -e development JIRA_STORY_POINTS_FIELD customfield_10031
+forge variables set -e development JIRA_SPRINT_FIELD customfield_10020
+forge variables set -e development JIRA_POD_FIELD customfield_10050
+forge variables set -e development JIRA_DONE_STATUSES "Done,Accepted,Released,Closed,Resolved"
+forge variables set -e development JIRA_SUBTASK_DONE_STATUSES "Done,Closed,Resolved,Completed,Released,Accepted"
+forge variables list -e development   # verify
+```
 
-You can also set the JQL and field ids at runtime through the admin resolver
-(`saveAdminConfig`), which stores them in Forge storage and overrides the code defaults.
+`forge deploy`/`forge install` default to the `development` environment. For
+production, add `-e production` to each command and repeat the variable block.
+Deployment-configuration precedence: saved admin-page value, then Forge
+variables (`process.env`), then the code defaults.
+
+`JIRA_HOST` is required for browse links. The resolver does **not** use
+email/token variables; Forge authenticates with `api.asApp()`.
+
+Two timing rules:
+
+1. **Variables are baked into the deployed app version.** After changing any
+   variable you must re-run `forge deploy` (the CLI prints the same tip) before
+   the running app sees the new value.
+2. You can also set the JQL/field ids at runtime through the admin resolver
+   (`saveAdminConfig`), which stores them in Forge storage and overrides both
+   variables and defaults.
 
 ### 13.4 Deploy and install
 
 ```bash
 cd forge
-forge lint
-forge deploy
-forge install
+pnpm install                                     # first time on a machine
+pnpm run build:forge                             # from the repo root — refreshes forge/out
+cd forge
+forge lint                                       # compiles the app; fix errors before deploying
+forge deploy --environment development --approve MAJOR_VERSION_RULE
+forge install --site your-site.atlassian.net --product jira --environment development
 ```
+
+- `--approve MAJOR_VERSION_RULE` acknowledges the major-version upgrade
+  (scope modification) prompt the CLI otherwise refuses to continue on. When
+  a deploy does not require an approval, plain `forge deploy` works.
+- Installing on a **production Jira site from the development environment** is
+  intentional for testing; the CLI prints a warning — answer `y` to proceed.
+- If the app is **already installed** on the site, the install command fails
+  with `already installed ... status COMPLETED`; that site needs an upgrade:
+  ```bash
+  forge install --upgrade --site your-site.atlassian.net --product jira --environment development
+  ```
+- Deploy messages: `Run forge install --upgrade` after `Detected new scopes`
+  applies to existing installations — fresh installs pick the scopes up
+  automatically.
 
 For production:
 
 ```bash
 forge variables set -e production JIRA_HOST https://your-site.atlassian.net
 # ...repeat the other variables with -e production
-forge deploy -e production
-forge install -e production
+forge deploy --environment production --approve MAJOR_VERSION_RULE
+forge install --site your-site.atlassian.net --product jira --environment production
 ```
 
 After later code changes: `pnpm run build:forge`, then `forge deploy` and
-`forge install --upgrade`.
+`forge install --upgrade` (only when scopes changed or the CLI says so).
 
-`forge install` lets you choose the Jira site and whether to install globally or per
-project. The app appears as the global page **Enterprise Delivery KPIs**.
+The app appears as the global page **Enterprise Delivery KPIs** (Jira → Apps).
+
+### 13.4.1 Deploy troubleshooting (all paths verified)
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `Bundling failed: TypeScript emitted no output for <file>.ts` (packaging stage) | `tsconfig.json` carries `"noEmit": true`, which the CLI packager inherits | Never set `noEmit` in `forge/tsconfig.json`; the typecheck script already passes `--noEmit` on the command line |
+| `ApplicationCompileError` with no details | App code imports something the platform compile service rejects (e.g. an SDK its bundler does not support yet) | Bisect: temporarily stub the import; `src/kvsClient.ts` is the documented facade pattern for this |
+| `'variables set --environment' is not a Forge command` | Wrong argument form — key/value must be separate | `forge variables set -e development KEY value` |
+| `manifest-file-required` | `forge` command run from the repo root | `cd forge` first |
+| `Unsupported Node.js version` (CLI ≥15) | Forge CLI 15 needs Node ^22.23.4+ | Use `nvm use`/export a matching Node, or stay on CLI 14.2 (runs on Node 22.15+) |
+| Tail says `major version upgrade ... approval` | Scope set changed between deploys | Append `--approve MAJOR_VERSION_RULE` once per change (it is remembered for that deploy only). |
+| `Specified Version did not exist` (`VERSION_NOT_FOUND`) on every deploy | The environment's platform version contract is corrupted (seen after an interrupted `--major-version` deploy) | `forge deploy` normally still works for **minor** versions; if even those fail, comment the `trigger`, `scheduledTrigger`, and `consumer` blocks (plus their per-function `timeoutSeconds`) out of the manifest and re-deploy. The resolver-only app deploys cleanly; re-add the sync modules later on a healthy platform state. |
 
 ### 13.5 Manifest summary
 
