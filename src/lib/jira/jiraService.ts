@@ -371,7 +371,7 @@ export async function getRawFeed(): Promise<RawFeedPayload> {
   const ageMs = disk ? Date.now() - disk.fetchedAt : Infinity;
 
   if (disk && ageMs <= CACHE_TTL_MS) {
-    return { ...disk, source: "disk", ageMs };
+    return { ...disk, config: resolveMetricConfig(), source: "disk", ageMs };
   }
 
   if (disk && ageMs <= STALE_MAX_MS) {
@@ -379,14 +379,14 @@ export async function getRawFeed(): Promise<RawFeedPayload> {
     void withInflight(fetchLiveFeed).then(writeDiskFeed).catch((err) => {
       console.warn("[jiraService] Background feed refresh failed:", err);
     });
-    return { ...disk, source: "disk-stale", ageMs };
+    return { ...disk, config: resolveMetricConfig(), source: "disk-stale", ageMs };
   }
 
   // # ponytail: single global refresh guard; per-account keys only if the
   // refresh queue ever contends across Jira instances (it cannot today).
   const feed = await withInflight(fetchLiveFeed);
   writeDiskFeed(feed);
-  return { ...feed, source: "jira-live", ageMs: Date.now() - feed.fetchedAt };
+  return { ...feed, config: resolveMetricConfig(), source: "jira-live", ageMs: Date.now() - feed.fetchedAt };
 }
 
 /**
@@ -409,7 +409,7 @@ export async function getDashboardData(
     : await withInflight(fetchLiveFeed).then((f) => (writeDiskFeed(f), f));
 
   return {
-    ...computeDashboardData(feed.items, filters, feed.sprintMeta, feed.config, feed.zephyr),
+    ...computeDashboardData(feed.items, filters, feed.sprintMeta, resolveMetricConfig(), feed.zephyr),
     jiraBaseUrl: feed.jiraBaseUrl,
   };
 }

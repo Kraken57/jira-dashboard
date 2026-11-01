@@ -104,6 +104,26 @@ JIRA_DONE_STATUSES=Done,Accepted,Released,Closed,Resolved
 JIRA_SUBTASK_DONE_STATUSES=Done,Closed,Resolved,Completed,Released,Accepted
 ```
 
+#### 3.3.1 QA team variables (Quality tab) — localhost
+
+The Quality tab's QA section reads these from `.env.local`. They are **names and
+settings, not secrets**. Restart `pnpm dev` after editing them.
+
+```bash
+JIRA_QA_MEMBERS=Sandeep Annaldas,Arun Aare,Naman Goel,Anantha Garapati,Roja PS,Sahaj Arora,Durga Sridhar Kaligotla
+JIRA_QA_CAPACITY_HOURS_PER_WEEK=40
+JIRA_QA_TEST_ISSUE_TYPES=Test
+JIRA_QA_SUPPORT_ISSUE_TYPES=Support
+JIRA_ZAPI_PROJECT_KEYS=ENTQA
+```
+
+- `JIRA_QA_MEMBERS` is the always-visible roster. Names match Jira display names,
+  ignoring case, spaces, dots and underscores.
+- With no members configured, the Quality tab still renders the QA section and shows
+  a message telling you what to add. It never silently hides the section.
+- The QA tab has **its own filter** (a team dropdown inside the QA section). It does
+  not use the shared pod/quarter/sprint bar.
+
 Custom field IDs are **different on every Jira site**. Do not trust the examples; discover
 them:
 
@@ -440,6 +460,14 @@ The Developer popup adds an **Hours** column and hour totals. Each row shows the
 original estimate and whether those hours are completed.
 
 ### 7.4 Quality (`QualityTab`)
+
+The tab has two parts:
+
+1. **QA Team Capacity & Workload** (top): every member in `JIRA_QA_MEMBERS` plus anyone
+   assigned a Test-type issue. Columns: assigned, allocated hrs, supported hrs, available
+   hrs, test cases, Zephyr executions, load bar. A team dropdown inside the section
+   slices the view by pod. The tab ignores the shared pod/quarter/sprint filters.
+2. **Defect metrics** (below): the original defect cards and priority distribution.
 
 | Element | Popup issues |
 |---|---|

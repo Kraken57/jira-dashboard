@@ -87,8 +87,19 @@ export function QualityTab({ data, qaCapacity, qaRosterConfigured = 0, zephyr, i
   return (
     <div className="space-y-6">
       {/* ---- QA Team Capacity & Workload (phase 1) ---- */}
-      {qaCapacity && (qaCapacity.members.length > 0 || qaRosterConfigured > 0) && (
+      {qaCapacity && (
         <>
+          {qaCapacity.members.length === 0 && qaRosterConfigured === 0 && (
+            <div className="bg-white border border-jira-amber/40 rounded-lg p-5 shadow-sm">
+              <h2 className="text-base font-bold text-jira-text">QA Team Capacity &amp; Workload</h2>
+              <p className="text-sm text-jira-text-muted mt-2">
+                No QA members are configured yet. Add the QA names to your environment
+                (<code className="font-mono">JIRA_QA_MEMBERS</code> in <code className="font-mono">.env.local</code>
+                for localhost, or Forge variables for Jira), then restart <code className="font-mono">pnpm dev</code>.
+                See <code className="font-mono">documentation/08-complete-system-guide.md</code>, section 3.3.1.
+              </p>
+            </div>
+          )}
           <div className="bg-white border border-jira-border rounded-lg p-5 shadow-sm">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-jira-border pb-4 mb-4">
               <div>

@@ -97,7 +97,8 @@ export async function fetchDashboardData(filters: DashboardFilters): Promise<Das
 
 // ---- Raw feed (fetch once per TTL window, browser computes the filters) ----
 
-const RAW_SESSION_KEY = "jira-raw-feed-v1";
+// v2: bumped so browser copies saved before QA-config changes are discarded.
+const RAW_SESSION_KEY = "jira-raw-feed-v2";
 const RAW_FRESH_MS = 5 * 60 * 1000;
 const RAW_STALE_OK_MS = 30 * 60 * 1000;
 
