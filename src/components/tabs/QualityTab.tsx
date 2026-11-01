@@ -6,6 +6,7 @@ import {
   QualityData,
   QaCapacityData,
   QaMemberStat,
+  ZephyrData,
 } from "@/lib/jira/types";
 import { IssuesModal } from "@/components/IssuesModal";
 
@@ -13,16 +14,20 @@ interface QualityTabProps {
   data: QualityData;
   qaCapacity?: QaCapacityData;
   qaRosterConfigured?: number;
+  zephyr?: ZephyrData;
   issues?: IssueRow[];
   jiraDomain?: string;
 }
 
-export function QualityTab({ data, qaCapacity, qaRosterConfigured = 0, issues = [], jiraDomain }: QualityTabProps) {
+export function QualityTab({ data, qaCapacity, qaRosterConfigured = 0, zephyr, issues = [], jiraDomain }: QualityTabProps) {
   const [modal, setModal] = useState<{
     title: string;
     subtitle: string;
     issues: IssueRow[];
   } | null>(null);
+  // QA tab owns its filters: an in-tab pod filter independent from the shared
+  // pod/quarter/sprint bar (which is hidden on this tab).
+  const [qaPod, setQaPod] = useState("all");
 
   const bugs = issues.filter((i) => i.workType === "Bug");
   const resolvedBugs = bugs.filter((i) => i.isDone);
@@ -30,13 +35,46 @@ export function QualityTab({ data, qaCapacity, qaRosterConfigured = 0, issues = 
     setModal({ title, subtitle, issues: list });
 
   const openMember = (m: QaMemberStat) => {
-    const names = new Set([m.name, ...(m.aliasNames ?? [])]);
+    const s = sliced(m);
     open(
       `QA Workload · ${m.name}`,
-      `${m.assignedIssues} items · ${m.podNames.join(", ") || m.podKeys.join(", ") || "no pod"} · ${m.allocatedHours} of ${m.capacityHours} hrs allocated · ${m.testCases} test case${m.testCases === 1 ? "" : "s"}`,
-      issues.filter((i) => names.has(i.assignee))
+      `${s.assigned} items · ${m.podNames.join(", ") || m.podKeys.join(", ") || "no pod"} · ${s.allocated} of ${m.capacityHours} hrs allocated · ${s.tests} test case${s.tests === 1 ? "" : "s"}`,
+      memberIssueRows(m)
     );
   };
+
+  // In-tab pod options derive from the QA members' actual teams.
+  const qaPodOptions = Array.from(
+    new Set((qaCapacity?.members ?? []).flatMap((m) => m.podNames))
+  ).sort((a, b) => a.localeCompare(b));
+
+  const sliceMember = (m: QaMemberStat) => {
+    if (qaPod === "all") return { allocated: m.allocatedHours, supported: m.supportedHours, available: m.availableHours, tests: m.testCases, openTests: m.openTestCases, assigned: m.assignedIssues };
+    const matchesPod = (key: string) => m.podKeys.includes(key) || (qaPodOptions.includes(qaPod) && (m.podNames?.includes(qaPod) ?? false));
+    const allocByPod = m.hoursByPod ?? {};
+    const supByPod = m.supportByPod ?? {};
+    const tesByPod = m.testsByPod ?? {};
+    const issByPod = m.issuesByPod ?? {};
+    let podKey: string | undefined = undefined;
+    for (const i in allocByPod) if (matchesPod(i)) podKey = i;
+    if (!podKey) for (const i in tesByPod) if (matchesPod(i)) podKey = i;
+    const allocated = podKey ? (allocByPod[podKey] ?? 0) : 0;
+    const supported = podKey ? (supByPod[podKey] ?? 0) : 0;
+    const load = Math.round((allocated + supported) * 10) / 10;
+    return {
+      allocated,
+      supported,
+      available: Math.round(Math.max(0, (m.capacityHours ?? 0) - load) * 10) / 10,
+      tests: podKey ? (tesByPod[podKey] ?? 0) : 0,
+      openTests: 0,
+      assigned: podKey ? (issByPod[podKey] ?? 0) : 0,
+    };
+  };
+
+  const sliced = (m: QaMemberStat) => sliceMember(m);
+
+  const memberIssueRows = (m: QaMemberStat) =>
+    issues.filter((i) => new Set([m.name, ...(m.aliasNames ?? [])]).has(i.assignee));
 
   // Utilization bar color: green under 70% load, amber 70-100, red over.
   const loadColor = (pct: number) =>
@@ -60,9 +98,30 @@ export function QualityTab({ data, qaCapacity, qaRosterConfigured = 0, issues = 
                   {qaCapacity.testCasesTotal} test cases tracked
                 </p>
               </div>
-              <span className="text-xs font-semibold px-3 py-1 bg-jira-blue-bg text-jira-blue rounded-full border border-jira-blue/20 self-start sm:self-auto">
-                {qaCapacity.availableHours} hrs available
-              </span>
+              <div className="flex items-center gap-2 self-start sm:self-auto">
+                <span className="text-xs font-semibold px-3 py-1 bg-jira-blue-bg text-jira-blue rounded-full border border-jira-blue/20">
+                  {qaPod === "all"
+                    ? `${qaCapacity.availableHours} hrs available`
+                    : `${qaCapacity.members.reduce((a, m) => a + sliceMember(m).available, 0)} hrs available`}
+                </span>
+                <select
+                  value={qaPod}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setQaPod(next);
+                    setModal(null);
+                  }}
+                  className="text-xs font-semibold px-2 py-1.5 bg-white border border-jira-border rounded"
+                  aria-label="Filter QA team by pod"
+                >
+                  <option value="all">All pods</option>
+                  {qaPodOptions.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
@@ -162,13 +221,14 @@ export function QualityTab({ data, qaCapacity, qaRosterConfigured = 0, issues = 
                     <th className="px-4 py-2.5 text-center">Supported</th>
                     <th className="px-4 py-2.5 text-center">Available</th>
                     <th className="px-4 py-2.5 text-center">Test Cases</th>
+                    <th className="px-4 py-2.5 text-center">Zephyr Execs</th>
                     <th className="px-4 py-2.5">Load</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-jira-border/60">
                   {qaCapacity.members.length === 0 && (
                     <tr>
-                      <td colSpan={8} className="px-4 py-6 text-center text-xs text-jira-text-muted">
+                      <td colSpan={9} className="px-4 py-6 text-center text-xs text-jira-text-muted">
                         No workload rows to show — see the note below the table.
                       </td>
                     </tr>
@@ -183,19 +243,23 @@ export function QualityTab({ data, qaCapacity, qaRosterConfigured = 0, issues = 
                       <td className="px-4 py-3 text-xs text-jira-text-muted">
                         {m.podNames.join(", ") || m.podKeys.join(", ") || "—"}
                       </td>
-                      <td className="px-4 py-3 text-center text-xs font-semibold">{m.assignedIssues}</td>
-                      <td className="px-4 py-3 text-center text-xs">{m.allocatedHours} hrs</td>
-                      <td className="px-4 py-3 text-center text-xs">{m.supportedHours} hrs</td>
+                      <td className="px-4 py-3 text-center text-xs font-semibold">{sliced(m).assigned}</td>
+                      <td className="px-4 py-3 text-center text-xs">{sliced(m).allocated} hrs</td>
+                      <td className="px-4 py-3 text-center text-xs">{sliced(m).supported} hrs</td>
                       <td className="px-4 py-3 text-center text-xs font-bold text-jira-green">
-                        {m.availableHours} hrs
+                        {sliced(m).available} hrs
                       </td>
                       <td className="px-4 py-3 text-center text-xs">
-                        {m.testCases}
-                        {m.openTestCases < m.testCases && (
+                        {sliced(m).tests}
+                        {sliced(m).openTests < sliced(m).tests && (
                           <span className="text-[10px] text-jira-text-light ml-1">
-                            ({m.testCases - m.openTestCases} done)
+                            ({sliced(m).tests - sliced(m).openTests} done)
                           </span>
                         )}
+                      </td>
+                      <td className="px-4 py-3 text-center text-[11px] text-jira-text-muted whitespace-nowrap">
+                        {zephyr?.available ? m.executions ?? "—" : zephyr?.message?.slice(0, 40) ?? "—"}
+                        {!zephyr && "—"}
                       </td>
                       <td className="px-4 py-3 min-w-[130px]">
                         <div className="flex items-center gap-2">

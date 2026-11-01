@@ -21,6 +21,7 @@ import {
   SprintMeta,
   SprintOption,
   TrendsData,
+  ZephyrData,
   UnfinishedIssue,
   VelocityChartData,
 } from "./types";
@@ -317,23 +318,26 @@ function matchesSprint(itemSprints: string[] | undefined | null, target: string)
   });
 }
 
+/** Case-insensitive, whitespace/dot/underscore-insensitive name key. */
+export function normalizeName(name: string): string {
+  return name.toLowerCase().replace(/[\s._-]/g, "");
+}
+
 /**
- * QA Team Capacity & Workload (phase 1) - plain Jira data only.
- * Zephyr Essential stores test cases as Jira issues of the configured Test
- * types, so test-case counts and hour math both come from the same scoped
- * items the rest of the dashboard shares.
- * - Members: configured JIRA_QA_MEMBERS names + anyone assigned a Test
- *   issue in scope (auto-detected).
+ * QA Team Capacity & Workload (phase 1) - plain Jira data only. Mirrors the
+ * forge-side buildQaCapacity; Zephyr test cases are ordinary Test-type issues.
+ * - Members: configured JIRA_QA_MEMBERS + non-Unassigned Test assignees.
  * - Allocated hours = original estimates on open items (incl. sub-tasks).
- * - Completed hours = estimates on done items in scope.
  * - Supported hours = open estimates on the support issue types.
  * - Available = max(0, capacity - allocated - supported).
+ * - Aggregation ignores global filters on purpose: the QA tab owns its filters.
  */
 function buildQaCapacity(
   items: JiraWorkItem[],
   isDone: (status: string) => boolean,
   estimateHours: (seconds?: number) => number,
-  config: MetricConfig
+  config: MetricConfig,
+  zephyr?: ZephyrData
 ): QaCapacityData {
   const capacityHoursPerMember =
     Math.round(config.qaCapacityHoursPerWeek * 10) / 10;
@@ -353,16 +357,21 @@ function buildQaCapacity(
     supportedSeconds: number;
     testCases: number;
     openTestCases: number;
+    issuesByPod: Record<string, number>;
+    allocByPod: Record<string, number>;
+    supportByPod: Record<string, number>;
+    testsByPod: Record<string, number>;
+    openTestsByPod: Record<string, number>;
   }
   const byName = new Map<string, MemberEntry>();
 
-  // Name matching tolerates dots/spaces differences between the configured
-  // list and Jira displayNames ("Sandeep.Annaldas" == "Sandeep Annaldas").
-  const norm = (n: string) => n.toLowerCase().replace(/[\s.]/g, "");
+  // Name matching tolerates dots/spaces differences ("Sandeep.Annaldas" /
+  // "Sandeep Annaldas" both hit the same member).
+  const norm = normalizeName;
   const normMembers = config.qaMembers.map(norm);
 
   // Roster pre-seeded from the configured list so every QA member is visible
-  // even in scopes where they currently hold no matching issues.
+  // even when the current scope holds no matching issues.
   config.qaMembers.forEach((name) =>
     byName.set(name, {
       name,
@@ -375,40 +384,50 @@ function buildQaCapacity(
       supportedSeconds: 0,
       testCases: 0,
       openTestCases: 0,
+      issuesByPod: {},
+      allocByPod: {},
+      supportByPod: {},
+      testsByPod: {},
+      openTestsByPod: {},
     })
   );
 
   const track = (assignee: string): MemberEntry => {
-    const idx = normMembers.indexOf(norm(assignee));
     const key =
-      idx !== -1
-        ? config.qaMembers[idx]
-        : (config.qaMembers.find((n) => norm(n) === norm(assignee)) ?? assignee);
-    let entry = byName.get(key);
-    if (!entry) {
-      entry = {
-        name: key,
-        aliasNames: [],
-        podKeys: [],
-        podNames: [],
-        assigned: 0,
-        allocatedSeconds: 0,
-        completedSeconds: 0,
-        supportedSeconds: 0,
-        testCases: 0,
-        openTestCases: 0,
-      };
-      byName.set(key, entry);
-    }
+      config.qaMembers.find((n) => norm(n) === norm(assignee)) ?? assignee;
+    const existing = byName.get(key);
+    const entry = existing ?? {
+      name: key,
+      aliasNames: [],
+      podKeys: [],
+      podNames: [],
+      assigned: 0,
+      allocatedSeconds: 0,
+      completedSeconds: 0,
+      supportedSeconds: 0,
+      testCases: 0,
+      openTestCases: 0,
+      issuesByPod: {},
+      allocByPod: {},
+      supportByPod: {},
+      testsByPod: {},
+      openTestsByPod: {},
+    };
+    if (!existing) byName.set(key, entry);
     return entry;
   };
 
   for (const item of items) {
     const assignee = item.assignee || "Unassigned";
+    if (!assignee || assignee === "Unassigned") continue; // never a roster row
     const workType = item.workType.toLowerCase();
     const isTest = testTypes.has(workType);
     const isSupport = supportTypes.has(workType);
+    const podKey = item.podKey || "UNPOD";
 
+    const addPod = (m: Record<string, number>, d: number) => {
+      m[podKey] = (m[podKey] || 0) + d;
+    };
     if (isTest) {
       // Auto-detect: anyone assigned a Test issue joins the roster.
     } else if (normMembers.length > 0) {
@@ -422,15 +441,26 @@ function buildQaCapacity(
     if (!entry.podKeys.includes(item.podKey)) entry.podKeys.push(item.podKey);
     if (!entry.podNames.includes(item.podName)) entry.podNames.push(item.podName);
     entry.assigned += 1;
+    addPod(entry.issuesByPod, 1);
     const seconds = item.originalEstimateSeconds || 0;
-    if (isTest) entry.testCases += 1;
+    if (isTest) {
+      entry.testCases += 1;
+      addPod(entry.testsByPod, 1);
+    }
     if (isDone(item.status)) {
       entry.completedSeconds += seconds;
       continue;
     }
     entry.allocatedSeconds += seconds;
-    if (isSupport) entry.supportedSeconds += seconds;
-    if (isTest) entry.openTestCases += 1;
+    addPod(entry.allocByPod, seconds / 3600);
+    if (isSupport) {
+      entry.supportedSeconds += seconds;
+      addPod(entry.supportByPod, seconds / 3600);
+    }
+    if (isTest) {
+      entry.openTestCases += 1;
+      addPod(entry.openTestsByPod, 1);
+    }
   }
 
   const members: QaMemberStat[] = Array.from(byName.values())
@@ -438,8 +468,6 @@ function buildQaCapacity(
     .map((entry) => {
       const allocatedHours =
         Math.round(estimateHours(entry.allocatedSeconds) * 10) / 10;
-      const completedHours =
-        Math.round(estimateHours(entry.completedSeconds) * 10) / 10;
       const supportedHours =
         Math.round(estimateHours(entry.supportedSeconds) * 10) / 10;
       const load = Math.round((allocatedHours + supportedHours) * 10) / 10;
@@ -452,11 +480,26 @@ function buildQaCapacity(
         podNames: entry.podNames,
         assignedIssues: entry.assigned,
         allocatedHours,
-        completedHours,
+        completedHours:
+          Math.round(estimateHours(entry.completedSeconds) * 10) / 10,
         supportedHours,
         availableHours,
         testCases: entry.testCases,
         openTestCases: entry.openTestCases,
+        hoursByPod: Object.fromEntries(
+          Object.entries(entry.allocByPod).map(([k, sec]) => [
+            k,
+            Math.round((sec + (entry.supportByPod[k] || 0)) * 10) / 10,
+          ])
+        ),
+        supportByPod: Object.fromEntries(
+          Object.entries(entry.supportByPod).map(([k, sec]) => [
+            k,
+            Math.round(sec * 10) / 10,
+          ])
+        ),
+        testsByPod: entry.testsByPod,
+        issuesByPod: entry.issuesByPod,
         capacityHours: capacityHoursPerMember,
         utilisationPct:
           capacityHoursPerMember > 0
@@ -464,6 +507,23 @@ function buildQaCapacity(
             : 0,
       };
     });
+
+  // Zephyr execution summary per member (matched via the same tolerant key).
+  if (zephyr?.available && zephyr.metricsByAlias) {
+    const buckets = zephyr.metricsByAlias;
+    for (const member of members) {
+      const keys = [norm(member.name), ...(member.aliasNames ?? []).map(norm)];
+      const hit = keys.find((key) => buckets[key]);
+      member.executions = hit
+        ? `${buckets[hit].pass} pass · ${buckets[hit].fail} fail · ${buckets[hit].wip} wip` +
+          (buckets[hit].blocked ? ` · ${buckets[hit].blocked} blocked` : "")
+        : "no executions";
+    }
+  } else {
+    for (const member of members) {
+      member.executions = undefined;
+    }
+  }
 
   const totalCapacityHours =
     Math.round(members.length * capacityHoursPerMember * 10) / 10;
@@ -484,7 +544,8 @@ export function computeDashboardData(
   items: JiraWorkItem[],
   filters: DashboardFilters,
   sprintMeta: Record<string, SprintMeta> = {},
-  config: MetricConfig = DEFAULT_METRIC_CONFIG
+  config: MetricConfig = DEFAULT_METRIC_CONFIG,
+  zephyr?: ZephyrData
 ): DashboardData {
   const { podId, quarterId, sprintId } = filters;
   const DONE_STATUSES = new Set(config.doneStatuses);
@@ -1588,11 +1649,16 @@ export function computeDashboardData(
   }));
 
   // ---- QA Team Capacity & Workload --------------------------------------
+  // The Quality tab owns its filters and reads the FULL portfolio; shared
+  // pod/quarter/sprint filters never narrow QA members.
+  const isDoneForQa = (status: string) =>
+    DONE_STATUSES.has(status) || isSubtaskDoneStatus(status);
   const qaCapacity = buildQaCapacity(
-    activeItems,
-    (status) => DONE_STATUSES.has(status) || isSubtaskDoneStatus(status),
+    workItems,
+    isDoneForQa,
     estimateHours,
-    config
+    config,
+    zephyr
   );
 
   // Sprint → team mapping, from the pod-only scope so the dropdown keeps the
@@ -1632,6 +1698,7 @@ export function computeDashboardData(
     sprintAnalysis,
     quality,
     qaCapacity,
+    zephyr,
     predictability,
     trends,
     diagnosis,

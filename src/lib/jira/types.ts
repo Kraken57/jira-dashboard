@@ -76,6 +76,7 @@ export interface RawFeedPayload {
   jiraBaseUrl: string;
   fetchedAt: number;
   config: MetricConfig;
+  zephyr?: ZephyrData;
   source: "disk" | "disk-stale" | "jira-live" | "kvs" | "kvs-stale" | "forge-live";
   ageMs?: number;
 }
@@ -155,6 +156,13 @@ export interface QaMemberStat {
   name: string;
   /** Actual Jira assignee strings this member matched (may differ in dots/spaces). */
   aliasNames?: string[];
+  /** Per-pod slices for the in-tab team filter (formed inside the models). */
+  hoursByPod?: Record<string, number>;
+  supportByPod?: Record<string, number>;
+  testsByPod?: Record<string, number>;
+  issuesByPod?: Record<string, number>;
+  /** Zephyr execution summary (configured project keys), if ZAPI is reachable. */
+  executions?: string;
   podKeys: string[];
   podNames: string[];
   assignedIssues: number;
@@ -175,6 +183,15 @@ export interface QaCapacityData {
   supportedHours: number;
   availableHours: number;
   testCasesTotal: number;
+}
+
+export interface ZephyrData {
+  available: boolean;
+  message?: string;
+  metricsByAlias?: Record<
+    string,
+    { pass: number; fail: number; wip: number; blocked: number; unexecuted: number; total: number }
+  >;
 }
 
 export interface QualityData {
@@ -264,6 +281,7 @@ export interface DashboardData {
   sprintAnalysis: SprintAnalysisData;
   quality: QualityData;
   qaCapacity?: QaCapacityData;
+  zephyr?: ZephyrData;
   predictability: PredictabilityData;
   trends: TrendsData;
   diagnosis: DiagnosisData;

@@ -1,7 +1,7 @@
 import { isJiraConfigured, missingJiraConfig, JIRA_CONFIG } from "./config";
 import { DashboardData, DashboardFilters, JiraWorkItem, SprintMeta } from "./types";
 import { computeDashboardData, resolveMetricConfig } from "./metricsEngine";
-import { RawFeedPayload } from "./types";
+import { RawFeedPayload, ZephyrData } from "./types";
 import { deflateSync, inflateSync } from "node:zlib";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -257,14 +257,89 @@ function writeDiskFeed(feed: RawFeedPayload): void {
   }
 }
 
+/**
+ * Zephyr Essential (ZAPI) executions summary per member, best-effort.
+ * Same Jira host + Basic auth as the issue fetch; any failure degrades
+ * gracefully (available: false) instead of blocking the dashboard.
+ */
+async function fetchZephyrExecutions(): Promise<ZephyrData> {
+  const auth = Buffer.from(`${JIRA_CONFIG.email}:${JIRA_CONFIG.apiToken}`).toString("base64");
+  const headers = { Authorization: `Basic ${auth}`, Accept: "application/json" };
+  const host = (JIRA_CONFIG.host || "").replace(/\/+$/, "");
+  const projectKeys = (process.env.JIRA_ZAPI_PROJECT_KEYS || "ENTQA")
+    .split(",")
+    .map((k) => k.trim())
+    .filter(Boolean);
+
+  try {
+    const ids: number[] = [];
+    for (const key of projectKeys) {
+      await new Promise((r) => setTimeout(r, 50));
+      const pj = await fetch(`${host}/rest/api/3/project/${key}?fields=id`, { headers });
+      if (!pj.ok) {
+        return { available: false, message: `Project ${key} lookup failed (${pj.status})` };
+      }
+      const pjJson = (await pj.json()) as { id?: string };
+      const id = Number(pjJson.id);
+      if (!id) return { available: false, message: `Project ${key} has no numeric id` };
+      ids.push(id);
+    }
+
+    // # ponytail: hard-coded ZAPI default status ids (1 pass, 2 fail, 3 wip,
+    // 4 blocked). Extend via /rest/zapi/latest/execution/statuses if remapped.
+    const metricsByAlias: Record<
+      string,
+      { pass: number; fail: number; wip: number; blocked: number; unexecuted: number; total: number }
+    > = {};
+    const norm = (n: string) => n.toLowerCase().replace(/[\s._-]/g, "");
+    let executions = 0;
+    for (const projectId of ids) {
+      const r = await fetch(
+        `${host}/rest/zapi/latest/execution?projectId=${projectId}&maxResults=50000`,
+        { headers }
+      );
+      if (!r.ok) {
+        return { available: false, message: `ZAPI executions: ${r.status} (projectId ${projectId})` };
+      }
+      const json = (await r.json()) as { executions?: Record<string, unknown> };
+      const rows = Object.values(json.executions || {}) as Array<Record<string, unknown>>;
+      for (const e of rows) {
+        const owner = String((e.assigneeName as string) || e.assignee || "");
+        if (!owner || /unassigned/i.test(owner)) continue;
+        const bucket = (metricsByAlias[norm(owner)] ||= {
+          pass: 0,
+          fail: 0,
+          wip: 0,
+          blocked: 0,
+          unexecuted: 0,
+          total: 0,
+        });
+        bucket.total += 1;
+        const st = String(e.executionStatus ?? "");
+        if (st === "1") bucket.pass += 1;
+        else if (st === "2") bucket.fail += 1;
+        else if (st === "3") bucket.wip += 1;
+        else if (st === "4") bucket.blocked += 1;
+        else bucket.unexecuted += 1;
+      }
+    }
+    if (!ids.length) return { available: false, message: "No projects configured" };
+    return { available: true, metricsByAlias };
+  } catch (err) {
+    return { available: false, message: err instanceof Error ? err.message : "ZAPI unreachable" };
+  }
+}
+
 async function fetchLiveFeed(): Promise<RawFeedPayload> {
   const live = await fetchAllLiveJiraIssues();
+  const zephyr = await fetchZephyrExecutions();
   return {
     items: live.items,
     sprintMeta: live.sprintMeta,
     jiraBaseUrl: (JIRA_CONFIG.host || "").replace(/\/+$/, ""),
     fetchedAt: Date.now(),
     config: resolveMetricConfig(),
+    zephyr,
     source: "jira-live",
   };
 }
@@ -334,7 +409,7 @@ export async function getDashboardData(
     : await withInflight(fetchLiveFeed).then((f) => (writeDiskFeed(f), f));
 
   return {
-    ...computeDashboardData(feed.items, filters, feed.sprintMeta, feed.config),
+    ...computeDashboardData(feed.items, filters, feed.sprintMeta, feed.config, feed.zephyr),
     jiraBaseUrl: feed.jiraBaseUrl,
   };
 }

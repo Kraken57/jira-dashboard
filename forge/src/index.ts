@@ -406,6 +406,11 @@ function buildQaCapacity(items: any[]): any {
       supportedSeconds: number;
       testCases: number;
       openTestCases: number;
+      issuesByPod: Record<string, number>;
+      allocByPod: Record<string, number>;
+      supportByPod: Record<string, number>;
+      testsByPod: Record<string, number>;
+      openTestsByPod: Record<string, number>;
     }
   >();
 
@@ -425,36 +430,50 @@ function buildQaCapacity(items: any[]): any {
       supportedSeconds: 0,
       testCases: 0,
       openTestCases: 0,
+      issuesByPod: {},
+      allocByPod: {},
+      supportByPod: {},
+      testsByPod: {},
+      openTestsByPod: {},
     })
   );
 
   const track = (assignee: string) => {
     const idx = normMembers.indexOf(norm(assignee));
     const key = idx !== -1 ? config.qaMembers[idx] : assignee;
-    let entry = byName.get(key);
-    if (!entry) {
-      entry = {
-        name: key,
-        aliasNames: [],
-        podKeys: [],
-        podNames: [],
-        assigned: 0,
-        allocatedSeconds: 0,
-        completedSeconds: 0,
-        supportedSeconds: 0,
-        testCases: 0,
-        openTestCases: 0,
-      };
-      byName.set(key, entry);
-    }
+    const existing = byName.get(key);
+    const entry = existing ?? {
+      name: key,
+      aliasNames: [],
+      podKeys: [] as string[],
+      podNames: [] as string[],
+      assigned: 0,
+      allocatedSeconds: 0,
+      completedSeconds: 0,
+      supportedSeconds: 0,
+      testCases: 0,
+      openTestCases: 0,
+      issuesByPod: {} as Record<string, number>,
+      allocByPod: {} as Record<string, number>,
+      supportByPod: {} as Record<string, number>,
+      testsByPod: {} as Record<string, number>,
+      openTestsByPod: {} as Record<string, number>,
+    };
+    if (!existing) byName.set(key, entry);
     return entry;
   };
 
   for (const item of items) {
     const assignee = String(item.assignee || "Unassigned");
+    if (!assignee || assignee === "Unassigned") continue; // never a roster row
     const workType = String(item.workType || "").toLowerCase();
     const isTest = testTypes.has(workType);
     const isSupport = supportTypes.has(workType);
+    const podKey = item.podKey || "UNPOD";
+
+    const pushPod = (m: Record<string, number>, d: number) => {
+      m[podKey] = (m[podKey] || 0) + d;
+    };
     if (isTest) {
       // Auto-detect roster: Test issue assignment qualifies a member.
     } else if (normMembers.length > 0) {
@@ -468,15 +487,26 @@ function buildQaCapacity(items: any[]): any {
     if (!entry.podKeys.includes(item.podKey)) entry.podKeys.push(item.podKey);
     if (!entry.podNames.includes(item.podName)) entry.podNames.push(item.podName);
     entry.assigned += 1;
+    pushPod(entry.issuesByPod, 1);
     const seconds = item.originalEstimateSeconds || 0;
-    if (isTest) entry.testCases += 1;
+    if (isTest) {
+      entry.testCases += 1;
+      pushPod(entry.testsByPod, 1);
+    }
     if (isDoneStatus(item.status) || isSubtaskDoneStatus(item.status)) {
       entry.completedSeconds += seconds;
       continue;
     }
     entry.allocatedSeconds += seconds;
-    if (isSupport) entry.supportedSeconds += seconds;
-    if (isTest) entry.openTestCases += 1;
+    pushPod(entry.allocByPod, seconds / 3600);
+    if (isSupport) {
+      entry.supportedSeconds += seconds;
+      pushPod(entry.supportByPod, seconds / 3600);
+    }
+    if (isTest) {
+      entry.openTestCases += 1;
+      pushPod(entry.openTestsByPod, 1);
+    }
   }
 
   const roundHrs = (n: number) => Math.round(n * 10) / 10;
@@ -498,6 +528,17 @@ function buildQaCapacity(items: any[]): any {
         availableHours,
         testCases: entry.testCases,
         openTestCases: entry.openTestCases,
+        hoursByPod: Object.fromEntries(
+          Object.entries(entry.allocByPod).map(([k, sec]) => [
+            k,
+            roundHrs(sec + (entry.supportByPod[k] || 0)),
+          ])
+        ),
+        supportByPod: Object.fromEntries(
+          Object.entries(entry.supportByPod).map(([k, sec]) => [k, roundHrs(sec)])
+        ),
+        testsByPod: entry.testsByPod,
+        issuesByPod: entry.issuesByPod,
         capacityHours: capacityPerMember,
         utilisationPct:
           capacityPerMember > 0
@@ -518,6 +559,102 @@ function buildQaCapacity(items: any[]): any {
     availableHours: sum("availableHours"),
     testCasesTotal: members.reduce((acc, m) => acc + m.testCases, 0),
   };
+}
+
+
+/** Mirror of the frontend's ZephyrData shape (forge keeps its own copy). */
+interface ZephyrData {
+  available: boolean;
+  message?: string;
+  metricsByAlias?: Record<
+    string,
+    { pass: number; fail: number; wip: number; blocked: number; unexecuted: number; total: number }
+  >;
+}
+
+
+function qaPoolFromItems(items: any[]): any[] {
+  return items.filter((i: any) => !/^sub-?task$/i.test(String(i.workType || "")));
+}
+
+/**
+ * Zephyr Essential (ZAPI) executions summary per member, best-effort.
+ * Any failure degrades gracefully (available: false) instead of blocking.
+ */
+async function fetchZephyrExecutions(pool: any[]): Promise<ZephyrData> {
+  try {
+    const projectKeys = (process.env.JIRA_ZAPI_PROJECT_KEYS || "ENTQA")
+      .split(",")
+      .map((k) => k.trim())
+      .filter(Boolean);
+    if (!projectKeys.length) return { available: false, message: "No projects configured" };
+
+    const ids: number[] = [];
+    for (const key of projectKeys) {
+      await new Promise((r) => setTimeout(r, 50));
+      const res = await api.asApp().requestJira(
+        route`/rest/api/3/project/${key}`
+      );
+      if (!res.ok) {
+        return { available: false, message: `Project ${key} lookup: ${res.status}` };
+      }
+      const json = await res.json();
+      const id = Number(json.id);
+      if (!id) return { available: false, message: `Project ${key} has no numeric id` };
+      ids.push(id);
+    }
+
+    // # ponytail: hard-coded ZAPI default execution status ids (1 pass, 2 fail,
+    // 3 wip, 4 blocked); extend via /rest/zapi/latest/execution/statuses if a
+    // site remaps them.
+    const metricsByAlias: Record<
+      string,
+      { pass: number; fail: number; wip: number; blocked: number; unexecuted: number; total: number }
+    > = {};
+    const norm = (n: string) => n.toLowerCase().replace(/[\s._-]/g, "");
+    for (const projectId of ids) {
+      const r = await api.asApp().requestJira(
+        route`/rest/zapi/latest/execution?projectId=${projectId}`
+      );
+      if (!r.ok) {
+        return {
+          available: false,
+          message: `ZAPI executions: ${r.status} (projectId ${projectId})`,
+        };
+      }
+      const json = (await r.json()) as {
+        executions?: Record<string, unknown>;
+      };
+      const rows = Object.values(json.executions || {}) as Array<Record<string, unknown>>;
+      for (const e of rows) {
+        const owner = String((e.assigneeName as string) || e.assignee || "");
+        if (!owner || /unassigned/i.test(owner)) continue;
+        const bucket =
+          metricsByAlias[norm(owner)] ??
+          (metricsByAlias[norm(owner)] = {
+            pass: 0,
+            fail: 0,
+            wip: 0,
+            blocked: 0,
+            unexecuted: 0,
+            total: 0,
+          });
+        bucket.total += 1;
+        const st = String(e.executionStatus ?? "");
+        if (st === "1") bucket.pass += 1;
+        else if (st === "2") bucket.fail += 1;
+        else if (st === "3") bucket.wip += 1;
+        else if (st === "4") bucket.blocked += 1;
+        else bucket.unexecuted += 1;
+      }
+    }
+    return { available: true, metricsByAlias };
+  } catch (err) {
+    return {
+      available: false,
+      message: err instanceof Error ? err.message : "ZAPI unavailable",
+    };
+  }
 }
 
 function calculateKPIs(
@@ -1151,6 +1288,7 @@ interface FeedEnvelope {
   jiraBaseUrl: string;
   fetchedAt: number;
   config: ReturnType<typeof resolveFeedConfig>;
+  zephyr?: ZephyrData;
 }
 
 async function fetchAndStoreFeed(): Promise<FeedEnvelope> {
@@ -1181,6 +1319,9 @@ async function fetchAndStoreFeed(): Promise<FeedEnvelope> {
     fetchedAt: Date.now(),
     config: resolveFeedConfig(),
   };
+
+  const zephyr = await fetchZephyrExecutions(qaPoolFromItems(envelope.items));
+  envelope.zephyr = zephyr;
 
   const compressed = zlib
     .deflateSync(Buffer.from(JSON.stringify(envelope)))

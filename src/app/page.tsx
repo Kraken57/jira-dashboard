@@ -39,7 +39,7 @@ const TAB_FILTERS: Record<string, FilterKey[]> = {
   executive: ["pod", "quarter", "sprint"],
   pod: ["pod", "quarter", "sprint"],
   developer: ["pod", "quarter", "sprint", "developer"],
-  quality: ["pod", "quarter", "sprint"],
+  quality: [], // QA tab owns its filters (per-member, per-team slicing)
   predictability: ["pod", "quarter"],
   diagnosis: ["pod", "quarter", "sprint", "status"],
   issues: ["pod", "quarter", "sprint"],
@@ -81,7 +81,8 @@ export default function DashboardPage() {
             feed.items,
             { podId: "all", quarterId: "all", sprintId: "all" },
             feed.sprintMeta,
-            feed.config
+            feed.config,
+            feed.zephyr
           )
         : null,
     [feed]
@@ -99,7 +100,8 @@ export default function DashboardPage() {
         sprintId: "all",
       },
       feed.sprintMeta,
-      feed.config
+      feed.config,
+      feed.zephyr
     );
   }, [feed, baseFilters.pod]);
 
@@ -114,7 +116,8 @@ export default function DashboardPage() {
           sprintId: effectiveSprint,
         },
         feed.sprintMeta,
-        feed.config
+        feed.config,
+        feed.zephyr
       ),
       jiraBaseUrl: feed.jiraBaseUrl,
     };
@@ -377,6 +380,7 @@ export default function DashboardPage() {
               data={dashboardData.quality}
               qaCapacity={dashboardData.qaCapacity}
               qaRosterConfigured={feed?.config?.qaMembers?.length ?? 0}
+              zephyr={dashboardData.zephyr}
               issues={dashboardData.issueList}
               jiraDomain={dashboardData.jiraBaseUrl}
             />
