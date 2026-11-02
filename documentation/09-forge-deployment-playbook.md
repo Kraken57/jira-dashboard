@@ -40,7 +40,7 @@ pnpm run build:forge
 - Output: `./out` copied to `forge/out` (the manifest resource paths read `out` relative to `forge/`).
 - The script temporarily swaps `src/app/api/jira/route.ts` for the Forge stub and **restores it** on success/failure/kill — the last log line must say `Restored original /api/jira route`.
 - Two build steps live inside it and matter: `assetPrefix: "./"` + a sweep for absolute `/_next/...` (Forge serves Custom UI from a **nested** path — absolute asset URLs 404 and the page renders as bare HTML), and `next build --webpack` (Turbopack's chunk runtime throws an invariant under Forge and aborts hydration).
-- Tailwind for the Forge build runs through `postcss.config.js` (gated on `FORGE_BUILD=true`); without it the CSS ships with no utility classes.
+- Tailwind runs through the shared `postcss.config.js` for local development and Forge builds, so utility classes compile under either Webpack or Turbopack.
 
 ---
 
@@ -144,7 +144,7 @@ Success signals:
 |---|---|---|
 | Page = bare HTML, no CSS/JS/interactivity in the iframe | Absolute `/_next/...` asset URLs 404 under Forge's nested path | `assetPrefix: "./"` in `next.config.ts` (Forge builds only) + the `/_next` path sweep in `scripts/build-forge.mjs` |
 | `Invariant: Expected document.currentScript src to contain './​_next/'` and the page freezes prerendered | Turbopack chunk runtime aborts when assetPrefix is relative (browsers strip `./` during URL resolution) | Build with `next build --webpack` (set in `scripts/build-forge.mjs`) |
-| Page hydrates + data loads but **no styling/colors** | Tailwind v4 wired only through the Turbopack loader; the webpack Forge build ships CSS with zero utility classes | `postcss.config.js` gated on `FORGE_BUILD=true` running `@tailwindcss/postcss` (Next requires a **plain object** export, not a function) |
+| Page hydrates + data loads but **no styling/colors** | Tailwind PostCSS plugin missing, dependency install incomplete, or stale build output | Confirm `@tailwindcss/postcss` is installed, keep its plugin enabled in `postcss.config.js`, clear `.next`/`out`, and rebuild |
 | `Function with handler "index.handler" was not found` in the browser | Frontend browser cache or the Jira SPA pinned a stale embed/version | Fresh/incognito window; re-run `forge install --upgrade` if it persists |
 | `Forge raw feed failed: …` / `Failed to fetch dashboard data` after variables changed | Variables are baked into the deployed version | Re-run `forge deploy` after `forge variables set` |
 | `ApplicationCompileError` with no detail | The imported SDK isn't supported by the platform compile service (seen with `@forge/kvs`) | Use the facade pattern: `forge/src/kvsClient.ts` degrades to the legacy storage module and keeps `kvs` app-surface semantics; re-try the SDK import later |

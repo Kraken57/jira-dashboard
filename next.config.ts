@@ -18,14 +18,6 @@ const nextConfig: NextConfig = {
   // be relative ("./_next/..."); absolute "/_next/..." 404s and strips all
   // CSS/JS from the page.
   assetPrefix: isForgeBuild ? "./" : undefined,
-  turbopack: {
-    rules: {
-      "*.css": {
-        loaders: ["@tailwindcss/turbopack"],
-        as: "*.css",
-      },
-    },
-  },
 };
 
 export default nextConfig;

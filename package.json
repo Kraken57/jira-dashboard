@@ -2,6 +2,10 @@
   "name": "jira-dashboard",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@12.11.2",
+  "engines": {
+    "node": ">=22.0.0 <23"
+  },
   "scripts": {
     "dev": "next dev",
     "predev": "node scripts/ensure-local-route.mjs",
@@ -16,14 +20,13 @@
   "dependencies": {
     "@forge/bridge": "^7.2.1",
     "chart.js": "^4.5.1",
-    "next": "16.4.2",
+    "next": "16 .4.2",
     "react": "19.3.0",
     "react-chartjs-2": "^5.3.1",
     "react-dom": "19.3.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
-    "@tailwindcss/turbopack": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

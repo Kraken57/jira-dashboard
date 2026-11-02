@@ -30,7 +30,7 @@ There is **no database and no mock data** — no Jira config means an error, nev
 ## Tech stack
 
 - Next.js `16.4.2` (App Router, `src/` directory; Turbopack dev), React `19.3.0`, TypeScript 5
-- Tailwind CSS v4 (`@tailwindcss/turbopack`), Chart.js 4 + react-chartjs-2
+- Tailwind CSS v4 (`@tailwindcss/postcss` for both Webpack and Turbopack), Chart.js 4 + react-chartjs-2
 - `@forge/api` / `@forge/resolver` / `@forge/bridge` for the Forge side — `forge/` is a standalone pnpm project (own `package.json` + lockfile, nodejs22.x runtime), not a workspace member; `pnpm-workspace.yaml` only carries pnpm policy settings
 - Secrets live in `.env.local` (never commit — it is gitignored); `.env.example` documents all knobs
 

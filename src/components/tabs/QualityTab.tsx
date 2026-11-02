@@ -151,7 +151,7 @@ export function QualityTab({ data, qaCapacity, qaRosterConfigured = 0, zephyr, i
                   aria-label="Filter QA defects by project"
                   className="w-full rounded-xl border border-white/15 bg-slate-800 px-3 py-2.5 text-sm font-medium text-white outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-400/30"
                 >
-                  <option value="all">All projects</option>
+                  <option value="all">All pods</option>
                   {defectProjects.map((project) => <option key={project.key} value={project.key}>{project.name}</option>)}
                 </select>
               </label>
