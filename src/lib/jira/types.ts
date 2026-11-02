@@ -74,6 +74,10 @@ export interface RawFeedPayload {
   items: JiraWorkItem[];
   /** QA defects fetched from Jira using the dedicated QA defect JQL. */
   qaDefects?: IssueRow[];
+  /** Optional separately queried UAT defects. Undefined means no JQL is configured. */
+  qaUatDefects?: IssueRow[];
+  /** Optional separately queried escaped/leaked defects. Undefined means no JQL is configured. */
+  qaLeakageDefects?: IssueRow[];
   /** Opaque hash of the JQL inputs used to create this cached feed. */
   queryFingerprint?: string;
   sprintMeta: Record<string, SprintMeta>;
@@ -237,6 +241,7 @@ export interface IssueRow {
   projectName?: string;
   priority: string;
   createdDate: string;
+  resolutionDate?: string;
   dueDate?: string;
   isDone: boolean;
   originalEstimateHours?: number;

@@ -1268,6 +1268,8 @@ interface FeedMeta {
 interface FeedEnvelope {
   items: any[];
   qaDefects: any[];
+  qaUatDefects?: any[];
+  qaLeakageDefects?: any[];
   sprintMeta: Record<string, any>;
   jiraBaseUrl: string;
   fetchedAt: number;
@@ -1297,11 +1299,15 @@ async function fetchAndStoreFeed(): Promise<FeedEnvelope> {
   ];
   const baseDefectJql = config.jql.replace(/\s+ORDER\s+BY[\s\S]*$/i, "").trim();
   const defectJql = process.env.JIRA_QA_DEFECT_JQL?.trim() || `(${baseDefectJql}) AND issuetype = Bug`;
-  const [issues, defectIssues] = await Promise.all([
+  const uatDefectJql = process.env.JIRA_QA_UAT_DEFECT_JQL?.trim() || "";
+  const leakageDefectJql = process.env.JIRA_QA_LEAKAGE_DEFECT_JQL?.trim() || "";
+  const [issues, defectIssues, uatDefectIssues, leakageDefectIssues] = await Promise.all([
     jiraClient.searchIssuesJql(config.jql, fields),
     jiraClient.searchIssuesJql(defectJql, fields),
+    uatDefectJql ? jiraClient.searchIssuesJql(uatDefectJql, fields) : Promise.resolve([]),
+    leakageDefectJql ? jiraClient.searchIssuesJql(leakageDefectJql, fields) : Promise.resolve([]),
   ]);
-  const qaDefects = defectIssues.map((issue: any) => {
+  const mapQaDefects = (source: any[]) => source.map((issue: any) => {
     const item = mapIssueToWorkItem(issue, config);
     return {
       key: item.key,
@@ -1318,13 +1324,17 @@ async function fetchAndStoreFeed(): Promise<FeedEnvelope> {
       projectName: item.projectName,
       priority: item.priority || "Medium",
       createdDate: item.createdDate || "",
+      resolutionDate: item.resolutionDate || undefined,
       dueDate: item.dueDate || "",
       isDone: isDoneStatus(item.status),
       originalEstimateHours: Math.round((item.originalEstimateSeconds || 0) / 360) / 10,
     };
   });
+  const qaDefects = mapQaDefects(defectIssues);
   const envelope: FeedEnvelope = {
     qaDefects,
+    ...(uatDefectJql ? { qaUatDefects: mapQaDefects(uatDefectIssues) } : {}),
+    ...(leakageDefectJql ? { qaLeakageDefects: mapQaDefects(leakageDefectIssues) } : {}),
     items: inheritParentContext(
       issues.map((issue: any) => mapIssueToWorkItem(issue, config))
     ),

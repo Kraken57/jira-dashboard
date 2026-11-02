@@ -244,12 +244,14 @@ function getFeedQueries() {
   const mainJql = process.env.JIRA_JQL || "project in (DTR)";
   const baseDefectJql = mainJql.replace(/\s+ORDER\s+BY[\s\S]*$/i, "").trim();
   const defectJql = process.env.JIRA_QA_DEFECT_JQL?.trim() || `(${baseDefectJql}) AND issuetype = Bug`;
-  return { mainJql, defectJql };
+  const uatDefectJql = process.env.JIRA_QA_UAT_DEFECT_JQL?.trim() || "";
+  const leakageDefectJql = process.env.JIRA_QA_LEAKAGE_DEFECT_JQL?.trim() || "";
+  return { mainJql, defectJql, uatDefectJql, leakageDefectJql };
 }
 
 function getFeedQueryFingerprint(): string {
-  const { mainJql, defectJql } = getFeedQueries();
-  return createHash("sha256").update(`${mainJql}\n${defectJql}`).digest("hex");
+  const { mainJql, defectJql, uatDefectJql, leakageDefectJql } = getFeedQueries();
+  return createHash("sha256").update(`${mainJql}\n${defectJql}\n${uatDefectJql}\n${leakageDefectJql}`).digest("hex");
 }
 
 let inflightFetch: Promise<RawFeedPayload> | null = null;
@@ -363,14 +365,16 @@ async function fetchZephyrExecutions(): Promise<ZephyrData> {
 }
 
 async function fetchLiveFeed(): Promise<RawFeedPayload> {
-  const { mainJql, defectJql } = getFeedQueries();
-  const [live, defectFeed] = await Promise.all([
+  const { mainJql, defectJql, uatDefectJql, leakageDefectJql } = getFeedQueries();
+  const [live, defectFeed, uatDefectFeed, leakageDefectFeed] = await Promise.all([
     fetchAllLiveJiraIssues(mainJql, "dashboard"),
     fetchAllLiveJiraIssues(defectJql, "QA defects"),
+    uatDefectJql ? fetchAllLiveJiraIssues(uatDefectJql, "QA UAT defects") : Promise.resolve({ items: [], sprintMeta: {} }),
+    leakageDefectJql ? fetchAllLiveJiraIssues(leakageDefectJql, "QA leaked defects") : Promise.resolve({ items: [], sprintMeta: {} }),
   ]);
   const zephyr = await fetchZephyrExecutions();
   const doneStatuses = new Set(resolveMetricConfig().doneStatuses);
-  const qaDefects = defectFeed.items.map((item) => ({
+  const mapDefects = (items: JiraWorkItem[]) => items.map((item) => ({
     key: item.key,
     summary: item.summary,
     workType: item.workType,
@@ -385,13 +389,17 @@ async function fetchLiveFeed(): Promise<RawFeedPayload> {
     projectName: item.projectName,
     priority: item.priority || "Medium",
     createdDate: item.createdDate || "",
+    resolutionDate: item.resolutionDate || undefined,
     dueDate: item.dueDate || "",
     isDone: doneStatuses.has(item.status),
     originalEstimateHours: Math.round((item.originalEstimateSeconds || 0) / 360) / 10,
   }));
+  const qaDefects = mapDefects(defectFeed.items);
   return {
     items: live.items,
     qaDefects,
+    ...(uatDefectJql ? { qaUatDefects: mapDefects(uatDefectFeed.items) } : {}),
+    ...(leakageDefectJql ? { qaLeakageDefects: mapDefects(leakageDefectFeed.items) } : {}),
     queryFingerprint: getFeedQueryFingerprint(),
     sprintMeta: live.sprintMeta,
     jiraBaseUrl: (JIRA_CONFIG.host || "").replace(/\/+$/, ""),

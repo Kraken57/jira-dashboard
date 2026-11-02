@@ -377,12 +377,13 @@ export default function DashboardPage() {
 
           {activeTab === "quality" && dashboardData && (
             <QualityTab
-              data={dashboardData.quality}
               qaCapacity={dashboardData.qaCapacity}
               qaRosterConfigured={feed?.config?.qaMembers?.length ?? 0}
               zephyr={dashboardData.zephyr}
               issues={dashboardData.issueList}
               qaDefects={feed?.qaDefects ?? []}
+              qaUatDefects={feed?.qaUatDefects}
+              qaLeakageDefects={feed?.qaLeakageDefects}
               fetchedAt={feed?.fetchedAt}
               jiraDomain={dashboardData.jiraBaseUrl}
             />

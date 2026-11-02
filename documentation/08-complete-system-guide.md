@@ -111,6 +111,8 @@ settings, not secrets**. Restart `pnpm dev` after editing them.
 
 ```bash
 JIRA_QA_DEFECT_JQL=(project in (ABC)) AND issuetype = Bug
+JIRA_QA_UAT_DEFECT_JQL=(project in (ABC)) AND issuetype = Bug AND labels = uat
+JIRA_QA_LEAKAGE_DEFECT_JQL=(project in (ABC)) AND issuetype = Bug AND labels = escaped
 JIRA_QA_MEMBERS=Sandeep Annaldas,Arun Aare,Naman Goel,Anantha Garapati,Roja PS,Sahaj Arora,Durga Sridhar Kaligotla
 JIRA_QA_CAPACITY_HOURS_PER_WEEK=40
 JIRA_QA_TEST_ISSUE_TYPES=Test
@@ -123,8 +125,11 @@ QA Defects section. When empty, it defaults to `(${JIRA_JQL}) AND issuetype = Bu
 Use the saved filter's JQL from the existing QA Jira dashboard when its scope, issue
 types, or project set differs. This uses the regular Jira API token and requires issue
 and reporter visibility; it does not depend on Zephyr authentication. The defects view
-groups issues by Jira reporter and project and supports project/reporter filters and
-issue drilldowns. Configure the same variable in Forge environment variables for Forge.
+groups issues by Jira reporter and pod and supports pod/reporter filters and issue
+drilldowns. Configure the same variable in Forge environment variables for Forge.
+The optional UAT and leakage queries must encode reliable Jira workflow labels, fields,
+or other site-specific criteria. When absent, their cards show N/A rather than implying
+that the count is zero.
 
 - `JIRA_QA_MEMBERS` is the always-visible roster. Names match Jira display names,
   ignoring case, spaces, dots and underscores.
@@ -845,7 +850,10 @@ If no active sprint start date is known, all SP is treated as planned.
 - `defectDensity = bugs / completedStoryPoints × 100` (displayed as “per 100 delivered SP”).
 - `resolutionRate = resolvedBugs / totalBugs × 100`.
 - `avgResolutionDays` = average `(resolutionDate − createdDate)` for **resolved bugs only**.
-- `priorityDistribution` = count of **all active items** per priority (not only bugs).
+- Quality-tab priority distribution counts QA defect issues by priority.
+- The Quality tab's defect lifecycle cards use the dedicated QA defect query and pod/reporter scope: completed means a configured done status (or Done, Accepted, Released, Closed, Resolved, Completed); active excludes completed and canceled/rejected items.
+- UAT count uses optional `JIRA_QA_UAT_DEFECT_JQL`. Defect leakage is distinct issues returned by optional `JIRA_QA_LEAKAGE_DEFECT_JQL` divided by distinct QA defect issues, times 100. With no query, the metric is N/A.
+- Defect density is distinct QA bugs per 100 delivered story points for the selected pod scope; without delivered story points it is N/A.
 
 ### 9.10 Predictability
 
@@ -1102,6 +1110,8 @@ forge variables set -e development JIRA_JQL "project in (ABC)"
 forge variables set -e development JIRA_STORY_POINTS_FIELD customfield_10031
 forge variables set -e development JIRA_SPRINT_FIELD customfield_10020
 forge variables set -e development JIRA_POD_FIELD customfield_10050
+forge variables set -e development JIRA_QA_UAT_DEFECT_JQL "YOUR_UAT_DEFECT_JQL"
+forge variables set -e development JIRA_QA_LEAKAGE_DEFECT_JQL "YOUR_ESCAPED_DEFECT_JQL"
 forge variables set -e development JIRA_DONE_STATUSES "Done,Accepted,Released,Closed,Resolved"
 forge variables set -e development JIRA_SUBTASK_DONE_STATUSES "Done,Closed,Resolved,Completed,Released,Accepted"
 forge variables list -e development   # verify
@@ -1440,6 +1450,9 @@ If full Forge parity is required, port the logic from `metricsEngine.ts` into
 | `JIRA_EMAIL` | yes (local) | — | Basic auth email |
 | `JIRA_API_TOKEN` | yes (local) | — | Basic auth token |
 | `JIRA_JQL` | no | `project in (DTR)` | Issue scope |
+| `JIRA_QA_DEFECT_JQL` | no | Base JQL plus `issuetype = Bug` | QA defect population |
+| `JIRA_QA_UAT_DEFECT_JQL` | no | unset | Optional UAT defect slice; unset displays N/A |
+| `JIRA_QA_LEAKAGE_DEFECT_JQL` | no | unset | Optional escaped-defect slice; unset displays N/A |
 | `JIRA_STORY_POINTS_FIELD` | no | `customfield_10031` (local) / `10078` (Forge) | Story Points field |
 | `JIRA_SPRINT_FIELD` | no | `customfield_10020` | Sprint field |
 | `JIRA_POD_FIELD` | no | `customfield_10050` (local) / `10001` (Forge) | POD/team field |

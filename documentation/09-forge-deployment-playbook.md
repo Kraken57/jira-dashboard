@@ -73,6 +73,9 @@ forge variables set --environment development JIRA_QA_CAPACITY_HOURS_PER_WEEK 40
 forge variables set --environment development JIRA_QA_TEST_ISSUE_TYPES "Test"
 forge variables set --environment development JIRA_QA_SUPPORT_ISSUE_TYPES "Support"
 forge variables set --environment development JIRA_QA_MEMBERS "Sandeep Annaldas,Arun Aare,Naman Goel,Anantha Garapati,Roja PS,Sahaj Arora,Durga Sridhar Kaligotla"
+# Optional lifecycle slices; leave unset until Jira has a trusted classification.
+forge variables set --environment development JIRA_QA_UAT_DEFECT_JQL "YOUR_UAT_DEFECT_JQL"
+forge variables set --environment development JIRA_QA_LEAKAGE_DEFECT_JQL "YOUR_ESCAPED_DEFECT_JQL"
 forge variables list --environment development     # verify
 ```
 

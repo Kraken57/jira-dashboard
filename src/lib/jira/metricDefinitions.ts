@@ -68,6 +68,21 @@ const DEFINITIONS: Record<string, Omit<MetricInsight, "recent" | "trend">> = {
     howToCompare:
       "Lower is better. Compare across pods and sprints, and read it together with Bug Resolution Rate.",
   },
+  "UAT Defects": {
+    what: "Defects returned by the optional Jira UAT defect query.",
+    formula: "Distinct defect keys returned by JIRA_QA_UAT_DEFECT_JQL in the selected pod and reporter scope",
+    howToCompare: "Use a Jira filter that reliably identifies defects found during UAT. The card shows N/A until that query is configured.",
+  },
+  "Defect Leakage": {
+    what: "QA defects that escaped into a later validation or production stage.",
+    formula: "Distinct leaked defect keys ÷ distinct QA defect keys × 100",
+    howToCompare: "Configure JIRA_QA_LEAKAGE_DEFECT_JQL to identify escaped defects. Keep its scope aligned with the main QA defect query.",
+  },
+  "Completed Defects": {
+    what: "QA defects whose Jira status is marked done, accepted, released, closed, resolved, or completed.",
+    formula: "Count of completed defect issues in the selected pod and reporter scope",
+    howToCompare: "Compare with active and canceled defects; inspect the linked issues to review closure status.",
+  },
   "Bug Resolution Rate": {
     what: "Share of bugs that are resolved.",
     formula: "Resolved bugs ÷ all bugs × 100",

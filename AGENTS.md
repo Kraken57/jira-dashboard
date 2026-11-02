@@ -93,11 +93,11 @@ Mental model: issues are downloaded once (and cached raw), filtered in memory in
 
 ## Current Quality Tab Focus
 
-- `src/components/tabs/QualityTab.tsx` combines bug KPIs, severity distribution, QA capacity/workload, member drilldowns, and optional Zephyr execution summaries. The `quality` section uses the dashboard's shared Pod/Quarter/Sprint issue scope; QA workload aggregates the raw feed independently and provides its own pod filter.
-- Local bug calculations live in `src/lib/jira/metricsEngine.ts`; QA workload is built by `buildQaCapacity` from configured roster and assigned Test/support issues, using open original estimates, configured weekly capacity, and tolerant assignee-name matching. Types are in `src/lib/jira/types.ts`.
+- `src/components/tabs/QualityTab.tsx` combines defect status/reporting, defect lifecycle KPIs, QA capacity/workload, member drilldowns, and optional Zephyr execution summaries. Defect cards and the reporter matrix derive from the dedicated `qaDefects` raw feed and pod/reporter filters. Optional `qaUatDefects` and `qaLeakageDefects` feeds come from their corresponding JQL variables; cards show N/A until configured.
+- Quality-tab defect lifecycle cards derive from the dedicated `qaDefects` feed; density uses completed story points from the current issue scope. Optional UAT and leakage JQL feeds are implemented in `src/lib/jira/jiraService.ts` and `forge/src/index.ts`. QA workload is built by `buildQaCapacity` from configured roster and assigned Test/support issues, using open original estimates, configured weekly capacity, and tolerant assignee-name matching. Types are in `src/lib/jira/types.ts`.
 - Zephyr Essential integration is best-effort in `src/lib/jira/jiraService.ts` (`JIRA_ZAPI_PROJECT_KEYS`, default `ENTQA`) and mirrored in `forge/src/index.ts`. It uses ZAPI execution status IDs 1–4; failures degrade to unavailable status. Jira Test issue types remain separate from Zephyr execution data.
 - Forge duplicates the Quality and QA calculations in `forge/src/index.ts`; keep behavior aligned when changing shared rules. Forge parity is incomplete in other areas; consult guide 08 §17.
-- Known Quality caveats: the “Defect Severity” priority breakdown currently counts all scoped issues, not only bugs. The Forge resolver's quality KPIs are currently zero-valued, although its QA workload and Zephyr paths exist. Capacity is estimate-based and does not account for holidays or actual availability.
+- Known Quality caveats: UAT and escaped-defect results require site-specific JQL classification; no query means N/A, not zero. Density is N/A when delivered story points are unavailable. Capacity is estimate-based and does not account for holidays or actual availability.
 
 ## Architecture and Change Guidance
 
