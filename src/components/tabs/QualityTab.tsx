@@ -48,8 +48,6 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
   const defectRows = defectScope.filter((issue) =>
     !defectReporterSearch.trim() || (issue.reporter || "Unassigned").toLowerCase().includes(defectReporterSearch.trim().toLowerCase())
   );
-  const defectStatuses = Array.from(new Set(defectRows.map((issue) => issue.status)))
-    .sort((a, b) => a.localeCompare(b));
   const reporterNames = Array.from(new Set(defectRows.map((issue) => issue.reporter || "Unassigned")))
     .sort((a, b) => a.localeCompare(b));
   const defectColumns = defectPod === "all"
@@ -70,6 +68,7 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
   const completedDefectRows = defectAnalysisRows.filter(isCompletedDefect);
   const activeDefectRows = defectAnalysisRows.filter((issue) => !isCompletedDefect(issue) && !isCancelledDefect(issue));
   const cancelledDefectRows = defectAnalysisRows.filter(isCancelledDefect);
+  const pendingDefectRows = defectAnalysisRows.filter((issue) => /pending/i.test(issue.status));
   const uniqueCount = (rows: IssueRow[]) => new Set(rows.map((issue) => issue.key)).size;
   const qaDefectCount = uniqueCount(defectAnalysisRows);
   const densityDefectRows = defectScope.filter((issue) => /^bug$/i.test(issue.workType));
@@ -202,6 +201,41 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
           </div>
         </div>
 
+        <div className="flex flex-wrap items-center justify-between gap-2 px-5 pt-5 sm:px-7">
+          <div>
+            <h3 className="text-sm font-bold text-slate-900">Defect status summary</h3>
+            <p className="mt-0.5 text-[11px] text-slate-500">Counts follow the selected pod and reporter search</p>
+          </div>
+          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-600">{defectPod === "all" ? "All pods" : defectPods.find((pod) => pod.key === defectPod)?.name ?? defectPod}</span>
+        </div>
+        <div className="grid grid-cols-2 gap-3 border-b border-slate-200 bg-slate-50/70 p-5 sm:grid-cols-3 sm:p-7 xl:grid-cols-5">
+          <button type="button" onClick={() => open("Total QA Defects", "Distinct defects in the selected pod and reporter scope", defectAnalysisRows)} className="rounded-xl border border-indigo-100 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md">
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-indigo-700">Total defects</p>
+            <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900">{qaDefectCount}</p>
+            <p className="mt-1 text-[11px] text-slate-500">All QA bugs in this scope</p>
+          </button>
+          <button type="button" onClick={() => open("Accepted / Completed Defects", `${uniqueCount(completedDefectRows)} completed defects`, completedDefectRows)} className="rounded-xl border border-emerald-100 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md">
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-emerald-700">Accepted / completed</p>
+            <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900">{uniqueCount(completedDefectRows)}</p>
+            <p className="mt-1 text-[11px] text-slate-500">Done, accepted, or resolved</p>
+          </button>
+          <button type="button" onClick={() => open("Canceled Defects", `${uniqueCount(cancelledDefectRows)} canceled defects`, cancelledDefectRows)} className="rounded-xl border border-rose-100 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-rose-300 hover:shadow-md">
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-rose-700">Canceled</p>
+            <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900">{uniqueCount(cancelledDefectRows)}</p>
+            <p className="mt-1 text-[11px] text-slate-500">Canceled or rejected</p>
+          </button>
+          <button type="button" onClick={() => open("Pending Defects", `${uniqueCount(pendingDefectRows)} pending defects`, pendingDefectRows)} className="rounded-xl border border-amber-100 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-amber-300 hover:shadow-md">
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-amber-700">Pending</p>
+            <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900">{uniqueCount(pendingDefectRows)}</p>
+            <p className="mt-1 text-[11px] text-slate-500">Pending workflow status</p>
+          </button>
+          <button type="button" onClick={() => open("UAT Defects", qaUatDefects === undefined ? "Configure JIRA_QA_UAT_DEFECT_JQL to enable this analysis" : `${uniqueCount(uatDefectRows ?? [])} UAT defects in the selected scope`, uatDefectRows ?? [])} className="rounded-xl border border-sky-100 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-sky-300 hover:shadow-md">
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-sky-700">UAT defects</p>
+            <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900">{qaUatDefects === undefined ? "N/A" : uniqueCount(uatDefectRows ?? [])}</p>
+            <p className="mt-1 text-[11px] text-slate-500">{qaUatDefects === undefined ? "Query not configured" : "From the UAT Jira query"}</p>
+          </button>
+        </div>
+
         {qaDefects.length === 0 ? (
           <div className="px-5 py-12 text-center sm:px-7">
             <p className="text-sm font-semibold text-slate-800">No defects found</p>
@@ -213,30 +247,7 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
             <button type="button" onClick={() => setDefectReporterSearch("")} className="mt-2 text-xs font-semibold text-indigo-700 hover:text-indigo-900">Clear reporter search</button>
           </div>
         ) : (
-          <div className="space-y-6 p-5 sm:p-7">
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
-              <button type="button" onClick={() => open("Total QA Defects", "Defects in the selected pod and reporter scope", defectRows)} className="group rounded-xl border border-indigo-100 bg-indigo-50/70 p-4 text-left transition hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-md">
-                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-indigo-700">Total defects</p>
-                <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900">{defectRows.length}</p>
-                <p className="mt-1 text-[11px] text-slate-500">All selected issues</p>
-              </button>
-              {defectStatuses.map((status) => {
-                const rows = defectRows.filter((issue) => issue.status === status);
-                const statusTone = /accept|done|closed|resolved|released/i.test(status)
-                  ? "border-emerald-100 bg-emerald-50/70 text-emerald-700"
-                  : /cancel|reject/i.test(status)
-                  ? "border-rose-100 bg-rose-50/70 text-rose-700"
-                  : "border-slate-200 bg-slate-50 text-slate-600";
-                return (
-                  <button key={status} type="button" onClick={() => open(`${status} QA Defects`, `${rows.length} Jira issues`, rows)} className={`group rounded-xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md ${statusTone}`}>
-                    <p className="truncate text-[10px] font-bold uppercase tracking-[0.12em]" title={status}>{status}</p>
-                    <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900">{rows.length}</p>
-                    <p className="mt-1 text-[11px] text-slate-500">View matching issues</p>
-                  </button>
-                );
-              })}
-            </div>
-
+          <div className="p-5 pt-0 sm:px-7 sm:pb-7">
             <div className="overflow-hidden rounded-xl border border-slate-200">
               <div className="flex flex-col gap-1 border-b border-slate-200 bg-slate-50/80 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -271,6 +282,10 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
         )}
 
       <div className="space-y-6 border-t border-slate-200 p-5 sm:p-7">
+      <div>
+        <h3 className="text-sm font-bold text-slate-900">Defect analysis</h3>
+        <p className="mt-0.5 text-[11px] text-slate-500">Trend and lifecycle measures for the selected QA defect scope</p>
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <button
           type="button"
@@ -280,15 +295,6 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
           <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Defect Density</p>
           <p className="text-2xl font-bold text-jira-text mt-1">{defectDensity ?? "N/A"}</p>
           <p className="text-xs text-jira-text-light mt-1">Per 100 delivered SP · pod scope</p>
-        </button>
-        <button
-          type="button"
-          onClick={() => open("UAT Defects", qaUatDefects === undefined ? "Configure JIRA_QA_UAT_DEFECT_JQL to enable this analysis" : `${uniqueCount(uatDefectRows ?? [])} UAT defects in the selected scope`, uatDefectRows ?? [])}
-          className="text-left bg-white border border-jira-border rounded-lg p-4 shadow-sm hover:border-jira-blue/50 transition"
-        >
-          <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">UAT Defects</p>
-          <p className="text-2xl font-bold text-jira-text mt-1">{qaUatDefects === undefined ? "N/A" : uniqueCount(uatDefectRows ?? [])}</p>
-          <p className="text-xs text-jira-text-light mt-1">{qaUatDefects === undefined ? "UAT defect query not configured" : "Matches the configured UAT Jira query"}</p>
         </button>
         <button
           type="button"
