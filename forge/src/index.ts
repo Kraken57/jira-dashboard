@@ -639,29 +639,44 @@ async function fetchZephyrExecutions(_pool: any[]): Promise<ZephyrData> {
   try {
     const metricsByAlias: NonNullable<ZephyrData["metricsByAlias"]> = {};
     let testCasesTotal = 0;
+    let successfulProjects = 0;
+    const projectErrors: string[] = [];
     const norm = (name: string) => name.toLowerCase().replace(/[\s._-]/g, "");
     for (const project of projects) {
-      const cases = await allPages("testcases", project);
-      testCasesTotal += cases.total ?? cases.values.length;
-      const executions = await allPages("testexecutions", project);
-      for (const execution of executions.values) {
-        const ownerValue = execution.executedBy || execution.executedByName || execution.assignedTo || execution.assignedToName || execution.assignee;
-        const owner = typeof ownerValue === "object" && ownerValue
-          ? String((ownerValue as Record<string, unknown>).displayName || (ownerValue as Record<string, unknown>).name || "")
-          : String(ownerValue || "");
-        if (!owner || /unassigned/i.test(owner)) continue;
-        const bucket = metricsByAlias[norm(owner)] ||= { pass: 0, fail: 0, wip: 0, blocked: 0, unexecuted: 0, total: 0 };
-        bucket.total++;
-        const rawStatus = execution.testExecutionStatus ?? execution.executionStatus ?? execution.status;
-        const status = String(typeof rawStatus === "object" && rawStatus ? (rawStatus as Record<string, unknown>).name ?? (rawStatus as Record<string, unknown>).status ?? "" : rawStatus ?? execution.testExecutionStatusName ?? "").toLowerCase();
-        if (/pass/.test(status)) bucket.pass++;
-        else if (/fail/.test(status)) bucket.fail++;
-        else if (/progress|wip/.test(status)) bucket.wip++;
-        else if (/block/.test(status)) bucket.blocked++;
-        else bucket.unexecuted++;
+      try {
+        const cases = await allPages("testcases", project);
+        testCasesTotal += cases.total ?? cases.values.length;
+        successfulProjects += 1;
+        const executions = await allPages("testexecutions", project);
+        for (const execution of executions.values) {
+          const ownerValue = execution.executedBy || execution.executedByName || execution.assignedTo || execution.assignedToName || execution.assignee;
+          const owner = typeof ownerValue === "object" && ownerValue
+            ? String((ownerValue as Record<string, unknown>).displayName || (ownerValue as Record<string, unknown>).name || "")
+            : String(ownerValue || "");
+          if (!owner || /unassigned/i.test(owner)) continue;
+          const bucket = metricsByAlias[norm(owner)] ||= { pass: 0, fail: 0, wip: 0, blocked: 0, unexecuted: 0, total: 0 };
+          bucket.total++;
+          const rawStatus = execution.testExecutionStatus ?? execution.executionStatus ?? execution.status;
+          const status = String(typeof rawStatus === "object" && rawStatus ? (rawStatus as Record<string, unknown>).name ?? (rawStatus as Record<string, unknown>).status ?? "" : rawStatus ?? execution.testExecutionStatusName ?? "").toLowerCase();
+          if (/pass/.test(status)) bucket.pass++;
+          else if (/fail/.test(status)) bucket.fail++;
+          else if (/progress|wip/.test(status)) bucket.wip++;
+          else if (/block/.test(status)) bucket.blocked++;
+          else bucket.unexecuted++;
+        }
+      } catch (error) {
+        projectErrors.push(`${project}: ${error instanceof Error ? error.message : "request failed"}`);
       }
     }
-    return { available: true, metricsByAlias, testCasesTotal };
+    if (!successfulProjects) {
+      return { available: false, message: projectErrors.join("; ") || "No Zephyr projects could be read" };
+    }
+    return {
+      available: true,
+      metricsByAlias,
+      testCasesTotal,
+      ...(projectErrors.length ? { message: `Partial Zephyr data: ${projectErrors.join("; ")}` } : {}),
+    };
   } catch (error) {
     return { available: false, message: error instanceof Error ? error.message : "Zephyr Cloud unavailable" };
   }

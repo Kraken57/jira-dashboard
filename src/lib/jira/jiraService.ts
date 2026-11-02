@@ -349,37 +349,52 @@ async function fetchZephyrExecutions(): Promise<ZephyrData> {
     > = {};
     const norm = (n: string) => n.toLowerCase().replace(/[\s._-]/g, "");
     let totalTestCases = 0;
+    let successfulProjects = 0;
+    const projectErrors: string[] = [];
     for (const key of projectKeys) {
-      const cases = await requestAllPages("testcases", key);
-      totalTestCases += cases.total ?? cases.values.length;
-      const executions = await requestAllPages("testexecutions", key);
-      for (const e of executions.values) {
-        const ownerValue = e.executedBy || e.executedByName || e.assignedTo || e.assignedToName || e.assignee;
-        const owner = typeof ownerValue === "object" && ownerValue
-          ? String((ownerValue as Record<string, unknown>).displayName || (ownerValue as Record<string, unknown>).name || "")
-          : String(ownerValue || "");
-        if (!owner || /unassigned/i.test(owner)) continue;
-        const bucket = (metricsByAlias[norm(owner)] ||= {
-          pass: 0,
-          fail: 0,
-          wip: 0,
-          blocked: 0,
-          unexecuted: 0,
-          total: 0,
-        });
-        bucket.total += 1;
-        const rawStatus = e.testExecutionStatus ?? e.executionStatus ?? e.status;
-        const status = String(typeof rawStatus === "object" && rawStatus
-          ? (rawStatus as Record<string, unknown>).name ?? (rawStatus as Record<string, unknown>).status ?? ""
-          : rawStatus ?? e.testExecutionStatusName ?? "").toLowerCase();
-        if (/pass/.test(status)) bucket.pass += 1;
-        else if (/fail/.test(status)) bucket.fail += 1;
-        else if (/progress|wip/.test(status)) bucket.wip += 1;
-        else if (/block/.test(status)) bucket.blocked += 1;
-        else bucket.unexecuted += 1;
+      try {
+        const cases = await requestAllPages("testcases", key);
+        totalTestCases += cases.total ?? cases.values.length;
+        successfulProjects += 1;
+        const executions = await requestAllPages("testexecutions", key);
+        for (const e of executions.values) {
+          const ownerValue = e.executedBy || e.executedByName || e.assignedTo || e.assignedToName || e.assignee;
+          const owner = typeof ownerValue === "object" && ownerValue
+            ? String((ownerValue as Record<string, unknown>).displayName || (ownerValue as Record<string, unknown>).name || "")
+            : String(ownerValue || "");
+          if (!owner || /unassigned/i.test(owner)) continue;
+          const bucket = (metricsByAlias[norm(owner)] ||= {
+            pass: 0,
+            fail: 0,
+            wip: 0,
+            blocked: 0,
+            unexecuted: 0,
+            total: 0,
+          });
+          bucket.total += 1;
+          const rawStatus = e.testExecutionStatus ?? e.executionStatus ?? e.status;
+          const status = String(typeof rawStatus === "object" && rawStatus
+            ? (rawStatus as Record<string, unknown>).name ?? (rawStatus as Record<string, unknown>).status ?? ""
+            : rawStatus ?? e.testExecutionStatusName ?? "").toLowerCase();
+          if (/pass/.test(status)) bucket.pass += 1;
+          else if (/fail/.test(status)) bucket.fail += 1;
+          else if (/progress|wip/.test(status)) bucket.wip += 1;
+          else if (/block/.test(status)) bucket.blocked += 1;
+          else bucket.unexecuted += 1;
+        }
+      } catch (error) {
+        projectErrors.push(`${key}: ${error instanceof Error ? error.message : "request failed"}`);
       }
     }
-    return { available: true, metricsByAlias, testCasesTotal: totalTestCases };
+    if (!successfulProjects) {
+      return { available: false, message: projectErrors.join("; ") || "No Zephyr projects could be read" };
+    }
+    return {
+      available: true,
+      metricsByAlias,
+      testCasesTotal: totalTestCases,
+      ...(projectErrors.length ? { message: `Partial Zephyr data: ${projectErrors.join("; ")}` } : {}),
+    };
   } catch (err) {
     return { available: false, message: err instanceof Error ? err.message : "Zephyr Cloud unavailable" };
   }

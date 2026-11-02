@@ -391,10 +391,15 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
       {/* ---- QA Team Capacity & Workload (phase 1) ---- */}
       {qaCapacity && (
         <>
-          {zephyr && !zephyr.available && (
+          {zephyr?.message && (
             <div className="rounded-md border border-jira-amber/40 bg-jira-amber/10 px-4 py-3">
-              <p className="text-xs font-bold text-jira-text">Zephyr execution data is unavailable</p>
-              <p className="text-[11px] text-jira-text-muted mt-1">{zephyr.message || "The API returned no execution data."} Check the Zephyr API configuration and the signed-in account’s project access.</p>
+              <p className="text-xs font-bold text-jira-text">
+                {zephyr.available ? "Some Zephyr project data is unavailable" : "Zephyr execution data is unavailable"}
+              </p>
+              <p className="text-[11px] text-jira-text-muted mt-1">
+                {zephyr.message}
+                {!zephyr.available && " Check the Zephyr API configuration and the signed-in account’s project access."}
+              </p>
             </div>
           )}
           {qaCapacity.members.length === 0 && qaRosterConfigured === 0 && (
