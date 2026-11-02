@@ -72,8 +72,8 @@ export function PredictabilityTab({ data }: PredictabilityTabProps) {
               </tr>
             </thead>
             <tbody className="divide-y divide-jira-border/60">
-              {data.history.map((row) => (
-                <tr key={row.sprint} className="hover:bg-jira-bg/30 transition-colors">
+              {data.history.map((row, index) => (
+                <tr key={`${row.sprint}-${index}`} className="hover:bg-jira-bg/30 transition-colors">
                   <td className="px-6 py-3 font-semibold text-jira-text">{row.sprint}</td>
                   <td className="px-6 py-3 text-right text-jira-text-muted font-medium">{row.planned} SP</td>
                   <td className="px-6 py-3 text-right font-bold text-jira-blue">{row.delivered} SP</td>
@@ -163,8 +163,8 @@ export function PredictabilityTab({ data }: PredictabilityTabProps) {
                   </td>
                 </tr>
               ) : (
-                data.history.map((row) => (
-                  <tr key={row.sprint}>
+                data.history.map((row, index) => (
+                  <tr key={`${row.sprint}-${index}`}>
                     <td className="px-5 py-2.5 text-xs font-semibold">{row.sprint}</td>
                     <td className="px-5 py-2.5 text-xs text-right">{row.planned} SP</td>
                     <td className="px-5 py-2.5 text-xs text-right">{row.delivered} SP</td>

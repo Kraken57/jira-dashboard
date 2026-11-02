@@ -237,18 +237,25 @@ export function PodTab({ data, podName }: PodTabProps) {
                         data: typeStatuses.map((s) => s.count),
                         backgroundColor: typeStatuses.map((s) => s.color),
                         borderColor: "#ffffff",
-                        borderWidth: 2,
-                        hoverOffset: 10,
+                        borderWidth: 3,
+                        hoverOffset: 8,
                       },
                     ],
                   }}
                   options={{
                     responsive: true,
                     maintainAspectRatio: false,
-                    layout: { padding: 4 },
+                    layout: { padding: 10 },
                     plugins: {
                       legend: { display: false },
                       tooltip: {
+                        backgroundColor: "#172b4d",
+                        titleColor: "#ffffff",
+                        bodyColor: "#e8eef7",
+                        borderColor: "#334b6b",
+                        borderWidth: 1,
+                        padding: 11,
+                        cornerRadius: 9,
                         callbacks: {
                           label: (ctx) => {
                             const value = Number(ctx.raw) || 0;

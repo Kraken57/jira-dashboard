@@ -102,23 +102,30 @@ function VelocityChart({ data }: VelocityChartProps) {
             plugins: {
               legend: {
                 position: "top",
-                labels: { font: { size: 9 }, color: "#585f6b", padding: 6 },
+                labels: { font: { size: 9 }, color: "#536174", padding: 10, usePointStyle: true, boxWidth: 7 },
               },
               tooltip: {
                 mode: "index",
                 intersect: false,
                 titleFont: { size: 10 },
                 bodyFont: { size: 11 },
+                backgroundColor: "#172b4d",
+                titleColor: "#ffffff",
+                bodyColor: "#e8eef7",
+                borderColor: "#334b6b",
+                borderWidth: 1,
+                padding: 10,
+                cornerRadius: 9,
               },
             },
             interaction: { mode: "index", intersect: false },
             scales: {
               y: {
                 beginAtZero: true,
-                ticks: { stepSize: 10, font: { size: 9 }, color: "#585f6b" },
-                grid: { color: "#e8eaed" },
+                ticks: { stepSize: 10, font: { size: 9 }, color: "#64748b", padding: 6 },
+                grid: { color: "#edf1f6", drawTicks: false },
               },
-              x: { ticks: { font: { size: 9 }, color: "#585f6b" }, grid: { display: false } },
+              x: { ticks: { font: { size: 9 }, color: "#64748b", padding: 5 }, grid: { display: false } },
             },
           }}
         />
@@ -176,23 +183,30 @@ function DeliveryChart({ data }: DeliveryChartProps) {
             plugins: {
               legend: {
                 position: "top",
-                labels: { font: { size: 9 }, color: "#585f6b", padding: 6 },
+                labels: { font: { size: 9 }, color: "#536174", padding: 10, usePointStyle: true, boxWidth: 7 },
               },
               tooltip: {
                 mode: "index",
                 intersect: false,
                 titleFont: { size: 10 },
                 bodyFont: { size: 11 },
+                backgroundColor: "#172b4d",
+                titleColor: "#ffffff",
+                bodyColor: "#e8eef7",
+                borderColor: "#334b6b",
+                borderWidth: 1,
+                padding: 10,
+                cornerRadius: 9,
               },
             },
             interaction: { mode: "index", intersect: false },
             scales: {
               y: {
                 beginAtZero: true,
-                ticks: { stepSize: 10, font: { size: 9 }, color: "#585f6b" },
-                grid: { color: "#e8eaed" },
+                ticks: { stepSize: 10, font: { size: 9 }, color: "#64748b", padding: 6 },
+                grid: { color: "#edf1f6", drawTicks: false },
               },
-              x: { ticks: { font: { size: 9 }, color: "#585f6b" }, grid: { display: false } },
+              x: { ticks: { font: { size: 9 }, color: "#64748b", padding: 5 }, grid: { display: false } },
             },
           }}
         />

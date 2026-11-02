@@ -75,9 +75,9 @@ export function MetricCard({
       onClick={onOpen}
       disabled={!onOpen}
       title={onOpen ? `View details for ${title}` : undefined}
-      className={`${c.bg} w-full text-left rounded-lg p-4 border border-jira-border/50 transition ${
+      className={`dashboard-metric-card ${c.bg} w-full text-left rounded-2xl p-5 border border-jira-border/50 transition ${
         onOpen
-          ? "cursor-pointer hover:shadow-md hover:border-jira-blue/40"
+          ? "cursor-pointer hover:-translate-y-0.5 hover:shadow-lg hover:border-jira-blue/40"
           : "cursor-default"
       }`}
     >

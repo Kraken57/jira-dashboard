@@ -275,7 +275,7 @@ export default function DashboardPage() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
+      <div className="dashboard-workspace space-y-6">
         {/* Page heading with live dataset summary */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
           <div>
