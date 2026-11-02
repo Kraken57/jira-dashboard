@@ -582,7 +582,7 @@ function qaPoolFromItems(items: any[]): any[] {
   return items.filter((i: any) => !/^sub-?task$/i.test(String(i.workType || "")));
 }
 
-/** Zephyr Cloud v2 API uses the API access token created in the Zephyr UI. */
+/** Zephyr Essential Cloud v2.9 uses the API access token created in the Zephyr UI. */
 async function fetchZephyrExecutions(_pool: any[]): Promise<ZephyrData> {
   const token = process.env.JIRA_ZEPHYR_API_TOKEN?.trim();
   const projects = (process.env.JIRA_ZEPHYR_PROJECT_KEYS || "")
@@ -590,7 +590,7 @@ async function fetchZephyrExecutions(_pool: any[]): Promise<ZephyrData> {
   if (!token || !projects.length) {
     return { available: false, message: "Configure JIRA_ZEPHYR_API_TOKEN and JIRA_ZEPHYR_PROJECT_KEYS in Forge variables" };
   }
-  const base = "https://api.zephyrscale.smartbear.com/v2";
+  const base = "https://prod-api.zephyr4jiracloud.com/v2";
   const page = async (endpoint: string, projectKey: string, startAt: number) => {
     const query = new URLSearchParams({ projectKey, startAt: String(startAt), maxResults: "100" });
     const response = await fetch(`${base}/${endpoint}?${query}`, {

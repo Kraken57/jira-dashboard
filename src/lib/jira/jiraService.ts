@@ -284,7 +284,7 @@ function writeDiskFeed(feed: RawFeedPayload): void {
   }
 }
 
-/** Zephyr Essentials uses a separate Bearer access token and v2 API. */
+/** Zephyr Essential Cloud v2.9 uses a UI-generated Bearer access token. */
 async function fetchZephyrExecutions(): Promise<ZephyrData> {
   const token = process.env.JIRA_ZEPHYR_API_TOKEN?.trim();
   if (!token) return { available: false, message: "Configure JIRA_ZEPHYR_API_TOKEN to enable Zephyr Essentials data" };
@@ -294,7 +294,7 @@ async function fetchZephyrExecutions(): Promise<ZephyrData> {
     .filter(Boolean);
   if (!projectKeys.length) return { available: false, message: "Set JIRA_ZEPHYR_PROJECT_KEYS to the Jira projects containing Zephyr tests" };
 
-  const base = "https://api.zephyrscale.smartbear.com/v2";
+  const base = "https://prod-api.zephyr4jiracloud.com/v2";
   const requestPage = async (endpoint: string, projectKey: string, startAt: number) => {
     const query = new URLSearchParams({ projectKey, startAt: String(startAt), maxResults: "100" });
     const response = await fetch(`${base}/${endpoint}?${query}`, {
