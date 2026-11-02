@@ -128,7 +128,7 @@ export function writeSessionRawFeed(feed: RawFeedPayload): void {
  * - Inside Jira (Forge iframe): resolver getRawFeed (KVS-backed).
  * - Localhost: GET /api/jira?raw=1 (disk-file backed).
  */
-export async function fetchRawFeed(): Promise<RawFeedPayload> {
+export async function fetchRawFeed(forceRefresh = false): Promise<RawFeedPayload> {
   if (typeof window === "undefined") {
     throw new Error("fetchRawFeed must be called in the browser");
   }
@@ -136,7 +136,7 @@ export async function fetchRawFeed(): Promise<RawFeedPayload> {
   const inForgeIframe = window.self !== window.top;
   if (inForgeIframe) {
     const { invoke } = await import("@forge/bridge");
-    const feed = (await invoke("getRawFeed")) as RawFeedPayload & { error?: string };
+    const feed = (await invoke("getRawFeed", forceRefresh ? { refresh: true } : undefined)) as RawFeedPayload & { error?: string };
     // The resolver packages its own failures as { error } instead of throwing.
     if (feed && typeof feed.error === "string") {
       throw new Error(`Forge raw feed failed: ${feed.error}`);
@@ -144,7 +144,7 @@ export async function fetchRawFeed(): Promise<RawFeedPayload> {
     return feed;
   }
 
-  const url = `${BASE_URL.replace(/\/+$/, "")}/api/jira?raw=1`;
+  const url = `${BASE_URL.replace(/\/+$/, "")}/api/jira?raw=1${forceRefresh ? "&refresh=1" : ""}`;
   let res: Response;
   try {
     res = await fetch(url, {

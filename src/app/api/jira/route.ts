@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     // Raw feed: the browser computes every filter itself. One request per TTL
     // window, then filter clicks never touch the network again.
     if (searchParams.get("raw") === "1") {
-      const feed = await getRawFeed();
+      const feed = await getRawFeed(searchParams.get("refresh") === "1");
       return NextResponse.json(feed, {
         status: 200,
         headers: { "Cache-Control": "no-store, max-age=0" },

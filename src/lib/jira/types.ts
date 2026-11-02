@@ -74,6 +74,8 @@ export interface RawFeedPayload {
   items: JiraWorkItem[];
   /** QA defects fetched from Jira using the dedicated QA defect JQL. */
   qaDefects?: IssueRow[];
+  /** Opaque hash of the JQL inputs used to create this cached feed. */
+  queryFingerprint?: string;
   sprintMeta: Record<string, SprintMeta>;
   jiraBaseUrl: string;
   fetchedAt: number;

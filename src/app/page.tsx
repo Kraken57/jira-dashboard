@@ -146,7 +146,7 @@ export default function DashboardPage() {
       }
 
       try {
-        const next = await fetchRawFeed();
+        const next = await fetchRawFeed(hard);
         if (!next || !Array.isArray(next.items)) {
           throw new Error("Raw feed response is missing its items array.");
         }

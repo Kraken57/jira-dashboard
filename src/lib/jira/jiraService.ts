@@ -3,6 +3,7 @@ import { DashboardData, DashboardFilters, JiraWorkItem, SprintMeta } from "./typ
 import { computeDashboardData, resolveMetricConfig } from "./metricsEngine";
 import { RawFeedPayload, ZephyrData } from "./types";
 import { deflateSync, inflateSync } from "node:zlib";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -38,7 +39,7 @@ export function quarterFromSprint(sprintName: string): string {
  * from the Sprint field, so the dashboard can order sprints and reason about
  * the active/future ones without extra board API calls.
  */
-async function fetchAllLiveJiraIssues(jqlOverride?: string): Promise<{
+async function fetchAllLiveJiraIssues(jqlOverride?: string, queryLabel = "dashboard"): Promise<{
   items: JiraWorkItem[];
   sprintMeta: Record<string, SprintMeta>;
 }> {
@@ -53,8 +54,10 @@ async function fetchAllLiveJiraIssues(jqlOverride?: string): Promise<{
 
   const allIssues: Record<string, unknown>[] = [];
   let nextPageToken: string | undefined = undefined;
+  let pagesFetched = 0;
 
   for (let page = 0; page < 50; page++) {
+    pagesFetched += 1;
     const requestBody: Record<string, unknown> = {
       jql,
       maxResults: 100,
@@ -108,13 +111,16 @@ async function fetchAllLiveJiraIssues(jqlOverride?: string): Promise<{
     }
 
     const json = await response.json();
-    if (json.issues && json.issues.length > 0) {
-      allIssues.push(...json.issues);
+    if (!json || !Array.isArray(json.issues)) {
+      throw new Error(`Jira ${queryLabel} search returned an unexpected response: missing issues array`);
     }
+    allIssues.push(...json.issues);
 
     if (!json.nextPageToken) break;
     nextPageToken = json.nextPageToken;
   }
+
+  console.info(`[jiraService] Jira ${queryLabel} search returned ${allIssues.length} issues across ${pagesFetched} page(s)`);
 
   const sprintMeta: Record<string, SprintMeta> = {};
 
@@ -234,6 +240,18 @@ const CACHE_TTL_MS = Number(process.env.JIRA_CACHE_TTL_MS || 300000); // 5 min
 const STALE_MAX_MS = Number(process.env.JIRA_CACHE_STALE_MAX_MS || 1800000); // 30 min
 const CACHE_FILE = join(process.cwd(), ".cache", "jira-feed.json.deflate");
 
+function getFeedQueries() {
+  const mainJql = process.env.JIRA_JQL || "project in (DTR)";
+  const baseDefectJql = mainJql.replace(/\s+ORDER\s+BY[\s\S]*$/i, "").trim();
+  const defectJql = process.env.JIRA_QA_DEFECT_JQL?.trim() || `(${baseDefectJql}) AND issuetype = Bug`;
+  return { mainJql, defectJql };
+}
+
+function getFeedQueryFingerprint(): string {
+  const { mainJql, defectJql } = getFeedQueries();
+  return createHash("sha256").update(`${mainJql}\n${defectJql}`).digest("hex");
+}
+
 let inflightFetch: Promise<RawFeedPayload> | null = null;
 
 function readDiskFeed(): RawFeedPayload | null {
@@ -244,6 +262,7 @@ function readDiskFeed(): RawFeedPayload | null {
     ) as RawFeedPayload;
     if (!Array.isArray(feed.items)) return null;
     if (!Array.isArray(feed.qaDefects)) return null;
+    if (feed.queryFingerprint !== getFeedQueryFingerprint()) return null;
     return feed;
   } catch {
     // Corrupt/half-written file: ignore, we will fetch live.
@@ -344,12 +363,10 @@ async function fetchZephyrExecutions(): Promise<ZephyrData> {
 }
 
 async function fetchLiveFeed(): Promise<RawFeedPayload> {
-  const mainJql = process.env.JIRA_JQL || "project in (DTR)";
-  const baseDefectJql = mainJql.replace(/\s+ORDER\s+BY[\s\S]*$/i, "").trim();
-  const defectJql = process.env.JIRA_QA_DEFECT_JQL?.trim() || `(${baseDefectJql}) AND issuetype = Bug`;
+  const { mainJql, defectJql } = getFeedQueries();
   const [live, defectFeed] = await Promise.all([
-    fetchAllLiveJiraIssues(mainJql),
-    fetchAllLiveJiraIssues(defectJql),
+    fetchAllLiveJiraIssues(mainJql, "dashboard"),
+    fetchAllLiveJiraIssues(defectJql, "QA defects"),
   ]);
   const zephyr = await fetchZephyrExecutions();
   const doneStatuses = new Set(resolveMetricConfig().doneStatuses);
@@ -375,6 +392,7 @@ async function fetchLiveFeed(): Promise<RawFeedPayload> {
   return {
     items: live.items,
     qaDefects,
+    queryFingerprint: getFeedQueryFingerprint(),
     sprintMeta: live.sprintMeta,
     jiraBaseUrl: (JIRA_CONFIG.host || "").replace(/\/+$/, ""),
     fetchedAt: Date.now(),
@@ -400,14 +418,14 @@ async function withInflight(job: () => Promise<RawFeedPayload>): Promise<RawFeed
  * - stale copy (<= 30 min old) -> serve it AND refresh quietly in background
  * - no/too-old copy -> block on one live Jira fetch (the only slow moment)
  */
-export async function getRawFeed(): Promise<RawFeedPayload> {
+export async function getRawFeed(forceRefresh = false): Promise<RawFeedPayload> {
   if (!isJiraConfigured()) {
     throw new Error(
       `Jira is not configured. Missing ${missingJiraConfig().join(", ")} in .env.local`
     );
   }
 
-  const disk = readDiskFeed();
+  const disk = forceRefresh ? null : readDiskFeed();
   const ageMs = disk ? Date.now() - disk.fetchedAt : Infinity;
 
   if (disk && ageMs <= CACHE_TTL_MS) {

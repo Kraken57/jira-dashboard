@@ -1472,8 +1472,14 @@ resolver.define("getDashboardData", async (req) => {
 });
 
 
-resolver.define("getRawFeed", async () => {
+resolver.define("getRawFeed", async (req) => {
   try {
+    const forceRefresh = Boolean((req.payload as { refresh?: boolean } | undefined)?.refresh);
+    if (forceRefresh) {
+      const envelope = await fetchAndStoreFeed();
+      return { ...envelope, source: "forge-live", ageMs: Date.now() - envelope.fetchedAt };
+    }
+
     const metaRaw = (await kvs.get(FEED_META_KEY).catch(
       () => undefined
     )) as FeedMeta | undefined;
