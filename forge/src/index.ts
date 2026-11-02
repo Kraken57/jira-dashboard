@@ -591,47 +591,74 @@ async function fetchZephyrExecutions(_pool: any[]): Promise<ZephyrData> {
     return { available: false, message: "Configure JIRA_ZEPHYR_API_TOKEN and JIRA_ZEPHYR_PROJECT_KEYS in Forge variables" };
   }
   const base = "https://prod-api.zephyr4jiracloud.com/v2";
-  const page = async (endpoint: string, projectKey: string, startAt: number) => {
-    const query = new URLSearchParams({ projectKey, startAt: String(startAt), maxResults: "100" });
-    const response = await fetch(`${base}/${endpoint}?${query}`, {
-      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-    });
-    if (!response.ok) throw new Error(`Zephyr API ${endpoint} returned ${response.status}`);
-    return response.json() as Promise<{ values?: Record<string, unknown>[]; total?: number; isLast?: boolean }>;
+  const allPages = async (endpoint: string, projectKey: string) => {
+    const firstUrl = new URL(`${base}/${endpoint}`);
+    firstUrl.search = new URLSearchParams({ projectKey, startAt: "0", maxResults: "100" }).toString();
+    let url: URL | null = firstUrl;
+    let startAt = 0;
+    let total: number | undefined;
+    const values: Record<string, unknown>[] = [];
+    const allowedHosts = new Set(["prod-api.zephyr4jiracloud.com", "prod-play.zephyr4jiracloud.com"]);
+    let pageCount = 0;
+    while (url && pageCount++ < 1000) {
+      if (url.protocol !== "https:" || !allowedHosts.has(url.hostname)) {
+        throw new Error("Zephyr returned an unexpected pagination URL");
+      }
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      });
+      if (!response.ok) {
+        throw new Error(`Zephyr Essential API GET ${url.pathname} for project ${projectKey} returned ${response.status}`);
+      }
+      const page = await response.json() as {
+        values?: Record<string, unknown>[];
+        total?: number;
+        isLast?: boolean;
+        next?: string;
+        maxResults?: number;
+      };
+      const rows = page.values ?? [];
+      if (total === undefined) total = page.total;
+      values.push(...rows);
+      startAt += rows.length;
+      if (page.isLast === true || !rows.length) {
+        url = null;
+      } else if (page.next) {
+        url = new URL(page.next, url);
+      } else if (page.isLast === false || rows.length >= (page.maxResults ?? 100)) {
+        const fallback = new URL(firstUrl);
+        fallback.searchParams.set("startAt", String(startAt));
+        url = fallback;
+      } else {
+        url = null;
+      }
+    }
+    if (url) throw new Error(`Zephyr Essential API pagination exceeded the safety limit for ${endpoint}`);
+    return { values, total };
   };
   try {
     const metricsByAlias: NonNullable<ZephyrData["metricsByAlias"]> = {};
     let testCasesTotal = 0;
     const norm = (name: string) => name.toLowerCase().replace(/[\s._-]/g, "");
     for (const project of projects) {
-      for (const endpoint of ["testcases", "testexecutions"] as const) {
-        let startAt = 0;
-        let last = false;
-        while (!last) {
-          const result = await page(endpoint, project, startAt);
-          const rows = result.values ?? [];
-          if (endpoint === "testcases") {
-            if (startAt === 0) testCasesTotal += result.total ?? rows.length;
-          } else for (const execution of rows) {
-            const ownerValue = execution.executedBy || execution.executedByName || execution.assignedTo || execution.assignedToName || execution.assignee;
-            const owner = typeof ownerValue === "object" && ownerValue
-              ? String((ownerValue as Record<string, unknown>).displayName || (ownerValue as Record<string, unknown>).name || "")
-              : String(ownerValue || "");
-            if (!owner || /unassigned/i.test(owner)) continue;
-            const bucket = metricsByAlias[norm(owner)] ||= { pass: 0, fail: 0, wip: 0, blocked: 0, unexecuted: 0, total: 0 };
-            bucket.total++;
-            const rawStatus = execution.testExecutionStatus ?? execution.executionStatus ?? execution.status;
-            const status = String(typeof rawStatus === "object" && rawStatus ? (rawStatus as Record<string, unknown>).name ?? (rawStatus as Record<string, unknown>).status ?? "" : rawStatus ?? execution.testExecutionStatusName ?? "").toLowerCase();
-            if (/pass/.test(status)) bucket.pass++;
-            else if (/fail/.test(status)) bucket.fail++;
-            else if (/progress|wip/.test(status)) bucket.wip++;
-            else if (/block/.test(status)) bucket.blocked++;
-            else bucket.unexecuted++;
-          }
-          last = result.isLast ?? rows.length < 100;
-          if (!rows.length) break;
-          startAt += rows.length;
-        }
+      const cases = await allPages("testcases", project);
+      testCasesTotal += cases.total ?? cases.values.length;
+      const executions = await allPages("testexecutions", project);
+      for (const execution of executions.values) {
+        const ownerValue = execution.executedBy || execution.executedByName || execution.assignedTo || execution.assignedToName || execution.assignee;
+        const owner = typeof ownerValue === "object" && ownerValue
+          ? String((ownerValue as Record<string, unknown>).displayName || (ownerValue as Record<string, unknown>).name || "")
+          : String(ownerValue || "");
+        if (!owner || /unassigned/i.test(owner)) continue;
+        const bucket = metricsByAlias[norm(owner)] ||= { pass: 0, fail: 0, wip: 0, blocked: 0, unexecuted: 0, total: 0 };
+        bucket.total++;
+        const rawStatus = execution.testExecutionStatus ?? execution.executionStatus ?? execution.status;
+        const status = String(typeof rawStatus === "object" && rawStatus ? (rawStatus as Record<string, unknown>).name ?? (rawStatus as Record<string, unknown>).status ?? "" : rawStatus ?? execution.testExecutionStatusName ?? "").toLowerCase();
+        if (/pass/.test(status)) bucket.pass++;
+        else if (/fail/.test(status)) bucket.fail++;
+        else if (/progress|wip/.test(status)) bucket.wip++;
+        else if (/block/.test(status)) bucket.blocked++;
+        else bucket.unexecuted++;
       }
     }
     return { available: true, metricsByAlias, testCasesTotal };

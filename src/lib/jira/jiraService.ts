@@ -295,14 +295,51 @@ async function fetchZephyrExecutions(): Promise<ZephyrData> {
   if (!projectKeys.length) return { available: false, message: "Set JIRA_ZEPHYR_PROJECT_KEYS to the Jira projects containing Zephyr tests" };
 
   const base = "https://prod-api.zephyr4jiracloud.com/v2";
-  const requestPage = async (endpoint: string, projectKey: string, startAt: number) => {
-    const query = new URLSearchParams({ projectKey, startAt: String(startAt), maxResults: "100" });
-    const response = await fetch(`${base}/${endpoint}?${query}`, {
-      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-      cache: "no-store",
-    });
-    if (!response.ok) throw new Error(`Zephyr Essentials API returned ${response.status}`);
-    return response.json() as Promise<{ values?: Record<string, unknown>[]; total?: number; isLast?: boolean }>;
+  const requestAllPages = async (endpoint: string, projectKey: string) => {
+    const firstUrl = new URL(`${base}/${endpoint}`);
+    firstUrl.search = new URLSearchParams({ projectKey, startAt: "0", maxResults: "100" }).toString();
+    let url: URL | null = firstUrl;
+    let startAt = 0;
+    let total: number | undefined;
+    const values: Record<string, unknown>[] = [];
+    const allowedHosts = new Set(["prod-api.zephyr4jiracloud.com", "prod-play.zephyr4jiracloud.com"]);
+    let pageCount = 0;
+    while (url && pageCount++ < 1000) {
+      if (url.protocol !== "https:" || !allowedHosts.has(url.hostname)) {
+        throw new Error("Zephyr returned an unexpected pagination URL");
+      }
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error(`Zephyr Essentials API GET ${url.pathname} for project ${projectKey} returned ${response.status}`);
+      }
+      const page = await response.json() as {
+        values?: Record<string, unknown>[];
+        total?: number;
+        isLast?: boolean;
+        next?: string;
+        maxResults?: number;
+      };
+      const rows = page.values ?? [];
+      if (total === undefined) total = page.total;
+      values.push(...rows);
+      startAt += rows.length;
+      if (page.isLast === true || !rows.length) {
+        url = null;
+      } else if (page.next) {
+        url = new URL(page.next, url);
+      } else if (page.isLast === false || rows.length >= (page.maxResults ?? 100)) {
+        const fallback = new URL(firstUrl);
+        fallback.searchParams.set("startAt", String(startAt));
+        url = fallback;
+      } else {
+        url = null;
+      }
+    }
+    if (url) throw new Error(`Zephyr Essentials API pagination exceeded the safety limit for ${endpoint}`);
+    return { values, total };
   };
 
   try {
@@ -313,24 +350,10 @@ async function fetchZephyrExecutions(): Promise<ZephyrData> {
     const norm = (n: string) => n.toLowerCase().replace(/[\s._-]/g, "");
     let totalTestCases = 0;
     for (const key of projectKeys) {
-      let offset = 0;
-      let last = false;
-      while (!last) {
-        const page = await requestPage("testcases", key, offset);
-        const rows = page.values ?? [];
-        if (offset === 0) totalTestCases += page.total ?? rows.length;
-        last = page.isLast ?? rows.length < 100;
-        offset += rows.length;
-        if (!rows.length) break;
-      }
-      offset = 0;
-      last = false;
-      while (!last) {
-        const page = await requestPage("testexecutions", key, offset);
-        const rows = page.values ?? [];
-        last = page.isLast ?? rows.length < 100;
-        offset += rows.length;
-        for (const e of rows) {
+      const cases = await requestAllPages("testcases", key);
+      totalTestCases += cases.total ?? cases.values.length;
+      const executions = await requestAllPages("testexecutions", key);
+      for (const e of executions.values) {
         const ownerValue = e.executedBy || e.executedByName || e.assignedTo || e.assignedToName || e.assignee;
         const owner = typeof ownerValue === "object" && ownerValue
           ? String((ownerValue as Record<string, unknown>).displayName || (ownerValue as Record<string, unknown>).name || "")
@@ -354,8 +377,6 @@ async function fetchZephyrExecutions(): Promise<ZephyrData> {
         else if (/progress|wip/.test(status)) bucket.wip += 1;
         else if (/block/.test(status)) bucket.blocked += 1;
         else bucket.unexecuted += 1;
-        }
-        if (!rows.length) break;
       }
     }
     return { available: true, metricsByAlias, testCasesTotal: totalTestCases };
