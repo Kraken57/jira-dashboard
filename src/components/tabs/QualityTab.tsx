@@ -16,10 +16,12 @@ interface QualityTabProps {
   qaRosterConfigured?: number;
   zephyr?: ZephyrData;
   issues?: IssueRow[];
+  qaDefects?: IssueRow[];
+  fetchedAt?: number;
   jiraDomain?: string;
 }
 
-export function QualityTab({ data, qaCapacity, qaRosterConfigured = 0, zephyr, issues = [], jiraDomain }: QualityTabProps) {
+export function QualityTab({ data, qaCapacity, qaRosterConfigured = 0, zephyr, issues = [], qaDefects = [], fetchedAt, jiraDomain }: QualityTabProps) {
   const [modal, setModal] = useState<{
     title: string;
     subtitle: string;
@@ -28,9 +30,33 @@ export function QualityTab({ data, qaCapacity, qaRosterConfigured = 0, zephyr, i
   // QA tab owns its filters: an in-tab pod filter independent from the shared
   // pod/quarter/sprint bar (which is hidden on this tab).
   const [qaPod, setQaPod] = useState("all");
+  const [defectProject, setDefectProject] = useState("all");
+  const [defectReporterSearch, setDefectReporterSearch] = useState("");
 
   const bugs = issues.filter((i) => i.workType === "Bug");
   const resolvedBugs = bugs.filter((i) => i.isDone);
+  const defectProjects = Array.from(
+    new Map(qaDefects.map((issue) => {
+      const key = issue.projectKey || issue.podKey || "UNKNOWN";
+      return [key, { key, name: issue.projectName || issue.podName || key }] as const;
+    })).values()
+  ).sort((a, b) => a.name.localeCompare(b.name));
+  const defectScope = qaDefects.filter((issue) =>
+    defectProject === "all" || (issue.projectKey || issue.podKey || "UNKNOWN") === defectProject
+  );
+  const defectRows = defectScope.filter((issue) =>
+    !defectReporterSearch.trim() || (issue.reporter || "Unassigned").toLowerCase().includes(defectReporterSearch.trim().toLowerCase())
+  );
+  const defectStatuses = Array.from(new Set(defectRows.map((issue) => issue.status)))
+    .sort((a, b) => a.localeCompare(b));
+  const reporterNames = Array.from(new Set(defectRows.map((issue) => issue.reporter || "Unassigned")))
+    .sort((a, b) => a.localeCompare(b));
+  const defectColumns = defectProject === "all"
+    ? defectProjects
+    : defectProjects.filter((project) => project.key === defectProject);
+  const defectsFor = (reporter: string, projectKey: string) => defectRows.filter((issue) =>
+    (issue.reporter || "Unassigned") === reporter && (issue.projectKey || issue.podKey || "UNKNOWN") === projectKey
+  );
   const open = (title: string, subtitle: string, list: IssueRow[]) =>
     setModal({ title, subtitle, issues: list });
 
@@ -86,6 +112,108 @@ export function QualityTab({ data, qaCapacity, qaRosterConfigured = 0, zephyr, i
 
   return (
     <div className="space-y-6">
+      {/* ---- Jira QA defects (independent JQL feed; does not require Zephyr) ---- */}
+      <section className="overflow-hidden rounded-xl border border-jira-border bg-white shadow-sm">
+        <div className="border-b border-jira-border bg-gradient-to-r from-rose-50 via-white to-white px-5 py-5 sm:px-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="rounded-full bg-rose-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-rose-700">Jira issues</span>
+                <span className="text-xs text-jira-text-muted">Independent of Zephyr credentials</span>
+              </div>
+              <h2 className="mt-2 text-xl font-bold text-jira-text">QA Defects</h2>
+              <p className="mt-1 text-xs text-jira-text-muted">Status totals and reporter ownership grouped by Jira project. Select any count to inspect the exact defects.</p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <input
+                value={defectReporterSearch}
+                onChange={(event) => setDefectReporterSearch(event.target.value)}
+                placeholder="Search reporter…"
+                aria-label="Search QA defect reporters"
+                className="rounded-md border border-jira-border bg-white px-3 py-2 text-xs outline-none focus:border-jira-blue"
+              />
+              <select
+                value={defectProject}
+                onChange={(event) => setDefectProject(event.target.value)}
+                aria-label="Filter QA defects by project"
+                className="rounded-md border border-jira-border bg-white px-3 py-2 text-xs font-semibold outline-none focus:border-jira-blue"
+              >
+                <option value="all">All projects</option>
+                {defectProjects.map((project) => <option key={project.key} value={project.key}>{project.name}</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-5 sm:p-6">
+          {qaDefects.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-jira-border bg-jira-bg/50 px-5 py-8 text-center">
+              <p className="text-sm font-semibold text-jira-text">No QA defects returned by the configured Jira query</p>
+              <p className="mx-auto mt-2 max-w-2xl text-xs leading-5 text-jira-text-muted">Check the Jira account’s project and issue permissions. To match dashboard 10057 exactly, set <code className="font-mono">JIRA_QA_DEFECT_JQL</code> in laptop B’s environment to the saved filter query, then refresh the dashboard.</p>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+                <button type="button" onClick={() => open("Total QA Defects", "Defects in the selected project scope", defectRows)} className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-left transition hover:shadow-sm">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-rose-700">Total defects</p>
+                  <p className="mt-1 text-3xl font-bold text-jira-text">{defectRows.length}</p>
+                  <p className="mt-1 text-[10px] text-jira-text-muted">{defectProject === "all" ? "All projects" : defectColumns[0]?.name}</p>
+                </button>
+                {defectStatuses.map((status) => {
+                  const rows = defectRows.filter((issue) => issue.status === status);
+                  return (
+                    <button key={status} type="button" onClick={() => open(`${status} QA Defects`, `${rows.length} issues in this Jira status`, rows)} className="rounded-lg border border-jira-border bg-white p-4 text-left transition hover:border-jira-blue/40 hover:shadow-sm">
+                      <p className="truncate text-[10px] font-bold uppercase tracking-wider text-jira-text-muted" title={status}>{status}</p>
+                      <p className="mt-1 text-3xl font-bold text-jira-text">{rows.length}</p>
+                      <p className="mt-1 text-[10px] text-jira-text-muted">Click to view issues</p>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="mt-6 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-jira-text">Reporter × Project</h3>
+                  <p className="mt-1 text-[11px] text-jira-text-muted">Counts are unique Jira issues grouped by reporter and project.</p>
+                </div>
+                <p className="text-[10px] text-jira-text-light">{fetchedAt ? `Refreshed ${new Date(fetchedAt).toLocaleString()}` : "Jira data"}</p>
+              </div>
+              <div className="mt-3 overflow-x-auto rounded-lg border border-jira-border">
+                <table className="w-full min-w-[620px] text-left text-xs">
+                  <thead className="bg-jira-bg text-[10px] uppercase tracking-wide text-jira-text-muted">
+                    <tr><th className="sticky left-0 bg-jira-bg px-4 py-3">Reporter</th>{defectColumns.map((project) => <th key={project.key} className="px-4 py-3 text-center">{project.name}</th>)}<th className="px-4 py-3 text-center">Total</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-jira-border/70">
+                    {reporterNames.map((reporter) => {
+                      const rowIssues = defectRows.filter((issue) => (issue.reporter || "Unassigned") === reporter);
+                      return <tr key={reporter} className="hover:bg-jira-bg/50">
+                        <th className="sticky left-0 bg-white px-4 py-3 text-left font-semibold text-jira-text">{reporter}</th>
+                        {defectColumns.map((project) => {
+                          const cellIssues = defectsFor(reporter, project.key);
+                          return <td key={project.key} className="px-4 py-2 text-center"><button type="button" disabled={!cellIssues.length} onClick={() => open(`${reporter} · ${project.name}`, `${cellIssues.length} reported defects`, cellIssues)} className={`min-w-8 rounded px-2 py-1 font-semibold ${cellIssues.length ? "text-jira-blue hover:bg-jira-blue-bg" : "text-jira-text-light"}`}>{cellIssues.length}</button></td>;
+                        })}
+                        <td className="px-4 py-2 text-center"><button type="button" onClick={() => open(`${reporter} · All Projects`, `${rowIssues.length} reported defects`, rowIssues)} className="rounded px-2 py-1 font-bold text-jira-text hover:bg-jira-bg">{rowIssues.length}</button></td>
+                      </tr>;
+                    })}
+                    <tr className="bg-jira-bg/70 font-bold text-jira-text"><th className="sticky left-0 bg-jira-bg/70 px-4 py-3 text-left">Total unique issues</th>{defectColumns.map((project) => { const projectRows = defectRows.filter((issue) => (issue.projectKey || issue.podKey || "UNKNOWN") === project.key); return <td key={project.key} className="px-4 py-2 text-center"><button type="button" onClick={() => open(`${project.name} · QA Defects`, `${projectRows.length} defects in project`, projectRows)} className="rounded px-2 py-1 hover:bg-white">{projectRows.length}</button></td>; })}<td className="px-4 py-2 text-center">{defectRows.length}</td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="mt-5 overflow-hidden rounded-lg border border-jira-border">
+                <div className="border-b border-jira-border bg-jira-bg px-4 py-3 text-xs font-bold text-jira-text">Defect register <span className="ml-1 font-normal text-jira-text-muted">({defectRows.length})</span></div>
+                <div className="max-h-80 overflow-auto">
+                  <table className="w-full min-w-[700px] text-left text-xs">
+                    <thead className="sticky top-0 bg-white text-[10px] uppercase text-jira-text-muted shadow-sm"><tr><th className="px-4 py-2.5">Issue</th><th className="px-4 py-2.5">Summary</th><th className="px-4 py-2.5">Status</th><th className="px-4 py-2.5">Reporter</th><th className="px-4 py-2.5">Project</th><th className="px-4 py-2.5">Assignee</th></tr></thead>
+                    <tbody className="divide-y divide-jira-border/60">{defectRows.map((issue) => <tr key={issue.key} className="hover:bg-jira-bg/50"><td className="px-4 py-2.5 font-semibold text-jira-blue"><button type="button" onClick={() => open(issue.key, issue.summary, [issue])}>{issue.key}</button></td><td className="max-w-[320px] truncate px-4 py-2.5 text-jira-text" title={issue.summary}>{issue.summary}</td><td className="px-4 py-2.5"><span className="rounded-full bg-jira-bg px-2 py-1 text-[10px] font-medium">{issue.status}</span></td><td className="px-4 py-2.5">{issue.reporter || "Unassigned"}</td><td className="px-4 py-2.5">{issue.projectName || issue.podName}</td><td className="px-4 py-2.5">{issue.assignee}</td></tr>)}</tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </section>
+
       {/* ---- QA Team Capacity & Workload (phase 1) ---- */}
       {qaCapacity && (
         <>

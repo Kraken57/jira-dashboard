@@ -289,6 +289,7 @@ function mapIssueToWorkItem(
     typeof podValue === "string" ? podValue : project.name || "DTR Project";
 
   const assigneeObj = fields.assignee as { displayName?: string } | undefined;
+  const reporterObj = fields.reporter as { displayName?: string } | undefined;
   const priorityObj = fields.priority as { name?: string } | undefined;
   const parentObj = fields.parent as { key?: string; id?: string } | undefined;
   const epicLink =
@@ -309,6 +310,9 @@ function mapIssueToWorkItem(
     sprints,
     storyPoints,
     team: project.name || "",
+    projectKey: project.key || "UNKNOWN",
+    projectName: project.name || project.key || "Unknown project",
+    reporter: reporterObj?.displayName || "Unassigned",
     parentKey: parentObj?.key || epicLink || "",
     parentId: parentObj?.id || "",
     createdDate: String(fields.created || ""),
@@ -1263,6 +1267,7 @@ interface FeedMeta {
 
 interface FeedEnvelope {
   items: any[];
+  qaDefects: any[];
   sprintMeta: Record<string, any>;
   jiraBaseUrl: string;
   fetchedAt: number;
@@ -1272,7 +1277,7 @@ interface FeedEnvelope {
 
 async function fetchAndStoreFeed(): Promise<FeedEnvelope> {
   const config = await getFieldConfig();
-  const issues = await jiraClient.searchIssuesJql(config.jql, [
+  const fields = [
     "summary",
     "status",
     "issuetype",
@@ -1280,6 +1285,7 @@ async function fetchAndStoreFeed(): Promise<FeedEnvelope> {
     "parent",
     "customfield_10014",
     "assignee",
+    "reporter",
     "priority",
     "created",
     "resolutiondate",
@@ -1288,8 +1294,37 @@ async function fetchAndStoreFeed(): Promise<FeedEnvelope> {
     config.storyPointsField,
     config.sprintField,
     config.podField,
+  ];
+  const baseDefectJql = config.jql.replace(/\s+ORDER\s+BY[\s\S]*$/i, "").trim();
+  const defectJql = process.env.JIRA_QA_DEFECT_JQL?.trim() || `(${baseDefectJql}) AND issuetype = Bug`;
+  const [issues, defectIssues] = await Promise.all([
+    jiraClient.searchIssuesJql(config.jql, fields),
+    jiraClient.searchIssuesJql(defectJql, fields),
   ]);
+  const qaDefects = defectIssues.map((issue: any) => {
+    const item = mapIssueToWorkItem(issue, config);
+    return {
+      key: item.key,
+      summary: item.summary,
+      workType: item.workType,
+      status: item.status,
+      storyPoints: item.storyPoints,
+      podKey: item.podKey,
+      podName: item.podName,
+      sprint: item.sprints.length ? item.sprints.join(", ") : "Backlog",
+      assignee: item.assignee || "Unassigned",
+      reporter: item.reporter || "Unassigned",
+      projectKey: item.projectKey,
+      projectName: item.projectName,
+      priority: item.priority || "Medium",
+      createdDate: item.createdDate || "",
+      dueDate: item.dueDate || "",
+      isDone: isDoneStatus(item.status),
+      originalEstimateHours: Math.round((item.originalEstimateSeconds || 0) / 360) / 10,
+    };
+  });
   const envelope: FeedEnvelope = {
+    qaDefects,
     items: inheritParentContext(
       issues.map((issue: any) => mapIssueToWorkItem(issue, config))
     ),
@@ -1451,17 +1486,17 @@ resolver.define("getRawFeed", async () => {
       const ageMs = Date.now() - meta.fetchedAt;
       if (ageMs <= FEED_TTL_MS) {
         const envelope = await assembleFeed(meta);
-        if (envelope) {
+        if (envelope && Array.isArray(envelope.qaDefects)) {
           return { ...envelope, source: "kvs", ageMs };
         }
       } else if (ageMs <= FEED_STALE_OK_MS) {
         // # ponytail: Forge may cut post-response promises; if it does, the
         // next open pays the refresh instead of this user (still never both).
-        void fetchAndStoreFeed().catch((err: unknown) =>
-          console.warn("[feed] background refresh failed:", err)
-        );
         const envelope = await assembleFeed(meta);
-        if (envelope) {
+        if (envelope && Array.isArray(envelope.qaDefects)) {
+          void fetchAndStoreFeed().catch((err: unknown) =>
+            console.warn("[feed] background refresh failed:", err)
+          );
           return { ...envelope, source: "kvs-stale", ageMs };
         }
       }

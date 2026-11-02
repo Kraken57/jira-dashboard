@@ -382,6 +382,8 @@ export default function DashboardPage() {
               qaRosterConfigured={feed?.config?.qaMembers?.length ?? 0}
               zephyr={dashboardData.zephyr}
               issues={dashboardData.issueList}
+              qaDefects={feed?.qaDefects ?? []}
+              fetchedAt={feed?.fetchedAt}
               jiraDomain={dashboardData.jiraBaseUrl}
             />
           )}

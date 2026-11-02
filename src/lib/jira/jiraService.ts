@@ -38,7 +38,7 @@ export function quarterFromSprint(sprintName: string): string {
  * from the Sprint field, so the dashboard can order sprints and reason about
  * the active/future ones without extra board API calls.
  */
-async function fetchAllLiveJiraIssues(): Promise<{
+async function fetchAllLiveJiraIssues(jqlOverride?: string): Promise<{
   items: JiraWorkItem[];
   sprintMeta: Record<string, SprintMeta>;
 }> {
@@ -49,7 +49,7 @@ async function fetchAllLiveJiraIssues(): Promise<{
   const spField = process.env.JIRA_STORY_POINTS_FIELD || "customfield_10031";
   const sprintField = process.env.JIRA_SPRINT_FIELD || "customfield_10020";
   const podField = process.env.JIRA_POD_FIELD || "customfield_10050";
-  const jql = process.env.JIRA_JQL || "project in (DTR)";
+  const jql = jqlOverride || process.env.JIRA_JQL || "project in (DTR)";
 
   const allIssues: Record<string, unknown>[] = [];
   let nextPageToken: string | undefined = undefined;
@@ -66,6 +66,7 @@ async function fetchAllLiveJiraIssues(): Promise<{
         "parent",
         "customfield_10014",
         "assignee",
+        "reporter",
         "priority",
         "created",
         "resolutiondate",
@@ -175,6 +176,7 @@ async function fetchAllLiveJiraIssues(): Promise<{
     }
 
     const assigneeObj = fields.assignee as { displayName?: string } | undefined;
+    const reporterObj = fields.reporter as { displayName?: string } | undefined;
     const priorityObj = fields.priority as { name?: string } | undefined;
     const parentObj = fields.parent as { key?: string; id?: string } | undefined;
     // Company-managed projects link stories to Epics/Features through the
@@ -200,6 +202,9 @@ async function fetchAllLiveJiraIssues(): Promise<{
       sprints,
       storyPoints,
       team: project.name || "",
+      projectKey: project.key || "UNKNOWN",
+      projectName: project.name || project.key || "Unknown project",
+      reporter: reporterObj?.displayName || "Unassigned",
       parentKey: parentObj?.key || epicLink || "",
       parentId: parentObj?.id || "",
       createdDate: String(fields.created || ""),
@@ -238,6 +243,7 @@ function readDiskFeed(): RawFeedPayload | null {
       inflateSync(readFileSync(CACHE_FILE)).toString("utf8")
     ) as RawFeedPayload;
     if (!Array.isArray(feed.items)) return null;
+    if (!Array.isArray(feed.qaDefects)) return null;
     return feed;
   } catch {
     // Corrupt/half-written file: ignore, we will fetch live.
@@ -338,10 +344,37 @@ async function fetchZephyrExecutions(): Promise<ZephyrData> {
 }
 
 async function fetchLiveFeed(): Promise<RawFeedPayload> {
-  const live = await fetchAllLiveJiraIssues();
+  const mainJql = process.env.JIRA_JQL || "project in (DTR)";
+  const baseDefectJql = mainJql.replace(/\s+ORDER\s+BY[\s\S]*$/i, "").trim();
+  const defectJql = process.env.JIRA_QA_DEFECT_JQL?.trim() || `(${baseDefectJql}) AND issuetype = Bug`;
+  const [live, defectFeed] = await Promise.all([
+    fetchAllLiveJiraIssues(mainJql),
+    fetchAllLiveJiraIssues(defectJql),
+  ]);
   const zephyr = await fetchZephyrExecutions();
+  const doneStatuses = new Set(resolveMetricConfig().doneStatuses);
+  const qaDefects = defectFeed.items.map((item) => ({
+    key: item.key,
+    summary: item.summary,
+    workType: item.workType,
+    status: item.status,
+    storyPoints: item.storyPoints,
+    podKey: item.podKey,
+    podName: item.podName,
+    sprint: item.sprints.length ? item.sprints.join(", ") : "Backlog",
+    assignee: item.assignee || "Unassigned",
+    reporter: item.reporter || "Unassigned",
+    projectKey: item.projectKey,
+    projectName: item.projectName,
+    priority: item.priority || "Medium",
+    createdDate: item.createdDate || "",
+    dueDate: item.dueDate || "",
+    isDone: doneStatuses.has(item.status),
+    originalEstimateHours: Math.round((item.originalEstimateSeconds || 0) / 360) / 10,
+  }));
   return {
     items: live.items,
+    qaDefects,
     sprintMeta: live.sprintMeta,
     jiraBaseUrl: (JIRA_CONFIG.host || "").replace(/\/+$/, ""),
     fetchedAt: Date.now(),

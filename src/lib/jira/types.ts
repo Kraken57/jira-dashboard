@@ -72,6 +72,8 @@ export interface MetricConfig {
  */
 export interface RawFeedPayload {
   items: JiraWorkItem[];
+  /** QA defects fetched from Jira using the dedicated QA defect JQL. */
+  qaDefects?: IssueRow[];
   sprintMeta: Record<string, SprintMeta>;
   jiraBaseUrl: string;
   fetchedAt: number;
@@ -228,6 +230,9 @@ export interface IssueRow {
   podName: string;
   sprint: string;
   assignee: string;
+  reporter?: string;
+  projectKey?: string;
+  projectName?: string;
   priority: string;
   createdDate: string;
   dueDate?: string;
@@ -310,7 +315,10 @@ export interface JiraWorkItem {
   sprints: string[];
   storyPoints: number;
   team: string;
+  projectKey?: string;
+  projectName?: string;
   assignee?: string;
+  reporter?: string;
   priority?: string;
   parentKey?: string;
   resolutionDate?: string;

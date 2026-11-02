@@ -110,12 +110,21 @@ The Quality tab's QA section reads these from `.env.local`. They are **names and
 settings, not secrets**. Restart `pnpm dev` after editing them.
 
 ```bash
+JIRA_QA_DEFECT_JQL=(project in (ABC)) AND issuetype = Bug
 JIRA_QA_MEMBERS=Sandeep Annaldas,Arun Aare,Naman Goel,Anantha Garapati,Roja PS,Sahaj Arora,Durga Sridhar Kaligotla
 JIRA_QA_CAPACITY_HOURS_PER_WEEK=40
 JIRA_QA_TEST_ISSUE_TYPES=Test
 JIRA_QA_SUPPORT_ISSUE_TYPES=Support
 JIRA_ZAPI_PROJECT_KEYS=ENTQA
 ```
+
+`JIRA_QA_DEFECT_JQL` is an optional, separate Jira REST query for the Quality tab's
+QA Defects section. When empty, it defaults to `(${JIRA_JQL}) AND issuetype = Bug`.
+Use the saved filter's JQL from the existing QA Jira dashboard when its scope, issue
+types, or project set differs. This uses the regular Jira API token and requires issue
+and reporter visibility; it does not depend on Zephyr authentication. The defects view
+groups issues by Jira reporter and project and supports project/reporter filters and
+issue drilldowns. Configure the same variable in Forge environment variables for Forge.
 
 - `JIRA_QA_MEMBERS` is the always-visible roster. Names match Jira display names,
   ignoring case, spaces, dots and underscores.

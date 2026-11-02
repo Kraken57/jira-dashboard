@@ -98,7 +98,7 @@ export async function fetchDashboardData(filters: DashboardFilters): Promise<Das
 // ---- Raw feed (fetch once per TTL window, browser computes the filters) ----
 
 // v2: bumped so browser copies saved before QA-config changes are discarded.
-const RAW_SESSION_KEY = "jira-raw-feed-v2";
+const RAW_SESSION_KEY = "jira-raw-feed-v3";
 const RAW_FRESH_MS = 5 * 60 * 1000;
 const RAW_STALE_OK_MS = 30 * 60 * 1000;
 
@@ -107,7 +107,7 @@ export function readSessionRawFeed(): RawFeedPayload | null {
     const raw = sessionStorage.getItem(RAW_SESSION_KEY);
     if (!raw) return null;
     const feed = JSON.parse(raw) as RawFeedPayload;
-    if (!Array.isArray(feed.items)) return null;
+    if (!Array.isArray(feed.items) || !Array.isArray(feed.qaDefects)) return null;
     if (Date.now() - feed.fetchedAt > RAW_STALE_OK_MS) return null;
     return feed;
   } catch {
