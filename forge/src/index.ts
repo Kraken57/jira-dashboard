@@ -501,11 +501,12 @@ function buildQaCapacity(items: any[]): any {
       entry.completedSeconds += seconds;
       continue;
     }
-    entry.allocatedSeconds += seconds;
-    pushPod(entry.allocByPod, seconds / 3600);
     if (isSupport) {
       entry.supportedSeconds += seconds;
       pushPod(entry.supportByPod, seconds / 3600);
+    } else {
+      entry.allocatedSeconds += seconds;
+      pushPod(entry.allocByPod, seconds / 3600);
     }
     if (isTest) {
       entry.openTestCases += 1;
@@ -542,6 +543,7 @@ function buildQaCapacity(items: any[]): any {
           Object.entries(entry.supportByPod).map(([k, sec]) => [k, roundHrs(sec)])
         ),
         testsByPod: entry.testsByPod,
+        openTestsByPod: entry.openTestsByPod,
         issuesByPod: entry.issuesByPod,
         capacityHours: capacityPerMember,
         utilisationPct:
@@ -571,6 +573,8 @@ interface ZephyrData {
   available: boolean;
   message?: string;
   testCasesTotal?: number;
+  testExecutionsTotal?: number;
+  cases?: any[];
   metricsByAlias?: Record<
     string,
     { pass: number; fail: number; wip: number; blocked: number; unexecuted: number; total: number }
@@ -583,7 +587,7 @@ function qaPoolFromItems(items: any[]): any[] {
 }
 
 /** Zephyr Essential Cloud v2.9 uses the API access token created in the Zephyr UI. */
-async function fetchZephyrExecutions(_pool: any[]): Promise<ZephyrData> {
+async function fetchZephyrExecutions(pool: any[]): Promise<ZephyrData> {
   const token = process.env.JIRA_ZEPHYR_API_TOKEN?.trim();
   const projects = (process.env.JIRA_ZEPHYR_PROJECT_KEYS || "")
     .split(",").map((x) => x.trim()).filter(Boolean);
@@ -638,43 +642,100 @@ async function fetchZephyrExecutions(_pool: any[]): Promise<ZephyrData> {
   };
   try {
     const metricsByAlias: NonNullable<ZephyrData["metricsByAlias"]> = {};
-    let testCasesTotal = 0;
-    let successfulProjects = 0;
+    const projectData: { key: string; cases: Record<string, unknown>[]; executions: Record<string, unknown>[] }[] = [];
     const projectErrors: string[] = [];
-    const norm = (name: string) => name.toLowerCase().replace(/[\s._-]/g, "");
     for (const project of projects) {
       try {
         const cases = await allPages("testcases", project);
-        testCasesTotal += cases.total ?? cases.values.length;
-        successfulProjects += 1;
-        const executions = await allPages("testexecutions", project);
-        for (const execution of executions.values) {
-          const ownerValue = execution.executedBy || execution.executedByName || execution.assignedTo || execution.assignedToName || execution.assignee;
-          const owner = typeof ownerValue === "object" && ownerValue
-            ? String((ownerValue as Record<string, unknown>).displayName || (ownerValue as Record<string, unknown>).name || "")
-            : String(ownerValue || "");
-          if (!owner || /unassigned/i.test(owner)) continue;
-          const bucket = metricsByAlias[norm(owner)] ||= { pass: 0, fail: 0, wip: 0, blocked: 0, unexecuted: 0, total: 0 };
-          bucket.total++;
-          const rawStatus = execution.testExecutionStatus ?? execution.executionStatus ?? execution.status;
-          const status = String(typeof rawStatus === "object" && rawStatus ? (rawStatus as Record<string, unknown>).name ?? (rawStatus as Record<string, unknown>).status ?? "" : rawStatus ?? execution.testExecutionStatusName ?? "").toLowerCase();
-          if (/pass/.test(status)) bucket.pass++;
-          else if (/fail/.test(status)) bucket.fail++;
-          else if (/progress|wip/.test(status)) bucket.wip++;
-          else if (/block/.test(status)) bucket.blocked++;
-          else bucket.unexecuted++;
-        }
+        let executions: Record<string, unknown>[] = [];
+        try { executions = (await allPages("testexecutions", project)).values; }
+        catch (error) { projectErrors.push(`${project} executions: ${error instanceof Error ? error.message : "request failed"}`); }
+        projectData.push({ key: project, cases: cases.values, executions });
       } catch (error) {
-        projectErrors.push(`${project}: ${error instanceof Error ? error.message : "request failed"}`);
+        projectErrors.push(`${project} test cases: ${error instanceof Error ? error.message : "request failed"}`);
       }
     }
-    if (!successfulProjects) {
+    if (!projectData.length) {
       return { available: false, message: projectErrors.join("; ") || "No Zephyr projects could be read" };
     }
+    const record = (value: unknown): Record<string, any> => value && typeof value === "object" ? value as Record<string, any> : {};
+    const get = (value: unknown, ...keys: string[]) => { const object = record(value); for (const key of keys) if (object[key] != null) return object[key]; return undefined; };
+    const person = (value: unknown) => typeof value === "string" ? value : String(get(value, "displayName", "name", "fullName", "username") || "");
+    const personId = (value: unknown) => String(get(value, "accountId", "accountID", "userKey") || "");
+    const referenceCache = new Map<string, Promise<string>>();
+    const referenceName = async (value: unknown, fallback: string) => {
+      const inline = get(value, "name", "value", "displayName", "statusName");
+      if (inline) return String(inline);
+      const self = String(get(value, "self") || "");
+      if (!self) return fallback;
+      if (!referenceCache.has(self)) referenceCache.set(self, (async () => {
+        try {
+          const url = new URL(self);
+          if (url.protocol !== "https:" || !["prod-api.zephyr4jiracloud.com", "prod-play.zephyr4jiracloud.com"].includes(url.hostname)) return fallback;
+          const response = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+          if (!response.ok) return fallback;
+          const body = await response.json();
+          return String(get(body, "name", "value", "displayName", "statusName") || fallback);
+        } catch { return fallback; }
+      })());
+      return referenceCache.get(self)!;
+    };
+    const projectNames: Record<string, string> = {};
+    await Promise.all(projects.map(async (key) => {
+      try { const response = await api.asApp().requestJira(route`/rest/api/3/project/${key}`); if (response.ok) { const project = await response.json() as { name?: string }; if (project.name) projectNames[key] = project.name; } } catch { /* use project key fallback */ }
+    }));
+    const caseRows = projectData.flatMap(({ key, cases }) => cases.map((testCase) => ({ ...testCase, __projectKey: key })));
+    const idToKey = new Map(caseRows.map((testCase) => [String(testCase.id || ""), String(testCase.key || "")]));
+    const users = new Set<string>();
+    for (const testCase of caseRows) { const id = personId(testCase.owner); if (id) users.add(id); }
+    for (const { executions } of projectData) for (const execution of executions) for (const actor of [execution.assignee, execution.assignedTo, execution.executedBy, execution.executor]) { const id = personId(actor); if (id) users.add(id); }
+    const names: Record<string, string> = {};
+    await Promise.all(Array.from(users).map(async (id) => {
+      try { const response = await api.asApp().requestJira(route`/rest/api/3/user?accountId=${id}`); if (response.ok) { const user = await response.json() as { displayName?: string }; if (user.displayName) names[id] = user.displayName; } } catch { /* account ID is the visible fallback */ }
+    }));
+    const executionMap = new Map<string, any[]>();
+    const allExecutions = projectData.flatMap(({ executions }) => executions);
+    for (const execution of allExecutions) {
+      const testRef = get(execution, "testCase", "testcase", "test");
+      const testKey = String(get(execution, "testCaseKey", "testcaseKey", "issueKey") || (typeof testRef === "string" ? testRef : "") || get(testRef, "key") || idToKey.get(String(get(testRef, "id") || execution.testCaseId || "")) || "");
+      if (!testKey) continue;
+      const rawStatus = get(execution, "testExecutionStatus", "executionStatus", "status");
+      const statusId = String(get(rawStatus, "id") || "");
+      const status = await referenceName(rawStatus, statusId ? `Status ${statusId}` : "Not executed");
+      const normalized = status.toLowerCase();
+      const statusCategory = /pass|success/.test(normalized) ? "passed" : /fail/.test(normalized) ? "failed" : /block/.test(normalized) ? "blocked" : /progress|wip|running|executing/.test(normalized) ? "in-progress" : /not executed|unexecuted|not started|pending|to do/.test(normalized) ? "pending" : "other";
+      const assignee = get(execution, "assignedTo", "assignee", "assignedTester");
+      const executor = get(execution, "executedBy", "executor", "executedByUser");
+      const detail = { id: String(get(execution, "id", "executionId", "key") || `${testKey}-${(executionMap.get(testKey) || []).length}`), status, statusCategory, assignedTo: person(assignee) || names[personId(assignee)] || personId(assignee) || "Unassigned", executedBy: person(executor) || names[personId(executor)] || personId(executor) || "Unrecorded", executedOn: get(execution, "executedOn", "actualEndDate", "updatedOn", "createdOn"), cycle: String(get(get(execution, "testCycle", "cycle"), "name", "key") || get(execution, "cycleName", "testCycleName") || "") };
+      executionMap.set(testKey, [...(executionMap.get(testKey) || []), detail]);
+      const owner = detail.executedBy !== "Unrecorded" ? detail.executedBy : detail.assignedTo;
+      if (owner !== "Unrecorded" && owner !== "Unassigned") {
+        const norm = (name: string) => name.toLowerCase().replace(/[\s._-]/g, "");
+        const bucket = metricsByAlias[norm(owner)] ||= { pass: 0, fail: 0, wip: 0, blocked: 0, unexecuted: 0, total: 0 };
+        bucket.total++; if (statusCategory === "passed") bucket.pass++; else if (statusCategory === "failed") bucket.fail++; else if (statusCategory === "blocked") bucket.blocked++; else if (statusCategory === "in-progress") bucket.wip++; else bucket.unexecuted++;
+      }
+    }
+    const cases = await Promise.all(caseRows.map(async (testCase) => {
+      const projectKey = String(testCase.__projectKey || String(testCase.key || "").split("-T")[0] || "UNKNOWN");
+      const linkedIssueKeys = (Array.isArray(record(testCase.links).issues) ? record(testCase.links).issues : []).map((issue: any) => typeof issue === "string" ? issue : String(issue?.key || issue?.issueKey || issue?.self?.match(/\/(?:browse|issue)\/([A-Z][A-Z0-9_]+-\d+)/i)?.[1] || "")).filter(Boolean);
+      const linkedPods = new Map<string, string>();
+      for (const key of linkedIssueKeys) { const issue = pool.find((item) => item.key === key); if (issue) linkedPods.set(issue.podKey || issue.projectKey, issue.podName || issue.projectName || issue.podKey); }
+      const projectPods = new Map<string, string>();
+      for (const item of pool.filter((entry) => entry.projectKey === projectKey && entry.podKey)) projectPods.set(item.podKey, item.podName || item.podKey);
+      const podSource = linkedPods.size ? "linked Jira issue" : projectPods.size === 1 ? "project mapping" : "project fallback";
+      const pods = linkedPods.size ? linkedPods : projectPods.size === 1 ? projectPods : new Map([[projectKey, projectKey]]);
+      const ownerAccountId = personId(testCase.owner);
+      const ownerName = person(testCase.owner) || names[ownerAccountId] || ownerAccountId || "Unassigned";
+      const executions = (executionMap.get(String(testCase.key || "")) || []).sort((a, b) => Date.parse(b.executedOn || "") - Date.parse(a.executedOn || ""));
+      const label = async (value: unknown, fallback: string) => referenceName(value, get(value, "id") ? `Status ${get(value, "id")}` : fallback);
+      return { id: String(testCase.id || testCase.key), key: String(testCase.key || ""), name: String(testCase.name || testCase.key || ""), projectKey, projectName: projectNames[projectKey] || pool.find((item) => item.projectKey === projectKey)?.projectName || projectKey, podKeys: Array.from(pods.keys()), podNames: Array.from(pods.values()), podSource, ownerName, ownerAccountId: ownerAccountId || undefined, status: await label(testCase.status, "Unknown"), priority: await label(testCase.priority, "Unspecified"), folder: await label(testCase.folder, "Unfiled"), labels: Array.isArray(testCase.labels) ? testCase.labels.map(String) : [], linkedIssueKeys, createdOn: testCase.createdOn || testCase.createdDate, objective: testCase.objective, precondition: testCase.precondition, executionCount: executions.length, latestExecution: executions[0], executions };
+    }));
     return {
       available: true,
+      cases,
       metricsByAlias,
-      testCasesTotal,
+      testCasesTotal: cases.length,
+      testExecutionsTotal: cases.reduce((total, testCase) => total + testCase.executionCount, 0),
       ...(projectErrors.length ? { message: `Partial Zephyr data: ${projectErrors.join("; ")}` } : {}),
     };
   } catch (error) {
@@ -1263,8 +1324,8 @@ function calculateKPIs(
  * is fresh enough, refreshed on demand otherwise. Values are zlib-deflated
  * and chunked because KVS caps individual values.
  */
-const FEED_META_KEY = "raw-feed-v1-meta";
-const FEED_PART_KEY = "raw-feed-v1-part-";
+const FEED_META_KEY = "raw-feed-v2-meta";
+const FEED_PART_KEY = "raw-feed-v2-part-";
 // Legacy @forge/api storage caps a single persisted value at ~128 KB raw.
 // 90 KB compressed -> ~120 KB base64, under the cap; a 930-item feed still
 // needs a single part. Raise to ~175 KB after the @forge/kvs flip (240 KiB).

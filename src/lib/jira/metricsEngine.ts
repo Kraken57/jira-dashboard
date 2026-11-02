@@ -451,11 +451,12 @@ function buildQaCapacity(
       entry.completedSeconds += seconds;
       continue;
     }
-    entry.allocatedSeconds += seconds;
-    addPod(entry.allocByPod, seconds / 3600);
     if (isSupport) {
       entry.supportedSeconds += seconds;
       addPod(entry.supportByPod, seconds / 3600);
+    } else {
+      entry.allocatedSeconds += seconds;
+      addPod(entry.allocByPod, seconds / 3600);
     }
     if (isTest) {
       entry.openTestCases += 1;
@@ -499,6 +500,7 @@ function buildQaCapacity(
           ])
         ),
         testsByPod: entry.testsByPod,
+        openTestsByPod: entry.openTestsByPod,
         issuesByPod: entry.issuesByPod,
         capacityHours: capacityHoursPerMember,
         utilisationPct:

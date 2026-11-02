@@ -168,6 +168,7 @@ export interface QaMemberStat {
   hoursByPod?: Record<string, number>;
   supportByPod?: Record<string, number>;
   testsByPod?: Record<string, number>;
+  openTestsByPod?: Record<string, number>;
   issuesByPod?: Record<string, number>;
   /** Zephyr execution summary (configured project keys), if ZAPI is reachable. */
   executions?: string;
@@ -197,10 +198,46 @@ export interface ZephyrData {
   available: boolean;
   message?: string;
   testCasesTotal?: number;
+  testExecutionsTotal?: number;
+  cases?: ZephyrTestCase[];
   metricsByAlias?: Record<
     string,
     { pass: number; fail: number; wip: number; blocked: number; unexecuted: number; total: number }
   >;
+}
+
+export interface ZephyrTestCase {
+  id: string;
+  key: string;
+  name: string;
+  projectKey: string;
+  projectName: string;
+  podKeys: string[];
+  podNames: string[];
+  podSource: "linked Jira issue" | "project mapping" | "project fallback";
+  ownerName: string;
+  ownerAccountId?: string;
+  status: string;
+  priority: string;
+  folder: string;
+  labels: string[];
+  linkedIssueKeys: string[];
+  createdOn?: string;
+  objective?: string;
+  precondition?: string;
+  executionCount: number;
+  latestExecution?: ZephyrExecution;
+  executions: ZephyrExecution[];
+}
+
+export interface ZephyrExecution {
+  id: string;
+  status: string;
+  statusCategory: "passed" | "failed" | "blocked" | "in-progress" | "pending" | "other";
+  assignedTo: string;
+  executedBy: string;
+  executedOn?: string;
+  cycle: string;
 }
 
 export interface QualityData {

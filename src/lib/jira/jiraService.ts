@@ -1,5 +1,5 @@
 import { isJiraConfigured, missingJiraConfig, JIRA_CONFIG } from "./config";
-import { DashboardData, DashboardFilters, JiraWorkItem, SprintMeta } from "./types";
+import { DashboardData, DashboardFilters, JiraWorkItem, SprintMeta, ZephyrExecution, ZephyrTestCase } from "./types";
 import { computeDashboardData, resolveMetricConfig } from "./metricsEngine";
 import { RawFeedPayload, ZephyrData } from "./types";
 import { deflateSync, inflateSync } from "node:zlib";
@@ -251,7 +251,8 @@ function getFeedQueries() {
 
 function getFeedQueryFingerprint(): string {
   const { mainJql, defectJql, uatDefectJql, leakageDefectJql } = getFeedQueries();
-  return createHash("sha256").update(`${mainJql}\n${defectJql}\n${uatDefectJql}\n${leakageDefectJql}`).digest("hex");
+  const zephyrProjects = (process.env.JIRA_ZEPHYR_PROJECT_KEYS || "").trim();
+  return createHash("sha256").update(`quality-cases-v2\n${mainJql}\n${defectJql}\n${uatDefectJql}\n${leakageDefectJql}\n${zephyrProjects}`).digest("hex");
 }
 
 let inflightFetch: Promise<RawFeedPayload> | null = null;
@@ -285,7 +286,7 @@ function writeDiskFeed(feed: RawFeedPayload): void {
 }
 
 /** Zephyr Essential Cloud v2.9 uses a UI-generated Bearer access token. */
-async function fetchZephyrExecutions(): Promise<ZephyrData> {
+async function fetchZephyrExecutions(jiraItems: JiraWorkItem[] = []): Promise<ZephyrData> {
   const token = process.env.JIRA_ZEPHYR_API_TOKEN?.trim();
   if (!token) return { available: false, message: "Configure JIRA_ZEPHYR_API_TOKEN to enable Zephyr Essentials data" };
   const projectKeys = (process.env.JIRA_ZEPHYR_PROJECT_KEYS || "")
@@ -343,56 +344,227 @@ async function fetchZephyrExecutions(): Promise<ZephyrData> {
   };
 
   try {
-    const metricsByAlias: Record<
-      string,
-      { pass: number; fail: number; wip: number; blocked: number; unexecuted: number; total: number }
-    > = {};
-    const norm = (n: string) => n.toLowerCase().replace(/[\s._-]/g, "");
-    let totalTestCases = 0;
-    let successfulProjects = 0;
+    type RawProject = { key: string; name: string; testCases: Record<string, unknown>[]; executions: Record<string, unknown>[] };
+    const projects: RawProject[] = [];
     const projectErrors: string[] = [];
+    let totalTestCases = 0;
     for (const key of projectKeys) {
       try {
         const cases = await requestAllPages("testcases", key);
         totalTestCases += cases.total ?? cases.values.length;
-        successfulProjects += 1;
-        const executions = await requestAllPages("testexecutions", key);
-        for (const e of executions.values) {
-          const ownerValue = e.executedBy || e.executedByName || e.assignedTo || e.assignedToName || e.assignee;
-          const owner = typeof ownerValue === "object" && ownerValue
-            ? String((ownerValue as Record<string, unknown>).displayName || (ownerValue as Record<string, unknown>).name || "")
-            : String(ownerValue || "");
-          if (!owner || /unassigned/i.test(owner)) continue;
-          const bucket = (metricsByAlias[norm(owner)] ||= {
-            pass: 0,
-            fail: 0,
-            wip: 0,
-            blocked: 0,
-            unexecuted: 0,
-            total: 0,
-          });
-          bucket.total += 1;
-          const rawStatus = e.testExecutionStatus ?? e.executionStatus ?? e.status;
-          const status = String(typeof rawStatus === "object" && rawStatus
-            ? (rawStatus as Record<string, unknown>).name ?? (rawStatus as Record<string, unknown>).status ?? ""
-            : rawStatus ?? e.testExecutionStatusName ?? "").toLowerCase();
-          if (/pass/.test(status)) bucket.pass += 1;
-          else if (/fail/.test(status)) bucket.fail += 1;
-          else if (/progress|wip/.test(status)) bucket.wip += 1;
-          else if (/block/.test(status)) bucket.blocked += 1;
-          else bucket.unexecuted += 1;
+        let executions: Record<string, unknown>[] = [];
+        try {
+          executions = (await requestAllPages("testexecutions", key)).values;
+        } catch (error) {
+          projectErrors.push(`${key} executions: ${error instanceof Error ? error.message : "request failed"}`);
         }
+        const sourceName = jiraItems.find((item) => item.projectKey === key)?.projectName;
+        projects.push({ key, name: sourceName || key, testCases: cases.values, executions });
       } catch (error) {
-        projectErrors.push(`${key}: ${error instanceof Error ? error.message : "request failed"}`);
+        projectErrors.push(`${key} test cases: ${error instanceof Error ? error.message : "request failed"}`);
       }
     }
-    if (!successfulProjects) {
+
+    if (!projects.length) {
       return { available: false, message: projectErrors.join("; ") || "No Zephyr projects could be read" };
+    }
+
+    const asRecord = (value: unknown): Record<string, unknown> =>
+      value && typeof value === "object" ? value as Record<string, unknown> : {};
+    const pick = (record: Record<string, unknown>, keys: string[]) => {
+      for (const key of keys) if (record[key] != null) return record[key];
+      return undefined;
+    };
+    const personAccountId = (value: unknown) => {
+      const person = asRecord(value);
+      return String(pick(person, ["accountId", "accountID", "userKey"]) || "");
+    };
+    const personName = (value: unknown) => {
+      if (typeof value === "string") return value;
+      const person = asRecord(value);
+      return String(pick(person, ["displayName", "name", "fullName", "username"]) || "");
+    };
+    const allCases = projects.flatMap((project) => project.testCases.map((testCase) => ({ ...testCase, __projectKey: project.key, __projectName: project.name })));
+    const allExecutions = projects.flatMap((project) => project.executions.map((execution) => ({ ...execution, __projectKey: project.key })));
+    const caseIdToKey = new Map(allCases.map((testCase) => [String(testCase.id || ""), String(testCase.key || "")]));
+    const userIds = new Set<string>();
+    for (const testCase of allCases) {
+      const id = personAccountId(testCase.owner);
+      if (id) userIds.add(id);
+    }
+    for (const execution of allExecutions) {
+      for (const candidate of [execution.assignee, execution.assignedTo, execution.executedBy, execution.executor]) {
+        const id = personAccountId(candidate);
+        if (id) userIds.add(id);
+      }
+    }
+    const jiraUserNames: Record<string, string> = {};
+    const jiraProjectNames: Record<string, string> = {};
+    const authHeader = Buffer.from(`${JIRA_CONFIG.email}:${JIRA_CONFIG.apiToken}`).toString("base64");
+    const jiraGet = async (path: string) => fetch(`${JIRA_CONFIG.host.replace(/\/+$/, "")}${path}`, {
+      headers: { Authorization: `Basic ${authHeader}`, Accept: "application/json" },
+      cache: "no-store",
+    });
+    await Promise.all(Array.from(userIds).map(async (accountId) => {
+      try {
+        const response = await jiraGet(`/rest/api/3/user?accountId=${encodeURIComponent(accountId)}`);
+        if (!response.ok) return;
+        const user = await response.json() as { displayName?: string };
+        if (user.displayName) jiraUserNames[accountId] = user.displayName;
+      } catch { /* Keep the account ID as a visible fallback. */ }
+    }));
+    await Promise.all(projects.map(async ({ key }) => {
+      try {
+        const response = await jiraGet(`/rest/api/3/project/${encodeURIComponent(key)}`);
+        if (!response.ok) return;
+        const project = await response.json() as { name?: string };
+        if (project.name) jiraProjectNames[key] = project.name;
+      } catch { /* The project key remains a useful fallback. */ }
+    }));
+
+    const issueByKey = new Map(jiraItems.map((item) => [item.key, item]));
+    const podsByProject = new Map<string, Map<string, string>>();
+    for (const item of jiraItems) {
+      const key = item.projectKey || item.podKey;
+      if (!key || !item.podName) continue;
+      const pods = podsByProject.get(key) || new Map<string, string>();
+      pods.set(item.podKey || item.podName, item.podName);
+      podsByProject.set(key, pods);
+    }
+    const statusNameCache = new Map<string, Promise<string>>();
+    const referenceName = async (value: unknown, fallback: string): Promise<string> => {
+      const ref = asRecord(value);
+      const inline = pick(ref, ["name", "value", "displayName", "statusName"]);
+      if (inline) return String(inline);
+      const self = typeof ref.self === "string" ? ref.self : "";
+      if (!self) return fallback;
+      if (!statusNameCache.has(self)) statusNameCache.set(self, (async () => {
+        try {
+          const url = new URL(self);
+          if (url.protocol !== "https:" || !["prod-api.zephyr4jiracloud.com", "prod-play.zephyr4jiracloud.com"].includes(url.hostname)) return fallback;
+          const response = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }, cache: "no-store" });
+          if (!response.ok) return fallback;
+          const body = asRecord(await response.json());
+          return String(pick(body, ["name", "value", "displayName", "statusName"]) || fallback);
+        } catch { return fallback; }
+      })());
+      return statusNameCache.get(self)!;
+    };
+    const statusCategory = (status: string): ZephyrExecution["statusCategory"] => {
+      const normalized = status.toLowerCase();
+      if (/pass|passed|success/.test(normalized)) return "passed";
+      if (/fail|failed/.test(normalized)) return "failed";
+      if (/block/.test(normalized)) return "blocked";
+      if (/progress|wip|running|executing/.test(normalized)) return "in-progress";
+      if (!normalized || /not executed|unexecuted|not started|pending|to do/.test(normalized)) return "pending";
+      return "other";
+    };
+    const executionByCase = new Map<string, ZephyrExecution[]>();
+    for (const execution of allExecutions) {
+      const testCaseRef = asRecord(pick(execution, ["testCase", "testcase", "test"]));
+      const testCaseKey = String(pick(execution, ["testCaseKey", "testcaseKey", "issueKey"]) ||
+        (typeof execution.testCase === "string" ? execution.testCase : "") ||
+        (typeof execution.testcase === "string" ? execution.testcase : "") ||
+        testCaseRef.key || caseIdToKey.get(String(testCaseRef.id || execution.testCaseId || "")) || "");
+      if (!testCaseKey) continue;
+      const rawStatus = pick(execution, ["testExecutionStatus", "executionStatus", "status"]);
+      const statusRef = asRecord(rawStatus);
+      const statusId = String(statusRef.id || "");
+      const status = await referenceName(rawStatus, statusId ? `Status ${statusId}` : "Not executed");
+      const assignedTo = pick(execution, ["assignedTo", "assignee", "assignedTester"]);
+      const executedBy = pick(execution, ["executedBy", "executor", "executedByUser"]);
+      const executionId = String(pick(execution, ["id", "executionId", "key"]) || `${testCaseKey}-${executionByCase.get(testCaseKey)?.length || 0}`);
+      const cycle = asRecord(pick(execution, ["testCycle", "cycle"]));
+      const detail: ZephyrExecution = {
+        id: executionId,
+        status,
+        statusCategory: statusCategory(status),
+        assignedTo: personName(assignedTo) || jiraUserNames[personAccountId(assignedTo)] || personAccountId(assignedTo) || "Unassigned",
+        executedBy: personName(executedBy) || jiraUserNames[personAccountId(executedBy)] || personAccountId(executedBy) || "Unrecorded",
+        executedOn: String(pick(execution, ["executedOn", "actualEndDate", "updatedOn", "createdOn"]) || "") || undefined,
+        cycle: String(pick(cycle, ["name", "key"]) || pick(execution, ["cycleName", "testCycleName"]) || ""),
+      };
+      const list = executionByCase.get(testCaseKey) || [];
+      list.push(detail);
+      executionByCase.set(testCaseKey, list);
+    }
+    const cases: ZephyrTestCase[] = [];
+    for (const raw of allCases) {
+      const key = String(raw.key || "");
+      const projectKey = String(raw.__projectKey || key.match(/^(.+?)-T\d+$/i)?.[1] || "UNKNOWN");
+      const projectName = jiraProjectNames[projectKey] || String(raw.__projectName || projectKey);
+      const linkedIssueKeys = (Array.isArray(asRecord(raw.links).issues) ? asRecord(raw.links).issues as unknown[] : [])
+        .map((link) => typeof link === "string" ? link : String(pick(asRecord(link), ["key", "issueKey"]) ||
+          String(asRecord(link).self || "").match(/\/(?:browse|issue)\/([A-Z][A-Z0-9_]+-\d+)/i)?.[1] || ""))
+        .filter(Boolean);
+      const linkedPods = new Map<string, string>();
+      for (const issueKey of linkedIssueKeys) {
+        const issue = issueByKey.get(issueKey);
+        if (issue) linkedPods.set(issue.podKey, issue.podName || issue.podKey);
+      }
+      const projectPods = podsByProject.get(projectKey);
+      const podSource: ZephyrTestCase["podSource"] = linkedPods.size
+        ? "linked Jira issue"
+        : projectPods?.size === 1 ? "project mapping" : "project fallback";
+      const pods = linkedPods.size
+        ? linkedPods
+        : projectPods?.size === 1
+          ? projectPods
+          : new Map([[projectKey, projectName]]);
+      const ownerAccountId = personAccountId(raw.owner) || undefined;
+      const ownerName = personName(raw.owner) || (ownerAccountId ? jiraUserNames[ownerAccountId] || ownerAccountId : "Unassigned");
+      const statusRef = raw.status;
+      const priorityRef = raw.priority;
+      const folderRef = raw.folder;
+      const statusId = String(asRecord(statusRef).id || "");
+      const priorityId = String(asRecord(priorityRef).id || "");
+      const folderId = String(asRecord(folderRef).id || "");
+      const executionHistory = (executionByCase.get(key) || []).sort((a, b) =>
+        Date.parse(b.executedOn || "") - Date.parse(a.executedOn || "")
+      );
+      cases.push({
+        id: String(raw.id || key),
+        key,
+        name: String(raw.name || key),
+        projectKey,
+        projectName,
+        podKeys: Array.from(pods.keys()),
+        podNames: Array.from(pods.values()),
+        podSource,
+        ownerName,
+        ownerAccountId,
+        status: await referenceName(statusRef, statusId ? `Status ${statusId}` : "Unknown"),
+        priority: await referenceName(priorityRef, priorityId ? `Priority ${priorityId}` : "Unspecified"),
+        folder: await referenceName(folderRef, folderId ? `Folder ${folderId}` : "Unfiled"),
+        labels: Array.isArray(raw.labels) ? raw.labels.map(String) : [],
+        linkedIssueKeys,
+        createdOn: String(raw.createdOn || raw.createdDate || "") || undefined,
+        objective: String(raw.objective || "") || undefined,
+        precondition: String(raw.precondition || "") || undefined,
+        executionCount: executionHistory.length,
+        latestExecution: executionHistory[0],
+        executions: executionHistory,
+      });
+    }
+    const metricsByAlias: NonNullable<ZephyrData["metricsByAlias"]> = {};
+    const norm = (name: string) => name.toLowerCase().replace(/[\s._-]/g, "");
+    for (const execution of cases.flatMap((testCase) => testCase.executions)) {
+      const owner = execution.executedBy !== "Unrecorded" ? execution.executedBy : execution.assignedTo;
+      if (!owner || owner === "Unrecorded" || owner === "Unassigned") continue;
+      const bucket = metricsByAlias[norm(owner)] ||= { pass: 0, fail: 0, wip: 0, blocked: 0, unexecuted: 0, total: 0 };
+      bucket.total++;
+      if (execution.statusCategory === "passed") bucket.pass++;
+      else if (execution.statusCategory === "failed") bucket.fail++;
+      else if (execution.statusCategory === "in-progress") bucket.wip++;
+      else if (execution.statusCategory === "blocked") bucket.blocked++;
+      else bucket.unexecuted++;
     }
     return {
       available: true,
+      cases,
       metricsByAlias,
       testCasesTotal: totalTestCases,
+      testExecutionsTotal: cases.reduce((total, testCase) => total + testCase.executionCount, 0),
       ...(projectErrors.length ? { message: `Partial Zephyr data: ${projectErrors.join("; ")}` } : {}),
     };
   } catch (err) {
@@ -408,7 +580,7 @@ async function fetchLiveFeed(): Promise<RawFeedPayload> {
     uatDefectJql ? fetchAllLiveJiraIssues(uatDefectJql, "QA UAT defects") : Promise.resolve({ items: [], sprintMeta: {} }),
     leakageDefectJql ? fetchAllLiveJiraIssues(leakageDefectJql, "QA leaked defects") : Promise.resolve({ items: [], sprintMeta: {} }),
   ]);
-  const zephyr = await fetchZephyrExecutions();
+  const zephyr = await fetchZephyrExecutions(live.items);
   const doneStatuses = new Set(resolveMetricConfig().doneStatuses);
   const mapDefects = (items: JiraWorkItem[]) => items.map((item) => ({
     key: item.key,
