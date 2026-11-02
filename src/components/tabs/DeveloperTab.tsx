@@ -19,14 +19,14 @@ export function DeveloperTab({
   issues = [],
   jiraDomain,
 }: DeveloperTabProps) {
+  const [nameSearch, setNameSearch] = useState("");
   // Alphabetical so people can find a developer quickly.
   const developers = [...allDevelopers]
     .sort((a, b) => a.name.localeCompare(b.name))
     .filter(
       (d) =>
-        !developerFilter ||
-        developerFilter === "all" ||
-        d.name === developerFilter
+        (!developerFilter || developerFilter === "all" || d.name === developerFilter) &&
+        d.name.toLowerCase().includes(nameSearch.trim().toLowerCase())
     );
   const totalDevs = developers.length;
   const totalDelivered = developers.reduce((acc, d) => acc + d.deliveredSP, 0);
@@ -44,10 +44,11 @@ export function DeveloperTab({
     developers.reduce((acc, d) => acc + d.completedEstimateHours, 0) * 10
   ) / 10;
   const overallCompletion = totalAssigned > 0 ? Math.round((totalCompleted / totalAssigned) * 100) : 0;
-  const scopedIssues =
-    developerFilter && developerFilter !== "all"
-      ? issues.filter((i) => i.assignee === developerFilter)
-      : issues;
+  const hasDeveloperFilter = Boolean(nameSearch.trim()) || Boolean(developerFilter && developerFilter !== "all");
+  const visibleNames = new Set(developers.map((developer) => developer.name));
+  const scopedIssues = hasDeveloperFilter
+    ? issues.filter((issue) => visibleNames.has(issue.assignee))
+    : issues;
 
   const [modal, setModal] = useState<{
     title: string;
@@ -108,15 +109,29 @@ export function DeveloperTab({
       </div>
 
       {/* Developer Contribution Table */}
-      <div className="bg-white border border-jira-border rounded-lg overflow-hidden shadow-sm">
-        <div className="px-6 py-4 border-b border-jira-border flex items-center justify-between">
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-900/5">
+        <div className="flex flex-col gap-4 border-b border-slate-200 px-5 py-5 lg:flex-row lg:items-center lg:justify-between sm:px-6">
           <div>
-            <h3 className="text-sm font-bold text-jira-text uppercase tracking-wider">Developer Contribution & Velocity</h3>
-            <p className="text-xs text-jira-text-muted mt-0.5">Story and sub-task delivery, story points, and original estimate hours</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-indigo-600">People analytics</p>
+            <h3 className="mt-1 text-lg font-bold tracking-tight text-slate-900">Developer Contribution &amp; Velocity</h3>
+            <p className="mt-1 text-xs text-slate-500">Search a developer by name or click a row to inspect their work.</p>
           </div>
-          <span className="text-xs bg-jira-bg px-2.5 py-1 rounded text-jira-text-muted font-semibold">
-            {developers.length} contributors
-          </span>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <label className="relative block sm:w-72">
+              <span className="sr-only">Search developers by name</span>
+              <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"><circle cx="8.5" cy="8.5" r="5.5" stroke="currentColor" strokeWidth="1.6"/><path d="m13 13 4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>
+              <input
+                list="developer-name-options"
+                value={nameSearch}
+                onChange={(event) => setNameSearch(event.target.value)}
+                placeholder="Search developer name"
+                aria-label="Search developers by name"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm outline-none transition focus:border-indigo-300 focus:bg-white focus:ring-2 focus:ring-indigo-100"
+              />
+              <datalist id="developer-name-options">{allDevelopers.map((developer) => <option key={developer.name} value={developer.name} />)}</datalist>
+            </label>
+            <span className="rounded-xl bg-indigo-50 px-3 py-2.5 text-center text-xs font-semibold text-indigo-700">{developers.length} contributors</span>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
@@ -152,6 +167,9 @@ export function DeveloperTab({
               </tr>
             </thead>
             <tbody className="divide-y divide-jira-border/60">
+              {developers.length === 0 && (
+                <tr><td colSpan={7} className="px-6 py-12 text-center"><p className="text-sm font-semibold text-slate-800">No developers match “{nameSearch || developerFilter}”</p><button type="button" onClick={() => setNameSearch("")} className="mt-2 text-xs font-semibold text-indigo-700 hover:text-indigo-900">Clear search</button></td></tr>
+              )}
               {developers.map((dev, idx) => (
                 <tr
                   key={dev.name + idx}

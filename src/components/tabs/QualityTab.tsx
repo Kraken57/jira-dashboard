@@ -44,6 +44,8 @@ export function QualityTab({ data, qaCapacity, qaRosterConfigured = 0, zephyr, i
   const defectScope = qaDefects.filter((issue) =>
     defectProject === "all" || (issue.projectKey || issue.podKey || "UNKNOWN") === defectProject
   );
+  const allReporterNames = Array.from(new Set(qaDefects.map((issue) => issue.reporter || "Unassigned")))
+    .sort((a, b) => a.localeCompare(b));
   const defectRows = defectScope.filter((issue) =>
     !defectReporterSearch.trim() || (issue.reporter || "Unassigned").toLowerCase().includes(defectReporterSearch.trim().toLowerCase())
   );
@@ -112,106 +114,118 @@ export function QualityTab({ data, qaCapacity, qaRosterConfigured = 0, zephyr, i
 
   return (
     <div className="space-y-6">
-      {/* ---- Jira QA defects (independent JQL feed; does not require Zephyr) ---- */}
-      <section className="overflow-hidden rounded-xl border border-jira-border bg-white shadow-sm">
-        <div className="border-b border-jira-border bg-gradient-to-r from-rose-50 via-white to-white px-5 py-5 sm:px-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      {/* ---- QA defects ---- */}
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-900/5">
+        <div className="relative overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 px-5 py-6 text-white sm:px-7">
+          <div className="pointer-events-none absolute -right-8 -top-16 h-56 w-56 rounded-full bg-indigo-500/20 blur-3xl" />
+          <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <div className="flex items-center gap-2">
-                <span className="rounded-full bg-rose-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-rose-700">Jira issues</span>
-                <span className="text-xs text-jira-text-muted">Independent of Zephyr credentials</span>
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-200">Quality overview</p>
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">QA Defects</h2>
+                <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold text-indigo-50">{defectRows.length} issues</span>
               </div>
-              <h2 className="mt-2 text-xl font-bold text-jira-text">QA Defects</h2>
-              <p className="mt-1 text-xs text-jira-text-muted">Status totals and reporter ownership grouped by Jira project. Select any count to inspect the exact defects.</p>
+              <p className="mt-2 max-w-2xl text-sm text-slate-300">Track status and ownership across projects. Select a count to open the matching Jira issues.</p>
             </div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <input
-                value={defectReporterSearch}
-                onChange={(event) => setDefectReporterSearch(event.target.value)}
-                placeholder="Search reporter…"
-                aria-label="Search QA defect reporters"
-                className="rounded-md border border-jira-border bg-white px-3 py-2 text-xs outline-none focus:border-jira-blue"
-              />
-              <select
-                value={defectProject}
-                onChange={(event) => setDefectProject(event.target.value)}
-                aria-label="Filter QA defects by project"
-                className="rounded-md border border-jira-border bg-white px-3 py-2 text-xs font-semibold outline-none focus:border-jira-blue"
-              >
-                <option value="all">All projects</option>
-                {defectProjects.map((project) => <option key={project.key} value={project.key}>{project.name}</option>)}
-              </select>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <label className="relative block min-w-0 sm:w-72">
+                <span className="sr-only">Search QA reporter by name</span>
+                <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"><circle cx="8.5" cy="8.5" r="5.5" stroke="currentColor" strokeWidth="1.6"/><path d="m13 13 4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>
+                <input
+                  list="qa-reporter-name-options"
+                  value={defectReporterSearch}
+                  onChange={(event) => setDefectReporterSearch(event.target.value)}
+                  placeholder="Search reporter by name"
+                  aria-label="Search QA reporter by name"
+                  className="w-full rounded-xl border border-white/15 bg-white/10 py-2.5 pl-9 pr-3 text-sm text-white outline-none placeholder:text-slate-400 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-400/30"
+                />
+                <datalist id="qa-reporter-name-options">
+                  {allReporterNames.map((name) => <option key={name} value={name} />)}
+                </datalist>
+              </label>
+              <label className="block sm:w-56">
+                <span className="sr-only">Filter defects by project</span>
+                <select
+                  value={defectProject}
+                  onChange={(event) => setDefectProject(event.target.value)}
+                  aria-label="Filter QA defects by project"
+                  className="w-full rounded-xl border border-white/15 bg-slate-800 px-3 py-2.5 text-sm font-medium text-white outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-400/30"
+                >
+                  <option value="all">All projects</option>
+                  {defectProjects.map((project) => <option key={project.key} value={project.key}>{project.name}</option>)}
+                </select>
+              </label>
             </div>
           </div>
         </div>
 
-        <div className="p-5 sm:p-6">
-          {qaDefects.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-jira-border bg-jira-bg/50 px-5 py-8 text-center">
-              <p className="text-sm font-semibold text-jira-text">No QA defects returned by the configured Jira query</p>
-              <p className="mx-auto mt-2 max-w-2xl text-xs leading-5 text-jira-text-muted">Check the Jira account’s project and issue permissions. To match dashboard 10057 exactly, set <code className="font-mono">JIRA_QA_DEFECT_JQL</code> in laptop B’s environment to the saved filter query, then refresh the dashboard.</p>
+        {qaDefects.length === 0 ? (
+          <div className="px-5 py-12 text-center sm:px-7">
+            <p className="text-sm font-semibold text-slate-800">No defects found</p>
+            <p className="mx-auto mt-2 max-w-xl text-xs leading-5 text-slate-500">Check the Jira query and the API account’s project access. The defect filter is configured with <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono">JIRA_QA_DEFECT_JQL</code>.</p>
+          </div>
+        ) : defectRows.length === 0 ? (
+          <div className="px-5 py-12 text-center sm:px-7">
+            <p className="text-sm font-semibold text-slate-800">No reporters match “{defectReporterSearch}”</p>
+            <button type="button" onClick={() => setDefectReporterSearch("")} className="mt-2 text-xs font-semibold text-indigo-700 hover:text-indigo-900">Clear reporter search</button>
+          </div>
+        ) : (
+          <div className="space-y-6 p-5 sm:p-7">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+              <button type="button" onClick={() => open("Total QA Defects", "Defects in the selected project and reporter scope", defectRows)} className="group rounded-xl border border-indigo-100 bg-indigo-50/70 p-4 text-left transition hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-md">
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-indigo-700">Total defects</p>
+                <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900">{defectRows.length}</p>
+                <p className="mt-1 text-[11px] text-slate-500">All selected issues</p>
+              </button>
+              {defectStatuses.map((status) => {
+                const rows = defectRows.filter((issue) => issue.status === status);
+                const statusTone = /accept|done|closed|resolved|released/i.test(status)
+                  ? "border-emerald-100 bg-emerald-50/70 text-emerald-700"
+                  : /cancel|reject/i.test(status)
+                  ? "border-rose-100 bg-rose-50/70 text-rose-700"
+                  : "border-slate-200 bg-slate-50 text-slate-600";
+                return (
+                  <button key={status} type="button" onClick={() => open(`${status} QA Defects`, `${rows.length} Jira issues`, rows)} className={`group rounded-xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md ${statusTone}`}>
+                    <p className="truncate text-[10px] font-bold uppercase tracking-[0.12em]" title={status}>{status}</p>
+                    <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900">{rows.length}</p>
+                    <p className="mt-1 text-[11px] text-slate-500">View matching issues</p>
+                  </button>
+                );
+              })}
             </div>
-          ) : (
-            <>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
-                <button type="button" onClick={() => open("Total QA Defects", "Defects in the selected project scope", defectRows)} className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-left transition hover:shadow-sm">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-rose-700">Total defects</p>
-                  <p className="mt-1 text-3xl font-bold text-jira-text">{defectRows.length}</p>
-                  <p className="mt-1 text-[10px] text-jira-text-muted">{defectProject === "all" ? "All projects" : defectColumns[0]?.name}</p>
-                </button>
-                {defectStatuses.map((status) => {
-                  const rows = defectRows.filter((issue) => issue.status === status);
-                  return (
-                    <button key={status} type="button" onClick={() => open(`${status} QA Defects`, `${rows.length} issues in this Jira status`, rows)} className="rounded-lg border border-jira-border bg-white p-4 text-left transition hover:border-jira-blue/40 hover:shadow-sm">
-                      <p className="truncate text-[10px] font-bold uppercase tracking-wider text-jira-text-muted" title={status}>{status}</p>
-                      <p className="mt-1 text-3xl font-bold text-jira-text">{rows.length}</p>
-                      <p className="mt-1 text-[10px] text-jira-text-muted">Click to view issues</p>
-                    </button>
-                  );
-                })}
-              </div>
 
-              <div className="mt-6 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <div className="overflow-hidden rounded-xl border border-slate-200">
+              <div className="flex flex-col gap-1 border-b border-slate-200 bg-slate-50/80 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <h3 className="text-sm font-bold text-jira-text">Reporter × Project</h3>
-                  <p className="mt-1 text-[11px] text-jira-text-muted">Counts are unique Jira issues grouped by reporter and project.</p>
+                  <h3 className="text-sm font-bold text-slate-900">Reporter workload by project</h3>
+                  <p className="mt-0.5 text-[11px] text-slate-500">Names are Jira reporters · click a count to view those defects</p>
                 </div>
-                <p className="text-[10px] text-jira-text-light">{fetchedAt ? `Refreshed ${new Date(fetchedAt).toLocaleString()}` : "Jira data"}</p>
+                <p className="text-[10px] text-slate-400">{fetchedAt ? `Updated ${new Date(fetchedAt).toLocaleString()}` : "Live Jira data"}</p>
               </div>
-              <div className="mt-3 overflow-x-auto rounded-lg border border-jira-border">
-                <table className="w-full min-w-[620px] text-left text-xs">
-                  <thead className="bg-jira-bg text-[10px] uppercase tracking-wide text-jira-text-muted">
-                    <tr><th className="sticky left-0 bg-jira-bg px-4 py-3">Reporter</th>{defectColumns.map((project) => <th key={project.key} className="px-4 py-3 text-center">{project.name}</th>)}<th className="px-4 py-3 text-center">Total</th></tr>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[560px] text-left text-sm">
+                  <thead className="bg-white text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                    <tr><th className="sticky left-0 z-10 bg-white px-4 py-3">Reporter</th>{defectColumns.map((project) => <th key={project.key} className="px-4 py-3 text-center">{project.name}</th>)}<th className="px-4 py-3 text-center">Total</th></tr>
                   </thead>
-                  <tbody className="divide-y divide-jira-border/70">
+                  <tbody className="divide-y divide-slate-100">
                     {reporterNames.map((reporter) => {
                       const rowIssues = defectRows.filter((issue) => (issue.reporter || "Unassigned") === reporter);
-                      return <tr key={reporter} className="hover:bg-jira-bg/50">
-                        <th className="sticky left-0 bg-white px-4 py-3 text-left font-semibold text-jira-text">{reporter}</th>
+                      return <tr key={reporter} className="transition hover:bg-indigo-50/40">
+                        <th className="sticky left-0 bg-white px-4 py-3 text-left font-semibold text-slate-800"><span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-indigo-100 to-blue-100 text-[10px] font-bold text-indigo-800">{reporter.split(/\s+/).map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</span><span className="ml-2.5 align-middle">{reporter}</span></th>
                         {defectColumns.map((project) => {
                           const cellIssues = defectsFor(reporter, project.key);
-                          return <td key={project.key} className="px-4 py-2 text-center"><button type="button" disabled={!cellIssues.length} onClick={() => open(`${reporter} · ${project.name}`, `${cellIssues.length} reported defects`, cellIssues)} className={`min-w-8 rounded px-2 py-1 font-semibold ${cellIssues.length ? "text-jira-blue hover:bg-jira-blue-bg" : "text-jira-text-light"}`}>{cellIssues.length}</button></td>;
+                          return <td key={project.key} className="px-4 py-2 text-center"><button type="button" disabled={!cellIssues.length} onClick={() => open(`${reporter} · ${project.name}`, `${cellIssues.length} reported defects`, cellIssues)} className={`min-w-9 rounded-lg px-2.5 py-1.5 text-xs font-bold transition ${cellIssues.length ? "bg-indigo-50 text-indigo-700 hover:bg-indigo-100" : "text-slate-300"}`}>{cellIssues.length}</button></td>;
                         })}
-                        <td className="px-4 py-2 text-center"><button type="button" onClick={() => open(`${reporter} · All Projects`, `${rowIssues.length} reported defects`, rowIssues)} className="rounded px-2 py-1 font-bold text-jira-text hover:bg-jira-bg">{rowIssues.length}</button></td>
+                        <td className="px-4 py-2 text-center"><button type="button" onClick={() => open(`${reporter} · All Projects`, `${rowIssues.length} reported defects`, rowIssues)} className="rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-800 transition hover:bg-slate-100">{rowIssues.length}</button></td>
                       </tr>;
                     })}
-                    <tr className="bg-jira-bg/70 font-bold text-jira-text"><th className="sticky left-0 bg-jira-bg/70 px-4 py-3 text-left">Total unique issues</th>{defectColumns.map((project) => { const projectRows = defectRows.filter((issue) => (issue.projectKey || issue.podKey || "UNKNOWN") === project.key); return <td key={project.key} className="px-4 py-2 text-center"><button type="button" onClick={() => open(`${project.name} · QA Defects`, `${projectRows.length} defects in project`, projectRows)} className="rounded px-2 py-1 hover:bg-white">{projectRows.length}</button></td>; })}<td className="px-4 py-2 text-center">{defectRows.length}</td></tr>
+                    <tr className="bg-slate-50 font-bold text-slate-800"><th className="sticky left-0 bg-slate-50 px-4 py-3 text-left">Total issues</th>{defectColumns.map((project) => { const projectRows = defectRows.filter((issue) => (issue.projectKey || issue.podKey || "UNKNOWN") === project.key); return <td key={project.key} className="px-4 py-2 text-center"><button type="button" onClick={() => open(`${project.name} · QA Defects`, `${projectRows.length} defects in project`, projectRows)} className="rounded-lg px-2.5 py-1.5 text-xs font-bold hover:bg-white">{projectRows.length}</button></td>; })}<td className="px-4 py-2 text-center text-xs">{defectRows.length}</td></tr>
                   </tbody>
                 </table>
               </div>
-
-              <div className="mt-5 overflow-hidden rounded-lg border border-jira-border">
-                <div className="border-b border-jira-border bg-jira-bg px-4 py-3 text-xs font-bold text-jira-text">Defect register <span className="ml-1 font-normal text-jira-text-muted">({defectRows.length})</span></div>
-                <div className="max-h-80 overflow-auto">
-                  <table className="w-full min-w-[700px] text-left text-xs">
-                    <thead className="sticky top-0 bg-white text-[10px] uppercase text-jira-text-muted shadow-sm"><tr><th className="px-4 py-2.5">Issue</th><th className="px-4 py-2.5">Summary</th><th className="px-4 py-2.5">Status</th><th className="px-4 py-2.5">Reporter</th><th className="px-4 py-2.5">Project</th><th className="px-4 py-2.5">Assignee</th></tr></thead>
-                    <tbody className="divide-y divide-jira-border/60">{defectRows.map((issue) => <tr key={issue.key} className="hover:bg-jira-bg/50"><td className="px-4 py-2.5 font-semibold text-jira-blue"><button type="button" onClick={() => open(issue.key, issue.summary, [issue])}>{issue.key}</button></td><td className="max-w-[320px] truncate px-4 py-2.5 text-jira-text" title={issue.summary}>{issue.summary}</td><td className="px-4 py-2.5"><span className="rounded-full bg-jira-bg px-2 py-1 text-[10px] font-medium">{issue.status}</span></td><td className="px-4 py-2.5">{issue.reporter || "Unassigned"}</td><td className="px-4 py-2.5">{issue.projectName || issue.podName}</td><td className="px-4 py-2.5">{issue.assignee}</td></tr>)}</tbody>
-                  </table>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* ---- QA Team Capacity & Workload (phase 1) ---- */}
