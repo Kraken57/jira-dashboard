@@ -566,6 +566,7 @@ function buildQaCapacity(items: any[]): any {
 interface ZephyrData {
   available: boolean;
   message?: string;
+  testCasesTotal?: number;
   metricsByAlias?: Record<
     string,
     { pass: number; fail: number; wip: number; blocked: number; unexecuted: number; total: number }
@@ -577,83 +578,61 @@ function qaPoolFromItems(items: any[]): any[] {
   return items.filter((i: any) => !/^sub-?task$/i.test(String(i.workType || "")));
 }
 
-/**
- * Zephyr Essential (ZAPI) executions summary per member, best-effort.
- * Any failure degrades gracefully (available: false) instead of blocking.
- */
-async function fetchZephyrExecutions(pool: any[]): Promise<ZephyrData> {
+/** Zephyr Cloud v2 API uses the API access token created in the Zephyr UI. */
+async function fetchZephyrExecutions(_pool: any[]): Promise<ZephyrData> {
+  const token = process.env.JIRA_ZEPHYR_API_TOKEN?.trim();
+  const projects = (process.env.JIRA_ZEPHYR_PROJECT_KEYS || "")
+    .split(",").map((x) => x.trim()).filter(Boolean);
+  if (!token || !projects.length) {
+    return { available: false, message: "Configure JIRA_ZEPHYR_API_TOKEN and JIRA_ZEPHYR_PROJECT_KEYS in Forge variables" };
+  }
+  const base = "https://api.zephyrscale.smartbear.com/v2";
+  const page = async (endpoint: string, projectKey: string, startAt: number) => {
+    const query = new URLSearchParams({ projectKey, startAt: String(startAt), maxResults: "100" });
+    const response = await fetch(`${base}/${endpoint}?${query}`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+    });
+    if (!response.ok) throw new Error(`Zephyr API ${endpoint} returned ${response.status}`);
+    return response.json() as Promise<{ values?: Record<string, unknown>[]; total?: number; isLast?: boolean }>;
+  };
   try {
-    const projectKeys = (process.env.JIRA_ZAPI_PROJECT_KEYS || "ENTQA")
-      .split(",")
-      .map((k) => k.trim())
-      .filter(Boolean);
-    if (!projectKeys.length) return { available: false, message: "No projects configured" };
-
-    const ids: number[] = [];
-    for (const key of projectKeys) {
-      await new Promise((r) => setTimeout(r, 50));
-      const res = await api.asApp().requestJira(
-        route`/rest/api/3/project/${key}`
-      );
-      if (!res.ok) {
-        return { available: false, message: `Project ${key} lookup: ${res.status}` };
-      }
-      const json = await res.json();
-      const id = Number(json.id);
-      if (!id) return { available: false, message: `Project ${key} has no numeric id` };
-      ids.push(id);
-    }
-
-    // # ponytail: hard-coded ZAPI default execution status ids (1 pass, 2 fail,
-    // 3 wip, 4 blocked); extend via /rest/zapi/latest/execution/statuses if a
-    // site remaps them.
-    const metricsByAlias: Record<
-      string,
-      { pass: number; fail: number; wip: number; blocked: number; unexecuted: number; total: number }
-    > = {};
-    const norm = (n: string) => n.toLowerCase().replace(/[\s._-]/g, "");
-    for (const projectId of ids) {
-      const r = await api.asApp().requestJira(
-        route`/rest/zapi/latest/execution?projectId=${projectId}`
-      );
-      if (!r.ok) {
-        return {
-          available: false,
-          message: `ZAPI executions: ${r.status} (projectId ${projectId})`,
-        };
-      }
-      const json = (await r.json()) as {
-        executions?: Record<string, unknown>;
-      };
-      const rows = Object.values(json.executions || {}) as Array<Record<string, unknown>>;
-      for (const e of rows) {
-        const owner = String((e.assigneeName as string) || e.assignee || "");
-        if (!owner || /unassigned/i.test(owner)) continue;
-        const bucket =
-          metricsByAlias[norm(owner)] ??
-          (metricsByAlias[norm(owner)] = {
-            pass: 0,
-            fail: 0,
-            wip: 0,
-            blocked: 0,
-            unexecuted: 0,
-            total: 0,
-          });
-        bucket.total += 1;
-        const st = String(e.executionStatus ?? "");
-        if (st === "1") bucket.pass += 1;
-        else if (st === "2") bucket.fail += 1;
-        else if (st === "3") bucket.wip += 1;
-        else if (st === "4") bucket.blocked += 1;
-        else bucket.unexecuted += 1;
+    const metricsByAlias: NonNullable<ZephyrData["metricsByAlias"]> = {};
+    let testCasesTotal = 0;
+    const norm = (name: string) => name.toLowerCase().replace(/[\s._-]/g, "");
+    for (const project of projects) {
+      for (const endpoint of ["testcases", "testexecutions"] as const) {
+        let startAt = 0;
+        let last = false;
+        while (!last) {
+          const result = await page(endpoint, project, startAt);
+          const rows = result.values ?? [];
+          if (endpoint === "testcases") {
+            if (startAt === 0) testCasesTotal += result.total ?? rows.length;
+          } else for (const execution of rows) {
+            const ownerValue = execution.executedBy || execution.executedByName || execution.assignedTo || execution.assignedToName || execution.assignee;
+            const owner = typeof ownerValue === "object" && ownerValue
+              ? String((ownerValue as Record<string, unknown>).displayName || (ownerValue as Record<string, unknown>).name || "")
+              : String(ownerValue || "");
+            if (!owner || /unassigned/i.test(owner)) continue;
+            const bucket = metricsByAlias[norm(owner)] ||= { pass: 0, fail: 0, wip: 0, blocked: 0, unexecuted: 0, total: 0 };
+            bucket.total++;
+            const rawStatus = execution.testExecutionStatus ?? execution.executionStatus ?? execution.status;
+            const status = String(typeof rawStatus === "object" && rawStatus ? (rawStatus as Record<string, unknown>).name ?? (rawStatus as Record<string, unknown>).status ?? "" : rawStatus ?? execution.testExecutionStatusName ?? "").toLowerCase();
+            if (/pass/.test(status)) bucket.pass++;
+            else if (/fail/.test(status)) bucket.fail++;
+            else if (/progress|wip/.test(status)) bucket.wip++;
+            else if (/block/.test(status)) bucket.blocked++;
+            else bucket.unexecuted++;
+          }
+          last = result.isLast ?? rows.length < 100;
+          if (!rows.length) break;
+          startAt += rows.length;
+        }
       }
     }
-    return { available: true, metricsByAlias };
-  } catch (err) {
-    return {
-      available: false,
-      message: err instanceof Error ? err.message : "ZAPI unavailable",
-    };
+    return { available: true, metricsByAlias, testCasesTotal };
+  } catch (error) {
+    return { available: false, message: error instanceof Error ? error.message : "Zephyr Cloud unavailable" };
   }
 }
 

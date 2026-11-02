@@ -188,6 +188,7 @@ export interface QaCapacityData {
 export interface ZephyrData {
   available: boolean;
   message?: string;
+  testCasesTotal?: number;
   metricsByAlias?: Record<
     string,
     { pass: number; fail: number; wip: number; blocked: number; unexecuted: number; total: number }

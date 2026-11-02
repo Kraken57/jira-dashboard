@@ -89,6 +89,12 @@ export function QualityTab({ data, qaCapacity, qaRosterConfigured = 0, zephyr, i
       {/* ---- QA Team Capacity & Workload (phase 1) ---- */}
       {qaCapacity && (
         <>
+          {zephyr && !zephyr.available && (
+            <div className="rounded-md border border-jira-amber/40 bg-jira-amber/10 px-4 py-3">
+              <p className="text-xs font-bold text-jira-text">Zephyr execution data is unavailable</p>
+              <p className="text-[11px] text-jira-text-muted mt-1">{zephyr.message || "The API returned no execution data."} Check the Zephyr API configuration and the signed-in account’s project access.</p>
+            </div>
+          )}
           {qaCapacity.members.length === 0 && qaRosterConfigured === 0 && (
             <div className="bg-white border border-jira-amber/40 rounded-lg p-5 shadow-sm">
               <h2 className="text-base font-bold text-jira-text">QA Team Capacity &amp; Workload</h2>
@@ -106,7 +112,10 @@ export function QualityTab({ data, qaCapacity, qaRosterConfigured = 0, zephyr, i
                 <h2 className="text-base font-bold text-jira-text">QA Team Capacity &amp; Workload</h2>
                 <p className="text-xs text-jira-text-muted mt-0.5">
                   {qaCapacity.members.length} members · weekly capacity {qaCapacity.totalCapacityHours} hrs ·{" "}
-                  {qaCapacity.testCasesTotal} test cases tracked
+                  {zephyr?.available && typeof zephyr.testCasesTotal === "number"
+                    ? `${zephyr.testCasesTotal} Zephyr test cases · `
+                    : ""}
+                  {qaCapacity.testCasesTotal} Jira test-type issues tracked
                 </p>
               </div>
               <div className="flex items-center gap-2 self-start sm:self-auto">
@@ -231,7 +240,7 @@ export function QualityTab({ data, qaCapacity, qaRosterConfigured = 0, zephyr, i
                     <th className="px-4 py-2.5 text-center">Allocated</th>
                     <th className="px-4 py-2.5 text-center">Supported</th>
                     <th className="px-4 py-2.5 text-center">Available</th>
-                    <th className="px-4 py-2.5 text-center">Test Cases</th>
+                    <th className="px-4 py-2.5 text-center">Jira Test Issues</th>
                     <th className="px-4 py-2.5 text-center">Zephyr Execs</th>
                     <th className="px-4 py-2.5">Load</th>
                   </tr>

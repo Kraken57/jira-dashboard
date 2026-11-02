@@ -90,3 +90,17 @@ Mental model: issues are downloaded once (and cached raw), filtered in memory in
 - `next.config.ts` switches to `output: "export"` when `FORGE_BUILD=true`. Do not try to satisfy the export by disabling the API route in code; rely on the build script's temporary route swap.
 - `.env.example` documents every env var (Jira host/email/token, JQL, custom field IDs, done statuses, cache TTL, sprint window). Field IDs differ per Jira site — always discover them with the scripts.
 - The `out/` and `.next/` build outputs, `forge/out/`, and `.env*` files are gitignored and can be ignored during analysis.
+
+## Current Quality Tab Focus
+
+- `src/components/tabs/QualityTab.tsx` combines bug KPIs, severity distribution, QA capacity/workload, member drilldowns, and optional Zephyr execution summaries. The `quality` section uses the dashboard's shared Pod/Quarter/Sprint issue scope; QA workload aggregates the raw feed independently and provides its own pod filter.
+- Local bug calculations live in `src/lib/jira/metricsEngine.ts`; QA workload is built by `buildQaCapacity` from configured roster and assigned Test/support issues, using open original estimates, configured weekly capacity, and tolerant assignee-name matching. Types are in `src/lib/jira/types.ts`.
+- Zephyr Essential integration is best-effort in `src/lib/jira/jiraService.ts` (`JIRA_ZAPI_PROJECT_KEYS`, default `ENTQA`) and mirrored in `forge/src/index.ts`. It uses ZAPI execution status IDs 1–4; failures degrade to unavailable status. Jira Test issue types remain separate from Zephyr execution data.
+- Forge duplicates the Quality and QA calculations in `forge/src/index.ts`; keep behavior aligned when changing shared rules. Forge parity is incomplete in other areas; consult guide 08 §17.
+- Known Quality caveats: the “Defect Severity” priority breakdown currently counts all scoped issues, not only bugs. The Forge resolver's quality KPIs are currently zero-valued, although its QA workload and Zephyr paths exist. Capacity is estimate-based and does not account for holidays or actual availability.
+
+## Architecture and Change Guidance
+
+The current detailed reference is `documentation/08-complete-system-guide.md`; `documentation/01`–`07` are historical snapshots and may describe obsolete behavior. `documentation/09-forge-deployment-playbook.md` is the current deployment reference. Local mode fetches a cached raw Jira feed through `/api/jira`; Forge mode invokes resolvers through `@forge/bridge` and `api.asApp()`. The browser computes filtered dashboard views from the feed. Keep `src/lib/jira/metricsEngine.ts` pure and synchronize duplicated rules in `forge/src/index.ts`.
+
+Key areas: `src/app/page.tsx` owns tabs and filters; `src/lib/jira/jiraService.ts` fetches/maps Jira data and optionally queries Zephyr; `src/lib/jira/types.ts` defines the data contract; `forge/manifest.yml` declares Forge modules and scopes; `scripts/build-forge.mjs` creates the static bundle and restores the local API route. There is no automated test suite. Main commands: `pnpm dev`, `pnpm build`, `pnpm run build:forge`, `pnpm lint`, `pnpm discover:fields`, and `pnpm probe`. Keep Jira tokens in ignored `.env.local`; Forge uses app authentication and Forge variables.

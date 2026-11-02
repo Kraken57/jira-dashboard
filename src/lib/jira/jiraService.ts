@@ -257,54 +257,57 @@ function writeDiskFeed(feed: RawFeedPayload): void {
   }
 }
 
-/**
- * Zephyr Essential (ZAPI) executions summary per member, best-effort.
- * Same Jira host + Basic auth as the issue fetch; any failure degrades
- * gracefully (available: false) instead of blocking the dashboard.
- */
+/** Zephyr Essentials uses a separate Bearer access token and v2 API. */
 async function fetchZephyrExecutions(): Promise<ZephyrData> {
-  const auth = Buffer.from(`${JIRA_CONFIG.email}:${JIRA_CONFIG.apiToken}`).toString("base64");
-  const headers = { Authorization: `Basic ${auth}`, Accept: "application/json" };
-  const host = (JIRA_CONFIG.host || "").replace(/\/+$/, "");
-  const projectKeys = (process.env.JIRA_ZAPI_PROJECT_KEYS || "ENTQA")
+  const token = process.env.JIRA_ZEPHYR_API_TOKEN?.trim();
+  if (!token) return { available: false, message: "Configure JIRA_ZEPHYR_API_TOKEN to enable Zephyr Essentials data" };
+  const projectKeys = (process.env.JIRA_ZEPHYR_PROJECT_KEYS || "")
     .split(",")
     .map((k) => k.trim())
     .filter(Boolean);
+  if (!projectKeys.length) return { available: false, message: "Set JIRA_ZEPHYR_PROJECT_KEYS to the Jira projects containing Zephyr tests" };
+
+  const base = "https://api.zephyrscale.smartbear.com/v2";
+  const requestPage = async (endpoint: string, projectKey: string, startAt: number) => {
+    const query = new URLSearchParams({ projectKey, startAt: String(startAt), maxResults: "100" });
+    const response = await fetch(`${base}/${endpoint}?${query}`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      cache: "no-store",
+    });
+    if (!response.ok) throw new Error(`Zephyr Essentials API returned ${response.status}`);
+    return response.json() as Promise<{ values?: Record<string, unknown>[]; total?: number; isLast?: boolean }>;
+  };
 
   try {
-    const ids: number[] = [];
-    for (const key of projectKeys) {
-      await new Promise((r) => setTimeout(r, 50));
-      const pj = await fetch(`${host}/rest/api/3/project/${key}?fields=id`, { headers });
-      if (!pj.ok) {
-        return { available: false, message: `Project ${key} lookup failed (${pj.status})` };
-      }
-      const pjJson = (await pj.json()) as { id?: string };
-      const id = Number(pjJson.id);
-      if (!id) return { available: false, message: `Project ${key} has no numeric id` };
-      ids.push(id);
-    }
-
-    // # ponytail: hard-coded ZAPI default status ids (1 pass, 2 fail, 3 wip,
-    // 4 blocked). Extend via /rest/zapi/latest/execution/statuses if remapped.
     const metricsByAlias: Record<
       string,
       { pass: number; fail: number; wip: number; blocked: number; unexecuted: number; total: number }
     > = {};
     const norm = (n: string) => n.toLowerCase().replace(/[\s._-]/g, "");
-    let executions = 0;
-    for (const projectId of ids) {
-      const r = await fetch(
-        `${host}/rest/zapi/latest/execution?projectId=${projectId}&maxResults=50000`,
-        { headers }
-      );
-      if (!r.ok) {
-        return { available: false, message: `ZAPI executions: ${r.status} (projectId ${projectId})` };
+    let totalTestCases = 0;
+    for (const key of projectKeys) {
+      let offset = 0;
+      let last = false;
+      while (!last) {
+        const page = await requestPage("testcases", key, offset);
+        const rows = page.values ?? [];
+        if (offset === 0) totalTestCases += page.total ?? rows.length;
+        last = page.isLast ?? rows.length < 100;
+        offset += rows.length;
+        if (!rows.length) break;
       }
-      const json = (await r.json()) as { executions?: Record<string, unknown> };
-      const rows = Object.values(json.executions || {}) as Array<Record<string, unknown>>;
-      for (const e of rows) {
-        const owner = String((e.assigneeName as string) || e.assignee || "");
+      offset = 0;
+      last = false;
+      while (!last) {
+        const page = await requestPage("testexecutions", key, offset);
+        const rows = page.values ?? [];
+        last = page.isLast ?? rows.length < 100;
+        offset += rows.length;
+        for (const e of rows) {
+        const ownerValue = e.executedBy || e.executedByName || e.assignedTo || e.assignedToName || e.assignee;
+        const owner = typeof ownerValue === "object" && ownerValue
+          ? String((ownerValue as Record<string, unknown>).displayName || (ownerValue as Record<string, unknown>).name || "")
+          : String(ownerValue || "");
         if (!owner || /unassigned/i.test(owner)) continue;
         const bucket = (metricsByAlias[norm(owner)] ||= {
           pass: 0,
@@ -315,18 +318,22 @@ async function fetchZephyrExecutions(): Promise<ZephyrData> {
           total: 0,
         });
         bucket.total += 1;
-        const st = String(e.executionStatus ?? "");
-        if (st === "1") bucket.pass += 1;
-        else if (st === "2") bucket.fail += 1;
-        else if (st === "3") bucket.wip += 1;
-        else if (st === "4") bucket.blocked += 1;
+        const rawStatus = e.testExecutionStatus ?? e.executionStatus ?? e.status;
+        const status = String(typeof rawStatus === "object" && rawStatus
+          ? (rawStatus as Record<string, unknown>).name ?? (rawStatus as Record<string, unknown>).status ?? ""
+          : rawStatus ?? e.testExecutionStatusName ?? "").toLowerCase();
+        if (/pass/.test(status)) bucket.pass += 1;
+        else if (/fail/.test(status)) bucket.fail += 1;
+        else if (/progress|wip/.test(status)) bucket.wip += 1;
+        else if (/block/.test(status)) bucket.blocked += 1;
         else bucket.unexecuted += 1;
+        }
+        if (!rows.length) break;
       }
     }
-    if (!ids.length) return { available: false, message: "No projects configured" };
-    return { available: true, metricsByAlias };
+    return { available: true, metricsByAlias, testCasesTotal: totalTestCases };
   } catch (err) {
-    return { available: false, message: err instanceof Error ? err.message : "ZAPI unreachable" };
+    return { available: false, message: err instanceof Error ? err.message : "Zephyr Cloud unavailable" };
   }
 }
 
