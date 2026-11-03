@@ -199,7 +199,7 @@ async function fetchAllLiveJiraIssues(jqlOverride?: string, queryLabel = "dashbo
       podName,
       workType,
       status: status.name || "To Do",
-      priority: priorityObj?.name || "Medium",
+      priority: priorityObj?.name || "Unspecified",
       assignee: assigneeObj?.displayName || "Unassigned",
       quarter:
         sprints.length > 0
@@ -613,7 +613,7 @@ async function fetchLiveFeed(): Promise<RawFeedPayload> {
     reporter: item.reporter || "Unassigned",
     projectKey: item.projectKey,
     projectName: item.projectName,
-    priority: item.priority || "Medium",
+    priority: item.priority || "Unspecified",
     createdDate: item.createdDate || "",
     resolutionDate: item.resolutionDate || undefined,
     dueDate: item.dueDate || "",

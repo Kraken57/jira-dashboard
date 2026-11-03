@@ -63,10 +63,40 @@ const DEFINITIONS: Record<string, Omit<MetricInsight, "recent" | "trend">> = {
       "Compare with Completed. Look at the status and assignee filters to find where work is piling up.",
   },
   "Defect Density": {
-    what: "Bugs found per 100 delivered story points.",
-    formula: "Bug count ÷ Completed SP × 100",
+    what: "Distinct QA bugs per 100 completed story points in the selected pod scope.",
+    formula: "Distinct QA bugs ÷ Completed SP × 100",
     howToCompare:
-      "Lower is better. Compare across pods and sprints, and read it together with Bug Resolution Rate.",
+      "Lower is generally better. Compare pods over the same time scope; the value is N/A when there are no completed story points.",
+  },
+  "Total Defects": {
+    what: "Distinct Jira Bug issues returned by the configured QA defect query, filtered by selected pod and reporter search.",
+    formula: "Count of distinct Jira issue keys",
+    howToCompare: "Use the open, closed, canceled, and reopened cards to understand the lifecycle mix of this total.",
+  },
+  "Open Defects": {
+    what: "QA bugs not in a completed or canceled status. Reopened bugs are included here.",
+    formula: "Total bugs − completed bugs − canceled bugs",
+    howToCompare: "Review the status and priority of the open issues to identify work that needs follow-up.",
+  },
+  "Closed Defects": {
+    what: "QA bugs whose Jira status is configured as done, accepted, released, closed, resolved, or completed.",
+    formula: "Distinct bugs with a completed status",
+    howToCompare: "Compare with open defects and the resolution rate; canceled defects are counted separately.",
+  },
+  "Canceled Defects": {
+    what: "QA bugs in a canceled, rejected, or Won't Do status.",
+    formula: "Distinct bugs with a cancellation status",
+    howToCompare: "Canceled defects are excluded from the resolution-rate denominator.",
+  },
+  "Reopened Defects": {
+    what: "QA bugs whose current Jira status contains “reopened”. They are also included in Open Defects unless Jira marks them done.",
+    formula: "Distinct bugs with a reopened status",
+    howToCompare: "Review these issues first: reopening can indicate a fix did not resolve the reported behavior.",
+  },
+  "Defect Resolution Rate": {
+    what: "Share of non-canceled QA bugs that are closed/completed.",
+    formula: "Closed bugs ÷ (Total bugs − Canceled bugs) × 100",
+    howToCompare: "Higher means a larger share of in-scope defects is closed. N/A means there are no non-canceled defects.",
   },
   "UAT Defects": {
     what: "Defects returned by the optional Jira UAT defect query.",
@@ -74,9 +104,9 @@ const DEFINITIONS: Record<string, Omit<MetricInsight, "recent" | "trend">> = {
     howToCompare: "Use a Jira filter that reliably identifies defects found during UAT. The card shows N/A until that query is configured.",
   },
   "Defect Leakage": {
-    what: "QA defects that escaped into a later validation or production stage.",
-    formula: "Distinct leaked defect keys ÷ distinct QA defect keys × 100",
-    howToCompare: "Configure JIRA_QA_LEAKAGE_DEFECT_JQL to identify escaped defects. Keep its scope aligned with the main QA defect query.",
+    what: "Share of the main QA defect set also returned by the separate leakage Jira query.",
+    formula: "Distinct matching leaked keys ÷ distinct QA defect keys × 100",
+    howToCompare: "The popup lists every result from the leakage query and explains how many match the main QA query. Align both filters if results do not overlap.",
   },
   "Completed Defects": {
     what: "QA defects whose Jira status is marked done, accepted, released, closed, resolved, or completed.",

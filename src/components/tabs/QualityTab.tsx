@@ -5,6 +5,7 @@ import {
   IssueRow,
   QaCapacityData,
   QaMemberStat,
+  JiraWorkItem,
   ZephyrData,
 } from "@/lib/jira/types";
 import { IssuesModal } from "@/components/IssuesModal";
@@ -14,6 +15,8 @@ interface QualityTabProps {
   qaRosterConfigured?: number;
   zephyr?: ZephyrData;
   issues?: IssueRow[];
+  qualityItems?: JiraWorkItem[];
+  doneStatuses?: string[];
   qaDefects?: IssueRow[];
   qaUatDefects?: IssueRow[];
   qaLeakageDefects?: IssueRow[];
@@ -21,7 +24,7 @@ interface QualityTabProps {
   jiraDomain?: string;
 }
 
-export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues = [], qaDefects = [], qaUatDefects, qaLeakageDefects, fetchedAt, jiraDomain }: QualityTabProps) {
+export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues = [], qualityItems, doneStatuses, qaDefects = [], qaUatDefects, qaLeakageDefects, fetchedAt, jiraDomain }: QualityTabProps) {
   const [modal, setModal] = useState<{
     title: string;
     subtitle: string;
@@ -68,47 +71,76 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
   );
   const uatDefectRows = scopeAdditionalDefects(qaUatDefects);
   const leakageDefectRows = scopeAdditionalDefects(qaLeakageDefects);
+  const uniqueIssues = (rows: IssueRow[]) => Array.from(new Map(rows.map((issue) => [issue.key, issue] as const)).values());
   const isCompletedDefect = (issue: IssueRow) => issue.isDone || /^(done|accepted|released|closed|resolved|completed)$/i.test(issue.status);
-  const isCancelledDefect = (issue: IssueRow) => /^(cancelled?|rejected|won't do|wont do|duplicate)$/i.test(issue.status);
-  const defectAnalysisRows = defectRows.filter((issue) => /^bug$/i.test(issue.workType));
-  const completedDefectRows = defectAnalysisRows.filter(isCompletedDefect);
-  const activeDefectRows = defectAnalysisRows.filter((issue) => !isCompletedDefect(issue) && !isCancelledDefect(issue));
+  const isCancelledDefect = (issue: IssueRow) => /^(?:cancell?ed|rejected|won't do|wont do)$/i.test(issue.status);
+  const isReopenedDefect = (issue: IssueRow) => /\breopen(?:ed)?\b/i.test(issue.status);
+  const defectAnalysisRows = uniqueIssues(defectRows.filter((issue) => /^bug$/i.test(issue.workType)));
   const cancelledDefectRows = defectAnalysisRows.filter(isCancelledDefect);
-  const pendingDefectRows = defectAnalysisRows.filter((issue) => /pending/i.test(issue.status));
-  const uniqueCount = (rows: IssueRow[]) => new Set(rows.map((issue) => issue.key)).size;
-  const qaDefectCount = uniqueCount(defectAnalysisRows);
-  const densityDefectRows = defectScope.filter((issue) => /^bug$/i.test(issue.workType));
-  const densityDefectCount = uniqueCount(densityDefectRows);
+  const completedDefectRows = defectAnalysisRows.filter((issue) => isCompletedDefect(issue) && !isCancelledDefect(issue));
+  const reopenedDefectRows = defectAnalysisRows.filter(isReopenedDefect);
+  const openDefectRows = defectAnalysisRows.filter((issue) => !isCompletedDefect(issue) && !isCancelledDefect(issue));
+  const qaDefectCount = defectAnalysisRows.length;
+  const scopedUatRows = uniqueIssues(uatDefectRows ?? []).filter((issue) => /^bug$/i.test(issue.workType));
+  const scopedLeakageRows = uniqueIssues(leakageDefectRows ?? []).filter((issue) => /^bug$/i.test(issue.workType));
   const defectKeys = new Set(defectAnalysisRows.map((issue) => issue.key));
-  const scopedLeakageRows = (leakageDefectRows ?? []).filter((issue) => defectKeys.has(issue.key));
-  const leakedDefectCount = uniqueCount(scopedLeakageRows);
+  const matchedLeakageRows = scopedLeakageRows.filter((issue) => defectKeys.has(issue.key));
+  const leakedDefectCount = matchedLeakageRows.length;
   const defectLeakageRate = qaDefectCount ? Math.round((leakedDefectCount / qaDefectCount) * 1000) / 10 : 0;
-  const resolvedDefectRows = completedDefectRows.filter((issue) => issue.resolutionDate);
-  const defectDurations = resolvedDefectRows.flatMap((issue) => {
-    const created = Date.parse(issue.createdDate);
-    const resolved = Date.parse(issue.resolutionDate || "");
-    return Number.isFinite(created) && Number.isFinite(resolved) && resolved >= created
-      ? [(resolved - created) / 86_400_000]
-      : [];
-  });
-  const avgDefectResolutionDays = defectDurations.length
-    ? Number((defectDurations.reduce((sum, days) => sum + days, 0) / defectDurations.length).toFixed(1))
-    : 0;
-  const deliveredStoryPoints = issues
-    .filter((issue) => issue.isDone && (defectPod === "all" || defectPodKey(issue) === defectPod))
-    .reduce((total, issue) => total + (issue.storyPoints || 0), 0);
+  const deliveredStoryPoints = qualityItems
+    ? qualityItems
+        .filter((issue) =>
+          (doneStatuses ?? ["Done", "Accepted", "Released", "Closed", "Resolved"]).includes(issue.status) &&
+          !/^sub-?task$/i.test(issue.workType) &&
+          (defectPod === "all" || (issue.podName || issue.podKey || issue.projectName || issue.projectKey || "UNKNOWN") === defectPod)
+        )
+        .reduce((total, issue) => total + (issue.storyPoints || 0), 0)
+    : issues
+        .filter((issue) => issue.isDone && (defectPod === "all" || defectPodKey(issue) === defectPod))
+        .reduce((total, issue) => total + (issue.storyPoints || 0), 0);
   const defectDensity = deliveredStoryPoints
-    ? Number(((densityDefectCount / deliveredStoryPoints) * 100).toFixed(1))
+    ? Number(((qaDefectCount / deliveredStoryPoints) * 100).toFixed(1))
     : null;
-  const defectPriorities = Array.from(new Set(defectAnalysisRows.map((issue) => issue.priority || "Medium")))
-    .sort((a, b) => a.localeCompare(b))
+  const additionalPriorities = Array.from(new Set(defectAnalysisRows.map((issue) => issue.priority || "Unspecified")))
+    .filter((priority) => !["high", "medium", "low"].includes(priority.toLowerCase()))
+    .sort((a, b) => a.localeCompare(b));
+  const defectPriorities = ["High", "Medium", "Low", ...additionalPriorities]
     .map((priority) => ({
       priority,
-      count: defectAnalysisRows.filter((issue) => (issue.priority || "Medium") === priority).length,
-      color: /highest|high/i.test(priority) ? "#c03a2b" : /medium/i.test(priority) ? "#f2a900" : "#0052cc",
+      count: defectAnalysisRows.filter((issue) => (issue.priority || "Unspecified").toLowerCase() === priority.toLowerCase()).length,
+      color: /highest|high/i.test(priority) ? "#c03a2b" : /medium/i.test(priority) ? "#f2a900" : /low/i.test(priority) ? "#0052cc" : "#6b778c",
     }));
+  const resolutionDenominator = qaDefectCount - cancelledDefectRows.length;
+  const defectResolutionRate = resolutionDenominator
+    ? Math.round((completedDefectRows.length / resolutionDenominator) * 100)
+    : null;
   const open = (title: string, subtitle: string, list: IssueRow[]) =>
     setModal({ title, subtitle, issues: list });
+
+  const resolutionScopeRows = defectAnalysisRows.filter((issue) => !isCancelledDefect(issue));
+  const defectMetricCards = [
+    { title: "Total Defects", value: qaDefectCount, note: "Distinct Jira bugs in this scope", subtitle: `${qaDefectCount} distinct bugs returned by the configured QA defect query`, rows: defectAnalysisRows, tone: "indigo" },
+    { title: "Open Defects", value: openDefectRows.length, note: "Unresolved; includes reopened", subtitle: `${openDefectRows.length} bugs are not completed or canceled`, rows: openDefectRows, tone: "amber" },
+    { title: "Closed Defects", value: completedDefectRows.length, note: "Completed, accepted, or resolved", subtitle: `${completedDefectRows.length} bugs have a completed Jira status`, rows: completedDefectRows, tone: "emerald" },
+    { title: "Canceled Defects", value: cancelledDefectRows.length, note: "Canceled or rejected statuses", subtitle: `${cancelledDefectRows.length} bugs are canceled or rejected and excluded from the resolution-rate denominator`, rows: cancelledDefectRows, tone: "rose" },
+    { title: "Reopened Defects", value: reopenedDefectRows.length, note: "Current status includes “reopened”", subtitle: `${reopenedDefectRows.length} bugs currently have a reopened status; these are also included in Open Defects`, rows: reopenedDefectRows, tone: "orange" },
+    { title: "Defect Density", value: defectDensity === null ? "N/A" : defectDensity, note: "Bugs per 100 completed story points", subtitle: defectDensity === null ? "Density is unavailable because no completed story points are in scope" : `${qaDefectCount} distinct QA bugs ÷ ${deliveredStoryPoints} completed story points × 100`, rows: defectAnalysisRows, tone: "blue" },
+    { title: "UAT Defects", value: qaUatDefects === undefined ? "N/A" : scopedUatRows.length, note: qaUatDefects === undefined ? "Configure the UAT Jira query" : "Distinct bugs from the UAT Jira query", subtitle: qaUatDefects === undefined ? "Configure JIRA_QA_UAT_DEFECT_JQL to enable this analysis" : `${scopedUatRows.length} distinct UAT defects in the selected scope`, rows: scopedUatRows, tone: "sky" },
+    { title: "Defect Leakage", value: qaLeakageDefects === undefined ? "N/A" : qaDefectCount ? `${defectLeakageRate}%` : "N/A", note: qaLeakageDefects === undefined ? "Configure the leakage Jira query" : `${leakedDefectCount} matched · ${scopedLeakageRows.length} query results`, subtitle: qaLeakageDefects === undefined ? "Configure JIRA_QA_LEAKAGE_DEFECT_JQL to enable this analysis" : `The leakage query returned ${scopedLeakageRows.length} distinct issues; ${leakedDefectCount} also match the main QA defect query. The rate is ${leakedDefectCount} ÷ ${qaDefectCount} QA defects.`, rows: scopedLeakageRows, tone: "violet" },
+    { title: "Defect Resolution Rate", value: defectResolutionRate === null ? "N/A" : `${defectResolutionRate}%`, note: "Closed ÷ non-canceled defects", subtitle: defectResolutionRate === null ? "Resolution rate is unavailable because there are no non-canceled defects in scope" : `${completedDefectRows.length} closed ÷ ${resolutionDenominator} non-canceled defects × 100; canceled defects are excluded`, rows: resolutionScopeRows, tone: "teal" },
+  ];
+
+  const toneClasses: Record<string, string> = {
+    indigo: "border-indigo-100 text-indigo-700 hover:border-indigo-300",
+    amber: "border-amber-100 text-amber-700 hover:border-amber-300",
+    emerald: "border-emerald-100 text-emerald-700 hover:border-emerald-300",
+    rose: "border-rose-100 text-rose-700 hover:border-rose-300",
+    orange: "border-orange-100 text-orange-700 hover:border-orange-300",
+    blue: "border-blue-100 text-blue-700 hover:border-blue-300",
+    sky: "border-sky-100 text-sky-700 hover:border-sky-300",
+    violet: "border-violet-100 text-violet-700 hover:border-violet-300",
+    teal: "border-teal-100 text-teal-700 hover:border-teal-300",
+  };
 
   const openMember = (m: QaMemberStat) => {
     const s = sliced(m);
@@ -242,7 +274,7 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
               <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-200">Quality overview</p>
               <div className="mt-2 flex flex-wrap items-center gap-3">
                 <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">QA Defects</h2>
-                <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold text-indigo-50">{defectRows.length} issues</span>
+                <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold text-indigo-50">{qaDefectCount} bugs</span>
               </div>
               <p className="mt-2 max-w-2xl text-sm text-slate-300">Track defect status and reporter ownership across QA pods. Select a count to inspect the matching Jira issues.</p>
             </div>
@@ -280,37 +312,25 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
 
         <div className="flex flex-wrap items-center justify-between gap-2 px-5 pt-5 sm:px-7">
           <div>
-            <h3 className="text-sm font-bold text-slate-900">Defect status summary</h3>
-            <p className="mt-0.5 text-[11px] text-slate-500">Counts follow the selected pod and reporter search</p>
+            <h3 className="text-sm font-bold text-slate-900">Defect metrics</h3>
+            <p className="mt-0.5 text-[11px] text-slate-500">Select any metric for its definition and matching Jira defects · filtered by pod and reporter search</p>
           </div>
           <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-600">{defectPod === "all" ? "All pods" : defectPods.find((pod) => pod.key === defectPod)?.name ?? defectPod}</span>
         </div>
-        <div className="grid grid-cols-2 gap-3 border-b border-slate-200 bg-slate-50/70 p-5 sm:grid-cols-3 sm:p-7 xl:grid-cols-5">
-          <button type="button" onClick={() => open("Total QA Defects", "Distinct defects in the selected pod and reporter scope", defectAnalysisRows)} className="rounded-xl border border-indigo-100 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md">
-            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-indigo-700">Total defects</p>
-            <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900">{qaDefectCount}</p>
-            <p className="mt-1 text-[11px] text-slate-500">All QA bugs in this scope</p>
-          </button>
-          <button type="button" onClick={() => open("Accepted / Completed Defects", `${uniqueCount(completedDefectRows)} completed defects`, completedDefectRows)} className="rounded-xl border border-emerald-100 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md">
-            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-emerald-700">Accepted / completed</p>
-            <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900">{uniqueCount(completedDefectRows)}</p>
-            <p className="mt-1 text-[11px] text-slate-500">Done, accepted, or resolved</p>
-          </button>
-          <button type="button" onClick={() => open("Canceled Defects", `${uniqueCount(cancelledDefectRows)} canceled defects`, cancelledDefectRows)} className="rounded-xl border border-rose-100 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-rose-300 hover:shadow-md">
-            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-rose-700">Canceled</p>
-            <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900">{uniqueCount(cancelledDefectRows)}</p>
-            <p className="mt-1 text-[11px] text-slate-500">Canceled or rejected</p>
-          </button>
-          <button type="button" onClick={() => open("Pending Defects", `${uniqueCount(pendingDefectRows)} pending defects`, pendingDefectRows)} className="rounded-xl border border-amber-100 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-amber-300 hover:shadow-md">
-            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-amber-700">Pending</p>
-            <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900">{uniqueCount(pendingDefectRows)}</p>
-            <p className="mt-1 text-[11px] text-slate-500">Pending workflow status</p>
-          </button>
-          <button type="button" onClick={() => open("UAT Defects", qaUatDefects === undefined ? "Configure JIRA_QA_UAT_DEFECT_JQL to enable this analysis" : `${uniqueCount(uatDefectRows ?? [])} UAT defects in the selected scope`, uatDefectRows ?? [])} className="rounded-xl border border-sky-100 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-sky-300 hover:shadow-md">
-            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-sky-700">UAT defects</p>
-            <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900">{qaUatDefects === undefined ? "N/A" : uniqueCount(uatDefectRows ?? [])}</p>
-            <p className="mt-1 text-[11px] text-slate-500">{qaUatDefects === undefined ? "Query not configured" : "From the UAT Jira query"}</p>
-          </button>
+        <div className="grid grid-cols-1 gap-3 border-b border-slate-200 bg-slate-50/70 p-5 sm:grid-cols-2 sm:p-7 xl:grid-cols-3">
+          {defectMetricCards.map((card) => (
+            <button
+              key={card.title}
+              type="button"
+              onClick={() => open(card.title, card.subtitle, card.rows)}
+              className={`rounded-xl border bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${toneClasses[card.tone]}`}
+            >
+              <p className="text-[10px] font-bold uppercase tracking-[0.12em]">{card.title}</p>
+              <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900">{card.value}</p>
+              <p className="mt-1 text-[11px] text-slate-500">{card.note}</p>
+              <p className="mt-3 text-[10px] font-semibold text-slate-400">View Jira analysis ↗</p>
+            </button>
+          ))}
         </div>
 
         {qaDefects.length === 0 ? (
@@ -358,110 +378,34 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
           </div>
         )}
 
-      <div className="space-y-6 border-t border-slate-200 p-5 sm:p-7">
-      <div>
-        <h3 className="text-sm font-bold text-slate-900">Defect analysis</h3>
-        <p className="mt-0.5 text-[11px] text-slate-500">Trend and lifecycle measures for the selected QA defect scope</p>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <button
-          type="button"
-          onClick={() => open("Defect Density", `${densityDefectCount} QA defects against ${deliveredStoryPoints} completed story points`, densityDefectRows)}
-          className="text-left bg-white border border-jira-border rounded-lg p-4 shadow-sm hover:border-jira-red/50 transition"
-        >
-          <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Defect Density</p>
-          <p className="text-2xl font-bold text-jira-text mt-1">{defectDensity ?? "N/A"}</p>
-          <p className="text-xs text-jira-text-light mt-1">Per 100 delivered SP · pod scope</p>
-        </button>
-        <button
-          type="button"
-          onClick={() => open("Defect Leakage", qaLeakageDefects === undefined ? "Configure JIRA_QA_LEAKAGE_DEFECT_JQL to identify escaped defects" : `${leakedDefectCount} escaped defects among ${qaDefectCount} QA defects`, scopedLeakageRows)}
-          className="text-left bg-white border border-jira-border rounded-lg p-4 shadow-sm hover:border-jira-amber/50 transition"
-        >
-          <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Defect Leakage</p>
-          <p className="text-2xl font-bold text-jira-amber mt-1">{qaLeakageDefects === undefined || qaDefectCount === 0 ? "N/A" : `${defectLeakageRate}%`}</p>
-          <p className="text-xs text-jira-text-light mt-1">{qaLeakageDefects === undefined ? "Leakage query not configured" : qaDefectCount ? `${leakedDefectCount} of ${qaDefectCount} QA defects in scope` : "No QA defects in selected scope"}</p>
-        </button>
-        <button
-          type="button"
-          onClick={() => open("Completed Defects", `${uniqueCount(completedDefectRows)} completed QA bugs`, completedDefectRows)}
-          className="text-left bg-white border border-jira-border rounded-lg p-4 shadow-sm hover:border-jira-green/50 transition"
-        >
-          <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Completed Defects</p>
-          <p className="text-2xl font-bold text-jira-green mt-1">{uniqueCount(completedDefectRows)}</p>
-          <p className="text-xs text-jira-text-light mt-1">Done, accepted, released, closed, or resolved</p>
-        </button>
-        <button
-          type="button"
-          onClick={() =>
-            open("Bug Resolution Rate", `${uniqueCount(completedDefectRows)} of ${qaDefectCount} bugs completed`, defectAnalysisRows)
-          }
-          className="text-left bg-white border border-jira-border rounded-lg p-4 shadow-sm hover:border-jira-green/50 transition"
-        >
-          <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Bug Resolution Rate</p>
-          <p className="text-2xl font-bold text-jira-green mt-1">{qaDefectCount ? Math.round((uniqueCount(completedDefectRows) / qaDefectCount) * 100) : 0}%</p>
-          <p className="text-xs text-jira-text-light mt-1">{uniqueCount(completedDefectRows)} completed · {uniqueCount(activeDefectRows)} active · {uniqueCount(cancelledDefectRows)} canceled</p>
-        </button>
-        <button
-          type="button"
-          onClick={() =>
-            open("Resolution Time", "Completed QA defects with Jira resolution dates", resolvedDefectRows)
-          }
-          className="text-left bg-white border border-jira-border rounded-lg p-4 shadow-sm hover:border-jira-blue/50 transition"
-        >
-          <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Resolution Time</p>
-          <p className="text-2xl font-bold text-jira-blue mt-1">{defectDurations.length ? `${avgDefectResolutionDays} days` : "N/A"}</p>
-          <p className="text-xs text-jira-text-light mt-1">Average over {defectDurations.length} completed defects with dates</p>
-        </button>
-        <button
-          type="button"
-          onClick={() =>
-            open("Active Defects", "Unresolved QA defects excluding canceled issues", activeDefectRows)
-          }
-          className="text-left bg-white border border-jira-border rounded-lg p-4 shadow-sm hover:border-jira-amber/50 transition"
-        >
-          <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Active Defects</p>
-          <p className="text-2xl font-bold text-jira-amber mt-1">{uniqueCount(activeDefectRows)}</p>
-          <p className="text-xs text-jira-text-light mt-1">Open · {uniqueCount(cancelledDefectRows)} canceled separately</p>
-        </button>
-      </div>
-
-      {/* Priority Distribution */}
-      <div className="bg-white border border-jira-border rounded-lg p-5 shadow-sm">
-        <h3 className="text-sm font-bold text-jira-text uppercase tracking-wider mb-4">
-          Defect Severity & Priority Distribution
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {defectPriorities.map((pd) => (
-            <button
-              key={pd.priority}
-              type="button"
-              onClick={() =>
-                open(
-                  `${pd.priority} Priority`,
-                  `${pd.count} QA defects with ${pd.priority.toLowerCase()} priority`,
-                  defectAnalysisRows.filter((i) => (i.priority || "Medium") === pd.priority)
-                )
-              }
-              className="text-left p-4 bg-jira-bg rounded-lg border border-jira-border/60 hover:border-jira-blue/50 transition"
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-semibold text-jira-text text-sm flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: pd.color }} />
-                  {pd.priority} Priority
-                </span>
-                <span className="text-lg font-bold" style={{ color: pd.color }}>
-                  {pd.count}
-                </span>
-              </div>
-              <p className="text-xs text-jira-text-muted mt-2">
-                QA defects with {pd.priority.toLowerCase()} priority
-              </p>
-            </button>
-          ))}
+        <div className="border-t border-slate-200 p-5 sm:p-7">
+          <div className="mb-4">
+            <h3 className="text-sm font-bold text-slate-900">Defect Severity &amp; Priority Distribution</h3>
+            <p className="mt-1 text-[11px] text-slate-500">Grouped by Jira priority. The current issue feed does not map a separate severity field.</p>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {defectPriorities.map((pd) => {
+              const priorityRows = defectAnalysisRows.filter((issue) => (issue.priority || "Unspecified").toLowerCase() === pd.priority.toLowerCase());
+              return (
+                <button
+                  key={pd.priority}
+                  type="button"
+                  onClick={() => open(`${pd.priority} Priority`, `${pd.count} QA defects with ${pd.priority.toLowerCase()} Jira priority`, priorityRows)}
+                  className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-indigo-300 hover:bg-white hover:shadow-sm"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: pd.color }} />
+                      {pd.priority}
+                    </span>
+                    <span className="text-lg font-bold" style={{ color: pd.color }}>{pd.count}</span>
+                  </div>
+                  <p className="mt-2 text-xs text-slate-500">Matching Jira defects · click to inspect</p>
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
-      </div>
 
       </section>
 

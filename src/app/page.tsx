@@ -371,6 +371,8 @@ export default function DashboardPage() {
               qaRosterConfigured={feed?.config?.qaMembers?.length ?? 0}
               zephyr={dashboardData.zephyr}
               issues={dashboardData.issueList}
+              qualityItems={feed?.items}
+              doneStatuses={feed?.config?.doneStatuses}
               qaDefects={feed?.qaDefects ?? []}
               qaUatDefects={feed?.qaUatDefects}
               qaLeakageDefects={feed?.qaLeakageDefects}
