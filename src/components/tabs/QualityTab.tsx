@@ -39,8 +39,7 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
   const [defectPod, setDefectPod] = useState("all");
   const [defectReporterSearch, setDefectReporterSearch] = useState("");
   const [zephyrSearch, setZephyrSearch] = useState("");
-  const [zephyrProject, setZephyrProject] = useState("all");
-  const [zephyrPod, setZephyrPod] = useState("all");
+  const [zephyrScope, setZephyrScope] = useState("all");
   const [zephyrSprint, setZephyrSprint] = useState("all");
   const [zephyrExecutionStatus, setZephyrExecutionStatus] = useState("all");
 
@@ -157,6 +156,10 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
   const zephyrCases = zephyr?.cases ?? [];
   const zephyrProjects = Array.from(new Map(zephyrCases.map((testCase) => [testCase.projectKey, { key: testCase.projectKey, name: testCase.projectName }])).values()).sort((a, b) => a.name.localeCompare(b.name));
   const zephyrPodOptions = Array.from(new Set(zephyrCases.flatMap((testCase) => testCase.podNames))).sort((a, b) => a.localeCompare(b));
+  const zephyrScopeOptions = [
+    ...zephyrPodOptions.map((pod) => ({ value: `pod:${pod}`, label: pod })),
+    ...zephyrProjects.map((project) => ({ value: `project:${project.key}`, label: `${project.name} (${project.key})` })),
+  ].sort((a, b) => a.label.localeCompare(b.label));
   const zephyrSprintOptions = Array.from(new Set(zephyrCases.flatMap((testCase) => testCase.sprints ?? []))).sort((a, b) => a.localeCompare(b));
   const qaPodOptions = Array.from(new Set([
     ...(qaCapacity?.members ?? []).flatMap((m) => m.podNames),
@@ -188,8 +191,9 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
   };
 
   const scopedZephyrCases = zephyrCases.filter((testCase) => {
-    const projectMatch = zephyrProject === "all" || testCase.projectKey === zephyrProject;
-    const podMatch = zephyrPod === "all" || testCase.podNames.includes(zephyrPod);
+    const scopeMatch = zephyrScope === "all" || (zephyrScope.startsWith("project:")
+      ? testCase.projectKey.toLowerCase() === zephyrScope.slice("project:".length).toLowerCase()
+      : testCase.podNames.includes(zephyrScope.slice("pod:".length)));
     const sprintMatch = zephyrSprint === "all" || (zephyrSprint === "__no_sprint__" ? !(testCase.sprints?.length) : (testCase.sprints ?? []).includes(zephyrSprint));
     const executionMatch = zephyrExecutionStatus === "all" ||
       (testCase.latestExecution?.statusCategory ?? "pending") === zephyrExecutionStatus;
@@ -198,7 +202,7 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
       testCase.projectName, ...testCase.podNames, ...testCase.labels, ...testCase.linkedIssueKeys,
       ...testCase.executions.flatMap((execution) => [execution.assignedTo, execution.executedBy])]
       .some((value) => value.toLowerCase().includes(query));
-    return projectMatch && podMatch && sprintMatch && executionMatch && searchMatch;
+    return scopeMatch && sprintMatch && executionMatch && searchMatch;
   });
   const executionCounts = (cases: typeof zephyrCases) => cases.reduce((counts, testCase) => {
     const status = testCase.latestExecution?.statusCategory ?? "pending";
@@ -206,6 +210,10 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
     return counts;
   }, {} as Record<string, number>);
   const scopedExecutionCounts = executionCounts(scopedZephyrCases);
+  const selectedZephyrProject = zephyrScope.startsWith("project:") ? zephyrScope.slice("project:".length) : "";
+  const showEntqaAutomationStatus = selectedZephyrProject.toUpperCase() === "ENTQA";
+  const entqaApprovedCases = scopedZephyrCases.filter((testCase) => /^approved$/i.test(testCase.status));
+  const entqaDraftCases = scopedZephyrCases.filter((testCase) => /^draft$/i.test(testCase.status));
   const podSprintPerformance = (() => {
     const groups = new Map<string, { pod: string; sprint: string; cases: Map<string, (typeof scopedZephyrCases)[number]> }>();
     for (const testCase of scopedZephyrCases) {
@@ -415,10 +423,9 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
                 {scopedZephyrCases.length} matching cases · {scopedZephyrCases.reduce((total, testCase) => total + testCase.executionCount, 0)} runs
               </span>
             </div>
-            <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <input value={zephyrSearch} onChange={(event) => setZephyrSearch(event.target.value)} placeholder="Search cases or people" aria-label="Search Zephyr test cases" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
-              <select value={zephyrProject} onChange={(event) => setZephyrProject(event.target.value)} aria-label="Filter by Zephyr project" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="all">All projects</option>{zephyrProjects.map((project) => <option key={project.key} value={project.key}>{project.name} ({project.key})</option>)}</select>
-              <select value={zephyrPod} onChange={(event) => setZephyrPod(event.target.value)} aria-label="Filter by QA pod" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="all">All pods</option>{zephyrPodOptions.map((pod) => <option key={pod} value={pod}>{pod}</option>)}</select>
+              <select value={zephyrScope} onChange={(event) => setZephyrScope(event.target.value)} aria-label="Filter by QA pod or project" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="all">All pods</option>{zephyrScopeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
               <select value={zephyrSprint} onChange={(event) => setZephyrSprint(event.target.value)} aria-label="Filter by Jira sprint" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="all">All sprints</option>{zephyrSprintOptions.map((sprint) => <option key={sprint} value={sprint}>{sprint}</option>)}<option value="__no_sprint__">Backlog / no linked sprint</option></select>
               <select value={zephyrExecutionStatus} onChange={(event) => setZephyrExecutionStatus(event.target.value)} aria-label="Filter by execution status" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="all">All execution statuses</option><option value="passed">Passed</option><option value="failed">Failed</option><option value="blocked">Blocked</option><option value="in-progress">In progress</option><option value="pending">Not run yet</option></select>
             </div>
@@ -444,6 +451,22 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
               );
             })}
           </div>
+          {showEntqaAutomationStatus && (
+            <div className="border-t border-slate-200 bg-white px-4 py-4 sm:px-6">
+              <div className="mb-3"><h3 className="text-sm font-bold text-slate-900">ENTQA case status</h3><p className="mt-1 text-xs text-slate-500">Approved test cases are grouped as Automated; Draft test cases are grouped as Pending.</p></div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {[
+                  { title: "Automated", status: "Approved", cases: entqaApprovedCases, style: "border-emerald-200 bg-emerald-50 text-emerald-800" },
+                  { title: "Pending", status: "Draft", cases: entqaDraftCases, style: "border-amber-200 bg-amber-50 text-amber-800" },
+                ].map((card) => (
+                  <button key={card.title} type="button" onClick={() => setZephyrModal({ title: `ENTQA · ${card.title}`, subtitle: `${card.cases.length} test cases with Zephyr status “${card.status}”`, cases: card.cases })} className={`rounded-xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-300 ${card.style}`}>
+                    <span className="text-[10px] font-bold uppercase tracking-wide">{card.title}</span>
+                    <span className="mt-1 flex items-end justify-between"><span className="text-2xl font-bold">{card.cases.length}</span><span className="text-[11px]">Zephyr status: {card.status} · View cases</span></span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="border-t border-slate-200 px-4 py-4 sm:px-6">
             <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
               <div><h3 className="text-sm font-bold text-slate-900">Pod and sprint execution analysis</h3><p className="mt-1 text-xs text-slate-500">Case counts use the latest execution per case. A case linked to multiple Jira sprints appears in each applicable sprint row.</p></div>
