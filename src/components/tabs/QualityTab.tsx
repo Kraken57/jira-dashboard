@@ -33,6 +33,17 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
   } | null>(null);
   const [zephyrModal, setZephyrModal] = useState<{ title: string; subtitle: string; cases: NonNullable<ZephyrData["cases"]> } | null>(null);
   const [zephyrModalSearch, setZephyrModalSearch] = useState("");
+  const [entqaSprintModal, setEntqaSprintModal] = useState<{
+    folder: string;
+    groups: Array<{
+      sprint: string;
+      cases: NonNullable<ZephyrData["cases"]>;
+      automated: number;
+      pending: number;
+      other: number;
+      executed: number;
+    }>;
+  } | null>(null);
   const [expandedZephyrPod, setExpandedZephyrPod] = useState<string | null>(null);
   // QA tab owns its filters: an in-tab pod filter independent from the shared
   // pod/quarter/sprint bar (which is hidden on this tab).
@@ -262,6 +273,35 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
       return { folder, cases, total: cases.length, automated, pending, other: cases.filter((testCase) => !/^(approved|draft)$/i.test(testCase.status)) };
     }).sort((a, b) => a.folder.localeCompare(b.folder));
   })();
+  const openEntqaSprintModal = (folder: string, cases: NonNullable<ZephyrData["cases"]>) => {
+    const bySprint = new Map<string, Map<string, (typeof cases)[number]>>();
+    for (const testCase of cases) {
+      const sprints = testCase.sprints?.length ? testCase.sprints : ["Backlog / no linked sprint"];
+      for (const sprint of sprints) {
+        const sprintCases = bySprint.get(sprint) ?? new Map<string, (typeof cases)[number]>();
+        sprintCases.set(testCase.key, testCase);
+        bySprint.set(sprint, sprintCases);
+      }
+    }
+    const groups = Array.from(bySprint, ([sprint, testCaseMap]) => {
+      const sprintCases = Array.from(testCaseMap.values());
+      const automated = sprintCases.filter((testCase) => /^approved$/i.test(testCase.status)).length;
+      const pending = sprintCases.filter((testCase) => /^draft$/i.test(testCase.status)).length;
+      return {
+        sprint,
+        cases: sprintCases,
+        automated,
+        pending,
+        other: sprintCases.length - automated - pending,
+        executed: sprintCases.filter((testCase) => testCase.executionCount > 0).length,
+      };
+    }).sort((a, b) => {
+      if (a.sprint === "Backlog / no linked sprint") return 1;
+      if (b.sprint === "Backlog / no linked sprint") return -1;
+      return a.sprint.localeCompare(b.sprint);
+    });
+    setEntqaSprintModal({ folder, groups });
+  };
   const podSprintPerformance = (() => {
     const groups = new Map<string, { pod: string; sprint: string; cases: Map<string, (typeof scopedZephyrCases)[number]> }>();
     for (const testCase of scopedZephyrCases) {
@@ -545,7 +585,7 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
             <div className="border-t border-slate-200 bg-white px-4 py-4 sm:px-6">
               <div className="mb-4">
                 <h3 className="text-sm font-bold text-slate-900">ENTQA automation by pod</h3>
-                <p className="mt-1 text-xs text-slate-500">Grouped by Zephyr folder (for example, SRG, Finance_ERP, DTP, DTR, and Platform_SF). Approved = Automated · Draft = Pending. Click a count to view cases.</p>
+                <p className="mt-1 text-xs text-slate-500">Grouped by Zephyr folder (for example, SRG, Finance_ERP, DTP, DTR, and Platform_SF). Select a pod to see its sprint breakdown. Approved = Automated · Draft = Pending.</p>
               </div>
               {entqaFolderStatusGroups.length === 0 ? (
                 <p className="rounded-xl border border-dashed border-slate-300 px-4 py-7 text-center text-sm text-slate-500">No ENTQA test cases match the current filters.</p>
@@ -559,10 +599,10 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
                       <article key={group.folder} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
-                            <h4 className="truncate text-sm font-bold text-slate-900">{group.folder}</h4>
+                            <button type="button" onClick={() => openEntqaSprintModal(group.folder, group.cases)} className="truncate text-left text-sm font-bold text-slate-900 hover:text-indigo-700">{group.folder}</button>
                             <p className="mt-0.5 text-xs text-slate-500">{group.total} total test cases</p>
                           </div>
-                          <button type="button" onClick={() => openZephyrModal(`ENTQA · ${group.folder}`, `${group.total} test cases in this Zephyr folder`, group.cases)} className="shrink-0 rounded-lg px-2 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-50">View all</button>
+                          <button type="button" onClick={() => openEntqaSprintModal(group.folder, group.cases)} className="shrink-0 rounded-lg px-2 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-50">Sprint breakdown</button>
                         </div>
                         <div className="mt-3 grid grid-cols-3 gap-2">
                           <button type="button" onClick={() => openZephyrModal(`ENTQA · ${group.folder} · Automated`, `${group.automated.length} Approved test cases`, group.automated)} className="rounded-lg border border-emerald-100 bg-emerald-50/70 p-2 text-left transition hover:bg-emerald-100">
@@ -588,6 +628,40 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
                 </div>
               )}
             </div>
+          )}
+          {entqaSprintModal && (
+            <DetailModal
+              title={`ENTQA · ${entqaSprintModal.folder} · Sprint breakdown`}
+              subtitle={`${entqaSprintModal.groups.length} sprint groups · choose a sprint to inspect its cases`}
+              onClose={() => setEntqaSprintModal(null)}
+              wide
+            >
+              <div className="grid gap-3 p-4 sm:grid-cols-2 sm:p-5 xl:grid-cols-3">
+                {entqaSprintModal.groups.map((group) => (
+                  <button
+                    key={group.sprint}
+                    type="button"
+                    onClick={() => {
+                      setEntqaSprintModal(null);
+                      openZephyrModal(`ENTQA · ${entqaSprintModal.folder} · ${group.sprint}`, `${group.cases.length} test cases · ${group.executed} executed`, group.cases);
+                    }}
+                    className="rounded-xl border border-slate-200 bg-white p-4 text-left transition hover:border-indigo-300 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <h4 className="text-sm font-bold leading-5 text-slate-900">{group.sprint}</h4>
+                      <span className="shrink-0 rounded-full bg-indigo-50 px-2.5 py-1 text-[10px] font-bold text-indigo-700">{group.cases.length} cases</span>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">{group.executed} executed</p>
+                    <div className="mt-3 grid grid-cols-3 gap-2 border-t border-slate-100 pt-3">
+                      <div><p className="text-[10px] text-slate-500">Automated</p><p className="text-sm font-bold text-emerald-700">{group.automated}</p></div>
+                      <div><p className="text-[10px] text-slate-500">Pending</p><p className="text-sm font-bold text-amber-700">{group.pending}</p></div>
+                      <div><p className="text-[10px] text-slate-500">Other</p><p className="text-sm font-bold text-slate-700">{group.other}</p></div>
+                    </div>
+                    <p className="mt-3 text-[10px] font-semibold text-indigo-700">Open test cases →</p>
+                  </button>
+                ))}
+              </div>
+            </DetailModal>
           )}
           <div className="border-t border-slate-200 px-4 py-4 sm:px-6">
             <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
