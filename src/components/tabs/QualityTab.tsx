@@ -33,6 +33,7 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
   } | null>(null);
   const [zephyrModal, setZephyrModal] = useState<{ title: string; subtitle: string; cases: NonNullable<ZephyrData["cases"]> } | null>(null);
   const [zephyrModalSearch, setZephyrModalSearch] = useState("");
+  const [expandedZephyrPod, setExpandedZephyrPod] = useState<string | null>(null);
   // QA tab owns its filters: an in-tab pod filter independent from the shared
   // pod/quarter/sprint bar (which is hidden on this tab).
   const [qaPod, setQaPod] = useState("all");
@@ -152,7 +153,6 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
 
   // In-tab pod options derive from the QA members' actual teams.
   const zephyrCases = zephyr?.cases ?? [];
-  const zephyrCasesWithSprint = zephyrCases.filter((testCase) => testCase.sprints?.length).length;
   const openZephyrModal = (title: string, subtitle: string, cases: NonNullable<ZephyrData["cases"]>) => {
     setZephyrModalSearch("");
     setZephyrModal({ title, subtitle, cases });
@@ -269,6 +269,41 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
       const executed = cases.filter((testCase) => testCase.executionCount > 0).length;
       return { ...group, cases, total: cases.length, executed, passed, failed: count("failed"), blocked: count("blocked"), inProgress: count("in-progress"), pending: count("pending"), passRate: executed ? Math.round((passed / executed) * 100) : null };
     }).sort((a, b) => a.pod.localeCompare(b.pod) || a.sprint.localeCompare(b.sprint));
+  })();
+  const scopedCasesWithSprint = scopedZephyrCases.filter((testCase) => testCase.sprints?.length).length;
+  const sprintCoveragePercent = scopedZephyrCases.length
+    ? Math.round((scopedCasesWithSprint / scopedZephyrCases.length) * 100)
+    : 0;
+  const zephyrPodPerformance = (() => {
+    const byPod = new Map<string, Map<string, (typeof scopedZephyrCases)[number]>>();
+    for (const testCase of scopedZephyrCases) {
+      const pods = testCase.podNames.length ? testCase.podNames : ["Unmapped pod"];
+      for (const pod of pods) {
+        const cases = byPod.get(pod) ?? new Map<string, (typeof scopedZephyrCases)[number]>();
+        cases.set(testCase.key, testCase);
+        byPod.set(pod, cases);
+      }
+    }
+    return Array.from(byPod, ([pod, caseMap]) => {
+      const cases = Array.from(caseMap.values());
+      const executed = cases.filter((testCase) => testCase.executionCount > 0).length;
+      const passed = cases.filter((testCase) => latestExecutionCategory(testCase) === "passed").length;
+      return {
+        pod,
+        cases,
+        total: cases.length,
+        executed,
+        passed,
+        failed: cases.filter((testCase) => latestExecutionCategory(testCase) === "failed").length,
+        blocked: cases.filter((testCase) => latestExecutionCategory(testCase) === "blocked").length,
+        inProgress: cases.filter((testCase) => latestExecutionCategory(testCase) === "in-progress").length,
+        pending: cases.filter((testCase) => latestExecutionCategory(testCase) === "pending").length,
+        withSprint: cases.filter((testCase) => testCase.sprints?.length).length,
+        sprintRows: podSprintPerformance.filter((row) => row.pod === pod),
+        progress: cases.length ? Math.round((executed / cases.length) * 100) : 0,
+        passRate: executed ? Math.round((passed / executed) * 100) : null,
+      };
+    }).sort((a, b) => a.pod.localeCompare(b.pod));
   })();
 
   const sliced = (m: QaMemberStat) => sliceMember(m);
@@ -458,16 +493,21 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
                 {scopedZephyrCases.length} matching cases · {scopedZephyrCases.reduce((total, testCase) => total + testCase.executionCount, 0)} runs
               </span>
             </div>
-            {zephyrCases.length > 0 && zephyrCasesWithSprint < zephyrCases.length && (
-              <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
-                Jira sprint data matched {zephyrCasesWithSprint} of {zephyrCases.length} Zephyr cases. Cases without a Jira Sprint assignment or a readable linked Jira issue appear as backlog; Jira access must include the case/linked issues and their Sprint field.
-              </p>
-            )}
             <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <input value={zephyrSearch} onChange={(event) => setZephyrSearch(event.target.value)} placeholder="Search cases or people" aria-label="Search Zephyr test cases" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
               <select value={zephyrScope} onChange={(event) => setZephyrScope(event.target.value)} aria-label="Filter by QA pod or project" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="all">All pods</option>{zephyrScopeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
               <select value={zephyrSprint} onChange={(event) => setZephyrSprint(event.target.value)} aria-label="Filter by Jira sprint" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="all">All sprints</option>{zephyrSprintOptions.map((sprint) => <option key={sprint} value={sprint}>{sprint}</option>)}<option value="__no_sprint__">Backlog / no linked sprint</option></select>
               <select value={zephyrExecutionStatus} onChange={(event) => setZephyrExecutionStatus(event.target.value)} aria-label="Filter by execution status" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="all">All execution statuses</option><option value="passed">Passed</option><option value="failed">Failed</option><option value="blocked">Blocked</option><option value="in-progress">In progress</option><option value="pending">Not run yet</option></select>
+            </div>
+            <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                <span className="font-semibold text-slate-700">Sprint coverage</span>
+                <span className="text-slate-600"><b className="text-slate-900">{scopedCasesWithSprint}</b> of {scopedZephyrCases.length} cases linked to a sprint <span className="mx-1 text-slate-300">·</span> {scopedZephyrCases.length - scopedCasesWithSprint} in backlog</span>
+              </div>
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200" role="progressbar" aria-label="Cases linked to a Jira sprint" aria-valuemin={0} aria-valuemax={100} aria-valuenow={sprintCoveragePercent}>
+                <div className="h-full rounded-full bg-indigo-600 transition-all" style={{ width: `${sprintCoveragePercent}%` }} />
+              </div>
+              {scopedCasesWithSprint < scopedZephyrCases.length && <p className="mt-2 text-[11px] leading-4 text-slate-500">Backlog means no readable Jira Sprint was found on the test case or its Traceability-linked work item.</p>}
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3 bg-slate-50 p-4 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-6 sm:p-5">
@@ -508,21 +548,49 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
           )}
           <div className="border-t border-slate-200 px-4 py-4 sm:px-6">
             <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
-              <div><h3 className="text-sm font-bold text-slate-900">Pod and sprint execution analysis</h3><p className="mt-1 text-xs text-slate-500">Case counts use the latest execution per case. A case linked to multiple Jira sprints appears in each applicable sprint row.</p></div>
-              <span className="text-[11px] text-slate-500">{podSprintPerformance.length} pod/sprint groups</span>
+              <div><h3 className="text-sm font-bold text-slate-900">Execution by pod and sprint</h3><p className="mt-1 text-xs text-slate-500">Open a pod, then select a sprint to view its cases. Each case uses its latest run; sprint rows can overlap when linked to multiple sprints.</p></div>
+              <span className="text-[11px] text-slate-500">{zephyrPodPerformance.length} pods · {podSprintPerformance.length} sprint groups</span>
             </div>
-            {podSprintPerformance.length === 0 ? <p className="rounded-xl border border-dashed border-slate-300 py-8 text-center text-sm text-slate-500">No cases match these filters.</p> : (
-              <div className="overflow-x-auto rounded-xl border border-slate-200">
-                <table className="w-full min-w-[850px] text-left text-xs">
-                  <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500"><tr><th className="px-3 py-3">Pod</th><th className="px-3 py-3">Sprint</th><th className="px-3 py-3 text-center">Cases</th><th className="px-3 py-3 text-center">Executed</th><th className="px-3 py-3 text-center">Passed</th><th className="px-3 py-3 text-center">Failed</th><th className="px-3 py-3 text-center">Blocked</th><th className="px-3 py-3 text-center">In progress</th><th className="px-3 py-3 text-center">Not run</th><th className="px-3 py-3 text-center">Pass rate</th></tr></thead>
-                  <tbody className="divide-y divide-slate-100">{podSprintPerformance.map((row) => (
-                    <tr key={`${row.pod}-${row.sprint}`} className="hover:bg-indigo-50/40">
-                      <th className="px-3 py-3 font-semibold text-slate-800">{row.pod}</th><td className="px-3 py-3 text-slate-600">{row.sprint}</td>
-                      <td className="px-3 py-3 text-center"><button type="button" className="font-bold text-indigo-700 underline-offset-2 hover:underline" onClick={() => openZephyrModal(`${row.pod} · ${row.sprint}`, `${row.total} test cases · ${row.executed} with an execution`, row.cases)}>{row.total}</button></td>
-                      <td className="px-3 py-3 text-center">{row.executed}</td><td className="px-3 py-3 text-center font-semibold text-emerald-700">{row.passed}</td><td className="px-3 py-3 text-center font-semibold text-rose-700">{row.failed}</td><td className="px-3 py-3 text-center">{row.blocked}</td><td className="px-3 py-3 text-center">{row.inProgress}</td><td className="px-3 py-3 text-center">{row.pending}</td><td className="px-3 py-3 text-center">{row.passRate === null ? "—" : `${row.passRate}%`}</td>
-                    </tr>
-                  ))}</tbody>
-                </table>
+            {zephyrPodPerformance.length === 0 ? <p className="rounded-xl border border-dashed border-slate-300 py-8 text-center text-sm text-slate-500">No cases match these filters.</p> : (
+              <div className="space-y-2.5">
+                {zephyrPodPerformance.map((pod) => {
+                  const isExpanded = expandedZephyrPod === pod.pod;
+                  return (
+                    <section key={pod.pod} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                      <button type="button" aria-expanded={isExpanded} onClick={() => setExpandedZephyrPod(isExpanded ? null : pod.pod)} className="w-full px-4 py-3.5 text-left transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-400 sm:px-5">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 transition ${isExpanded ? "rotate-90 bg-indigo-50 text-indigo-700" : "bg-slate-100"}`} aria-hidden="true">›</span>
+                            <div className="min-w-0"><h4 className="truncate text-sm font-bold text-slate-900">{pod.pod}</h4><p className="mt-0.5 text-[11px] text-slate-500">{pod.total} test cases · {pod.withSprint} assigned to a sprint · {pod.total - pod.withSprint} backlog</p></div>
+                          </div>
+                          <div className="grid grid-cols-3 gap-3 text-right sm:min-w-[330px]">
+                            <div><p className="text-[10px] text-slate-500">Executed</p><p className="text-xs font-bold text-slate-800">{pod.executed}/{pod.total}</p></div>
+                            <div><p className="text-[10px] text-slate-500">Passed</p><p className="text-xs font-bold text-emerald-700">{pod.passed}</p></div>
+                            <div><p className="text-[10px] text-slate-500">Pass rate</p><p className="text-xs font-bold text-slate-800">{pod.passRate === null ? "—" : `${pod.passRate}%`}</p></div>
+                          </div>
+                        </div>
+                        <div className="ml-11 mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100 sm:mr-[342px]">
+                          <div className="h-full rounded-full bg-emerald-500" style={{ width: `${pod.progress}%` }} />
+                        </div>
+                      </button>
+                      {isExpanded && (
+                        <div className="border-t border-slate-100 bg-slate-50/70 p-3 sm:p-4">
+                          {pod.sprintRows.length === 0 ? <p className="px-2 py-4 text-center text-xs text-slate-500">No sprint groups match the selected filters.</p> : (
+                            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                              {pod.sprintRows.map((row) => (
+                                <button key={`${row.pod}-${row.sprint}`} type="button" onClick={() => openZephyrModal(`${row.pod} · ${row.sprint}`, `${row.total} cases · ${row.executed} executed`, row.cases)} className="rounded-lg border border-slate-200 bg-white p-3 text-left transition hover:border-indigo-300 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">
+                                  <div className="flex items-start justify-between gap-2"><span className="text-xs font-semibold leading-5 text-slate-800">{row.sprint}</span><span className="shrink-0 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold text-indigo-700">{row.total} cases</span></div>
+                                  <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-slate-500"><span>{row.executed} executed</span><span className="font-semibold text-emerald-700">{row.passed} passed</span>{row.failed > 0 && <span className="font-semibold text-rose-700">{row.failed} failed</span>}{row.blocked > 0 && <span className="font-semibold text-amber-700">{row.blocked} blocked</span>}{row.inProgress > 0 && <span className="font-semibold text-sky-700">{row.inProgress} in progress</span>}{row.pending > 0 && <span>{row.pending} not run</span>}</div>
+                                  <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-2 text-[10px]"><span className="text-slate-500">Pass rate</span><span className="font-bold text-slate-800">{row.passRate === null ? "No executions yet" : `${row.passRate}%`}</span></div>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </section>
+                  );
+                })}
               </div>
             )}
           </div>
