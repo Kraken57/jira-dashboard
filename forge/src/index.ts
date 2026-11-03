@@ -660,7 +660,10 @@ function qaPoolFromItems(items: any[]): any[] {
 }
 
 /** Zephyr Essential Cloud v2.9 uses the API access token created in the Zephyr UI. */
-async function fetchZephyrExecutions(pool: any[]): Promise<ZephyrData> {
+async function fetchZephyrExecutions(
+  pool: any[],
+  config: { storyPointsField: string; sprintField: string; podField: string }
+): Promise<ZephyrData> {
   const token = process.env.JIRA_ZEPHYR_API_TOKEN?.trim();
   const projects = (process.env.JIRA_ZEPHYR_PROJECT_KEYS || "")
     .split(",").map((x) => x.trim()).filter(Boolean);
@@ -782,7 +785,7 @@ async function fetchZephyrExecutions(pool: any[]): Promise<ZephyrData> {
         bucket.total++; if (statusCategory === "passed") bucket.pass++; else if (statusCategory === "failed") bucket.fail++; else if (statusCategory === "blocked") bucket.blocked++; else if (statusCategory === "in-progress") bucket.wip++; else bucket.unexecuted++;
       }
     }
-    const cases = await Promise.all(caseRows.map(async (testCase) => {
+    let cases = await Promise.all(caseRows.map(async (testCase) => {
       const projectKey = String(testCase.__projectKey || String(testCase.key || "").split("-T")[0] || "UNKNOWN");
       const linkedIssueKeys = (Array.isArray(record(testCase.links).issues) ? record(testCase.links).issues : []).map((issue: any) => typeof issue === "string" ? issue : String(issue?.key || issue?.issueKey || issue?.self?.match(/\/(?:browse|issue)\/([A-Z][A-Z0-9_]+-\d+)/i)?.[1] || "")).filter(Boolean);
       const linkedPods = new Map<string, string>();
@@ -804,6 +807,31 @@ async function fetchZephyrExecutions(pool: any[]): Promise<ZephyrData> {
       const label = async (value: unknown, fallback: string) => referenceName(value, get(value, "id") ? `Status ${get(value, "id")}` : fallback);
       return { id: String(testCase.id || testCase.key), key: String(testCase.key || ""), name: String(testCase.name || testCase.key || ""), projectKey, projectName: projectNames[projectKey] || pool.find((item) => item.projectKey === projectKey)?.projectName || projectKey, podKeys: Array.from(pods.keys()), podNames: Array.from(pods.values()), podSource, ownerName, ownerAccountId: ownerAccountId || undefined, status: await label(testCase.status, "Unknown"), priority: await label(testCase.priority, "Unspecified"), folder: await label(testCase.folder, "Unfiled"), labels: Array.isArray(testCase.labels) ? testCase.labels.map(String) : [], linkedIssueKeys, sprints: Array.from(linkedSprints).sort((a, b) => a.localeCompare(b)), createdOn: testCase.createdOn || testCase.createdDate, objective: testCase.objective, precondition: testCase.precondition, executionCount: executions.length, latestExecution: executions[0], executions };
     }));
+    const sprintLookupKeys = Array.from(new Set(cases.flatMap((testCase) => [testCase.key, ...testCase.linkedIssueKeys])))
+      .filter((key) => /^[A-Z][A-Z0-9_]*-\d+$/i.test(key));
+    try {
+      const sprintItems: any[] = [];
+      const jiraFields = ["summary", "status", "issuetype", "project", config.sprintField, config.podField, config.storyPointsField];
+      for (let offset = 0; offset < sprintLookupKeys.length; offset += 80) {
+        const chunk = sprintLookupKeys.slice(offset, offset + 80);
+        if (chunk.length) sprintItems.push(...await jiraClient.searchIssuesJql(`key in (${chunk.join(", ")})`, jiraFields));
+      }
+      const byKey = new Map(sprintItems.map((issue) => {
+        const item = mapIssueToWorkItem(issue, config);
+        return [item.key, item] as const;
+      }));
+      cases = cases.map((testCase) => {
+        const linkedSprints = testCase.linkedIssueKeys.flatMap((key) => byKey.get(key)?.sprints || []);
+        const caseSprints = byKey.get(testCase.key)?.sprints || [];
+        const originalSprints = testCase.sprints || [];
+        return { ...testCase, sprints: Array.from(new Set(linkedSprints.length ? linkedSprints : caseSprints.length ? caseSprints : originalSprints)) };
+      });
+      if (cases.length && !cases.some((testCase) => testCase.sprints.length)) {
+        projectErrors.push("No Jira sprint values found for Zephyr test-case or linked issue keys; verify Jira issue visibility and sprint assignment");
+      }
+    } catch (error) {
+      projectErrors.push(`Jira sprint lookup: ${error instanceof Error ? error.message : "request failed"}`);
+    }
     return {
       available: true,
       cases,
@@ -1460,8 +1488,8 @@ function calculateKPIs(
  * is fresh enough, refreshed on demand otherwise. Values are zlib-deflated
  * and chunked because KVS caps individual values.
  */
-const FEED_META_KEY = "raw-feed-v2-meta";
-const FEED_PART_KEY = "raw-feed-v2-part-";
+const FEED_META_KEY = "raw-feed-v3-meta";
+const FEED_PART_KEY = "raw-feed-v3-part-";
 // Legacy @forge/api storage caps a single persisted value at ~128 KB raw.
 // 90 KB compressed -> ~120 KB base64, under the cap; a 930-item feed still
 // needs a single part. Raise to ~175 KB after the @forge/kvs flip (240 KiB).
@@ -1583,7 +1611,7 @@ async function fetchAndStoreFeed(): Promise<FeedEnvelope> {
     config: resolveFeedConfig(),
   };
 
-  const zephyr = await fetchZephyrExecutions(qaPoolFromItems(envelope.items));
+  const zephyr = await fetchZephyrExecutions(qaPoolFromItems(envelope.items), config);
   envelope.zephyr = zephyr;
 
   const compressed = zlib

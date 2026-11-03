@@ -483,6 +483,13 @@ The tab has two parts:
    slices the view by pod. The tab ignores the shared pod/quarter/sprint filters.
 2. **Defect metrics** (below): the original defect cards and priority distribution.
 
+Zephyr sprint labels are resolved from Jira's Sprint field on each Zephyr test-case issue
+and, when present, its linked Jira issues. Those keys are looked up separately from
+`JIRA_JQL`, so Zephyr test projects do not need to be added to the main delivery scope.
+The Jira account/app still needs permission to read those issues and their Sprint field;
+otherwise the cases remain “Backlog / no linked sprint” and the Quality section reports
+that no Jira sprint assignments were found.
+
 | Element | Popup issues |
 |---|---|
 | Defect Density | all bugs |
