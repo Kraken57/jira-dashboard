@@ -787,7 +787,9 @@ async function fetchZephyrExecutions(
     }
     let cases = await Promise.all(caseRows.map(async (testCase) => {
       const projectKey = String(testCase.__projectKey || String(testCase.key || "").split("-T")[0] || "UNKNOWN");
-      const linkedIssueKeys = (Array.isArray(record(testCase.links).issues) ? record(testCase.links).issues : []).map((issue: any) => typeof issue === "string" ? issue : String(issue?.key || issue?.issueKey || issue?.self?.match(/\/(?:browse|issue)\/([A-Z][A-Z0-9_]+-\d+)/i)?.[1] || "")).filter(Boolean);
+      const issueLinks = Array.isArray(record(testCase.links).issues) ? record(testCase.links).issues : [];
+      const linkedIssueKeys = issueLinks.map((issue: any) => typeof issue === "string" ? issue : String(issue?.key || issue?.issueKey || issue?.target?.match?.(/[A-Z][A-Z0-9_]+-\d+/i)?.[0] || issue?.self?.match(/\/(?:browse|issue)\/([A-Z][A-Z0-9_]+-\d+)/i)?.[1] || "")).filter((key: string) => /^[A-Z][A-Z0-9_]*-\d+$/i.test(key));
+      const linkedIssueIds = issueLinks.map((issue: any) => typeof issue === "string" ? "" : String(issue?.issueId || "")).filter((id: string) => /^\d+$/.test(id));
       const linkedPods = new Map<string, string>();
       const linkedSprints = new Set<string>();
       for (const key of linkedIssueKeys) {
@@ -805,13 +807,31 @@ async function fetchZephyrExecutions(
       const ownerName = person(testCase.owner) || names[ownerAccountId] || ownerAccountId || "Unassigned";
       const executions = (executionMap.get(String(testCase.key || "")) || []).sort((a, b) => Date.parse(b.executedOn || "") - Date.parse(a.executedOn || ""));
       const label = async (value: unknown, fallback: string) => referenceName(value, get(value, "id") ? `Status ${get(value, "id")}` : fallback);
-      return { id: String(testCase.id || testCase.key), key: String(testCase.key || ""), name: String(testCase.name || testCase.key || ""), projectKey, projectName: projectNames[projectKey] || pool.find((item) => item.projectKey === projectKey)?.projectName || projectKey, podKeys: Array.from(pods.keys()), podNames: Array.from(pods.values()), podSource, ownerName, ownerAccountId: ownerAccountId || undefined, status: await label(testCase.status, "Unknown"), priority: await label(testCase.priority, "Unspecified"), folder: await label(testCase.folder, "Unfiled"), labels: Array.isArray(testCase.labels) ? testCase.labels.map(String) : [], linkedIssueKeys, sprints: Array.from(linkedSprints).sort((a, b) => a.localeCompare(b)), createdOn: testCase.createdOn || testCase.createdDate, objective: testCase.objective, precondition: testCase.precondition, executionCount: executions.length, latestExecution: executions[0], executions };
+      return { id: String(testCase.id || testCase.key), key: String(testCase.key || ""), name: String(testCase.name || testCase.key || ""), projectKey, projectName: projectNames[projectKey] || pool.find((item) => item.projectKey === projectKey)?.projectName || projectKey, podKeys: Array.from(pods.keys()), podNames: Array.from(pods.values()), podSource, ownerName, ownerAccountId: ownerAccountId || undefined, status: await label(testCase.status, "Unknown"), priority: await label(testCase.priority, "Unspecified"), folder: await label(testCase.folder, "Unfiled"), labels: Array.isArray(testCase.labels) ? testCase.labels.map(String) : [], linkedIssueKeys, linkedIssueIds, sprints: Array.from(linkedSprints).sort((a, b) => a.localeCompare(b)), createdOn: testCase.createdOn || testCase.createdDate, objective: testCase.objective, precondition: testCase.precondition, executionCount: executions.length, latestExecution: executions[0], executions };
     }));
-    const sprintLookupKeys = Array.from(new Set(cases.flatMap((testCase) => [testCase.key, ...testCase.linkedIssueKeys])))
+    const jiraFields = ["summary", "status", "issuetype", "project", config.sprintField, config.podField, config.storyPointsField];
+    const linkedIdItems = new Map<string, any>();
+    const linkedIds = Array.from(new Set(cases.flatMap((testCase) => testCase.linkedIssueIds ?? [])));
+    for (let offset = 0; offset < linkedIds.length; offset += 8) {
+      const chunk = linkedIds.slice(offset, offset + 8);
+      const resolved = await Promise.all(chunk.map(async (id) => {
+        try {
+          const issue = await jiraClient.getIssue(id, jiraFields);
+          return [id, mapIssueToWorkItem(issue, config)] as const;
+        } catch {
+          return null;
+        }
+      }));
+      for (const entry of resolved) if (entry) linkedIdItems.set(entry[0], entry[1]);
+    }
+    const sprintLookupKeys = Array.from(new Set(cases.flatMap((testCase) => [
+      testCase.key,
+      ...testCase.linkedIssueKeys,
+      ...(testCase.linkedIssueIds ?? []).map((id) => linkedIdItems.get(id)?.key || ""),
+    ])))
       .filter((key) => /^[A-Z][A-Z0-9_]*-\d+$/i.test(key));
     try {
-      const sprintItems: any[] = [];
-      const jiraFields = ["summary", "status", "issuetype", "project", config.sprintField, config.podField, config.storyPointsField];
+      const sprintItems: any[] = Array.from(linkedIdItems.values());
       for (let offset = 0; offset < sprintLookupKeys.length; offset += 80) {
         const chunk = sprintLookupKeys.slice(offset, offset + 80);
         if (chunk.length) sprintItems.push(...await jiraClient.searchIssuesJql(`key in (${chunk.join(", ")})`, jiraFields));
@@ -821,10 +841,14 @@ async function fetchZephyrExecutions(
         return [item.key, item] as const;
       }));
       cases = cases.map((testCase) => {
-        const linkedSprints = testCase.linkedIssueKeys.flatMap((key) => byKey.get(key)?.sprints || []);
+        const resolvedKeys = (testCase.linkedIssueIds ?? []).map((id) => linkedIdItems.get(id)?.key || "").filter(Boolean);
+        const linkedIssueKeys = Array.from(new Set([...testCase.linkedIssueKeys, ...resolvedKeys]));
+        const linkedItems = linkedIssueKeys.map((key) => byKey.get(key)).filter(Boolean);
+        const linkedSprints = linkedItems.flatMap((item) => item.sprints || []);
         const caseSprints = byKey.get(testCase.key)?.sprints || [];
         const originalSprints = testCase.sprints || [];
-        return { ...testCase, sprints: Array.from(new Set(linkedSprints.length ? linkedSprints : caseSprints.length ? caseSprints : originalSprints)) };
+        const linkedPods = new Map(linkedItems.map((item) => [item.podKey || item.projectKey, item.podName || item.projectName || item.podKey]));
+        return { ...testCase, linkedIssueKeys, ...(linkedPods.size ? { podKeys: Array.from(linkedPods.keys()), podNames: Array.from(linkedPods.values()), podSource: "linked Jira issue" } : {}), sprints: Array.from(new Set(linkedSprints.length ? linkedSprints : caseSprints.length ? caseSprints : originalSprints)) };
       });
       if (cases.length && !cases.some((testCase) => testCase.sprints.length)) {
         projectErrors.push("No Jira sprint values found for Zephyr test-case or linked issue keys; verify Jira issue visibility and sprint assignment");
@@ -1488,8 +1512,8 @@ function calculateKPIs(
  * is fresh enough, refreshed on demand otherwise. Values are zlib-deflated
  * and chunked because KVS caps individual values.
  */
-const FEED_META_KEY = "raw-feed-v3-meta";
-const FEED_PART_KEY = "raw-feed-v3-part-";
+const FEED_META_KEY = "raw-feed-v4-meta";
+const FEED_PART_KEY = "raw-feed-v4-part-";
 // Legacy @forge/api storage caps a single persisted value at ~128 KB raw.
 // 90 KB compressed -> ~120 KB base64, under the cap; a 930-item feed still
 // needs a single part. Raise to ~175 KB after the @forge/kvs flip (240 KiB).

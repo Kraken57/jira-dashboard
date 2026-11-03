@@ -222,6 +222,8 @@ export interface ZephyrTestCase {
   folder: string;
   labels: string[];
   linkedIssueKeys: string[];
+  /** Numeric Jira issue IDs supplied by Zephyr when links omit issue keys. */
+  linkedIssueIds?: string[];
   /** Jira sprint names inherited from the linked Jira issues. */
   sprints: string[];
   createdOn?: string;

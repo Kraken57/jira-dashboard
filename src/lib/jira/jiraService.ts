@@ -253,7 +253,7 @@ function getFeedQueries() {
 function getFeedQueryFingerprint(): string {
   const { mainJql, defectJql, uatDefectJql, leakageDefectJql } = getFeedQueries();
   const zephyrProjects = (process.env.JIRA_ZEPHYR_PROJECT_KEYS || "").trim();
-  return createHash("sha256").update(`quality-cases-v3\n${mainJql}\n${defectJql}\n${uatDefectJql}\n${leakageDefectJql}\n${zephyrProjects}`).digest("hex");
+  return createHash("sha256").update(`quality-cases-v4\n${mainJql}\n${defectJql}\n${uatDefectJql}\n${leakageDefectJql}\n${zephyrProjects}`).digest("hex");
 }
 
 let inflightFetch: Promise<RawFeedPayload> | null = null;
@@ -512,10 +512,14 @@ async function fetchZephyrExecutions(jiraItems: JiraWorkItem[] = []): Promise<Ze
       const key = String(raw.key || "");
       const projectKey = String(raw.__projectKey || key.match(/^(.+?)-T\d+$/i)?.[1] || "UNKNOWN");
       const projectName = jiraProjectNames[projectKey] || String(raw.__projectName || projectKey);
-      const linkedIssueKeys = (Array.isArray(asRecord(raw.links).issues) ? asRecord(raw.links).issues as unknown[] : [])
-        .map((link) => typeof link === "string" ? link : String(pick(asRecord(link), ["key", "issueKey"]) ||
+      const issueLinks = Array.isArray(asRecord(raw.links).issues) ? asRecord(raw.links).issues as unknown[] : [];
+      const linkedIssueKeys = issueLinks
+        .map((link) => typeof link === "string" ? link : String(pick(asRecord(link), ["key", "issueKey", "target"]) ||
           String(asRecord(link).self || "").match(/\/(?:browse|issue)\/([A-Z][A-Z0-9_]+-\d+)/i)?.[1] || ""))
-        .filter(Boolean);
+        .filter((issueKey) => /^[A-Z][A-Z0-9_]*-\d+$/i.test(issueKey));
+      const linkedIssueIds = issueLinks
+        .map((link) => typeof link === "string" ? "" : String(pick(asRecord(link), ["issueId"]) || ""))
+        .filter((issueId) => /^\d+$/.test(issueId));
       const linkedPods = new Map<string, string>();
       const linkedSprints = new Set<string>();
       for (const issueKey of linkedIssueKeys) {
@@ -561,6 +565,7 @@ async function fetchZephyrExecutions(jiraItems: JiraWorkItem[] = []): Promise<Ze
         folder: await referenceName(folderRef, folderId ? `Folder ${folderId}` : "Unfiled"),
         labels: Array.isArray(raw.labels) ? raw.labels.map(String) : [],
         linkedIssueKeys,
+        linkedIssueIds,
         sprints: Array.from(linkedSprints).sort((a, b) => a.localeCompare(b)),
         createdOn: String(raw.createdOn || raw.createdDate || "") || undefined,
         objective: String(raw.objective || "") || undefined,
@@ -606,7 +611,31 @@ async function fetchLiveFeed(): Promise<RawFeedPayload> {
   ]);
   const zephyr = await fetchZephyrExecutions(live.items);
   if (zephyr.available && zephyr.cases?.length) {
-    const lookupKeys = Array.from(new Set(zephyr.cases.flatMap((testCase) => [testCase.key, ...testCase.linkedIssueKeys])))
+    const linkedIdToKey = new Map<string, string>();
+    const linkedIds = Array.from(new Set(zephyr.cases.flatMap((testCase) => testCase.linkedIssueIds ?? [])));
+    const authHeader = Buffer.from(`${JIRA_CONFIG.email}:${JIRA_CONFIG.apiToken}`).toString("base64");
+    for (let offset = 0; offset < linkedIds.length; offset += 8) {
+      const chunk = linkedIds.slice(offset, offset + 8);
+      const resolved = await Promise.all(chunk.map(async (issueId) => {
+        try {
+          const response = await fetch(`${JIRA_CONFIG.host.replace(/\/+$/, "")}/rest/api/3/issue/${issueId}?fields=key`, {
+            headers: { Authorization: `Basic ${authHeader}`, Accept: "application/json" },
+            cache: "no-store",
+          });
+          if (!response.ok) return null;
+          const issue = await response.json() as { key?: string };
+          return issue.key ? [issueId, issue.key] as const : null;
+        } catch {
+          return null;
+        }
+      }));
+      for (const entry of resolved) if (entry) linkedIdToKey.set(entry[0], entry[1]);
+    }
+    const lookupKeys = Array.from(new Set(zephyr.cases.flatMap((testCase) => [
+      testCase.key,
+      ...testCase.linkedIssueKeys,
+      ...(testCase.linkedIssueIds ?? []).map((id) => linkedIdToKey.get(id) || ""),
+    ])))
       .filter((key) => /^[A-Z][A-Z0-9_]*-\d+$/i.test(key));
     const sprintItems: JiraWorkItem[] = [];
     try {
@@ -621,10 +650,16 @@ async function fetchLiveFeed(): Promise<RawFeedPayload> {
       }
       const byKey = new Map(sprintItems.map((item) => [item.key, item]));
       zephyr.cases = zephyr.cases.map((testCase) => {
-        const linkedSprints = testCase.linkedIssueKeys.flatMap((key) => byKey.get(key)?.sprints ?? []);
+        const resolvedKeys = (testCase.linkedIssueIds ?? []).map((id) => linkedIdToKey.get(id) || "").filter(Boolean);
+        const linkedIssueKeys = Array.from(new Set([...testCase.linkedIssueKeys, ...resolvedKeys]));
+        const linkedItems = linkedIssueKeys.map((key) => byKey.get(key)).filter((item): item is JiraWorkItem => Boolean(item));
+        const linkedSprints = linkedItems.flatMap((item) => item.sprints);
         const caseSprints = byKey.get(testCase.key)?.sprints ?? [];
+        const linkedPods = new Map(linkedItems.map((item) => [item.podKey, item.podName || item.podKey]));
         return {
           ...testCase,
+          linkedIssueKeys,
+          ...(linkedPods.size ? { podKeys: Array.from(linkedPods.keys()), podNames: Array.from(linkedPods.values()), podSource: "linked Jira issue" as const } : {}),
           sprints: Array.from(new Set(linkedSprints.length ? linkedSprints : caseSprints.length ? caseSprints : testCase.sprints)),
         };
       });

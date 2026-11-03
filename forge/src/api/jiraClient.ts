@@ -96,9 +96,12 @@ export class JiraClient {
     return allIssues;
   }
 
-  async getIssue(issueKeyOrId: string): Promise<any> {
+  async getIssue(issueKeyOrId: string, fields?: string[]): Promise<any> {
+    const requestedFields = fields?.length
+      ? fields.join(",")
+      : "summary,status,issuetype,project,parent,assignee,priority,created,updated,resolutiondate,duedate,labels,components,fixVersions";
     const response = await api.asApp().requestJira(
-      route`/rest/api/3/issue/${issueKeyOrId}?fields=summary,status,issuetype,project,parent,assignee,priority,created,updated,resolutiondate,duedate,labels,components,fixVersions`
+      route`/rest/api/3/issue/${issueKeyOrId}?fields=${requestedFields}`
     );
     if (!response.ok) {
       throw new Error(`Get issue failed: ${response.status}`);
