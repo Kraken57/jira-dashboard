@@ -209,6 +209,10 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
     };
   };
 
+  // Cards, filters, pod/sprint summaries, and their popups all use the same
+  // latest execution outcome. A case with no execution is counted as pending.
+  const latestExecutionCategory = (testCase: (typeof zephyrCases)[number]) =>
+    testCase.latestExecution?.statusCategory ?? "pending";
   const selectedZephyrScope = zephyrScopeOptions.find((option) => option.value === zephyrScope);
   const scopedZephyrCases = zephyrCases.filter((testCase) => {
     const scopeMatch = zephyrScope === "all" || Boolean(selectedZephyrScope && (
@@ -216,8 +220,7 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
       selectedZephyrScope.projectKeys.some((key) => testCase.projectKey.toLowerCase() === key.toLowerCase())
     ));
     const sprintMatch = zephyrSprint === "all" || (zephyrSprint === "__no_sprint__" ? !(testCase.sprints?.length) : (testCase.sprints ?? []).includes(zephyrSprint));
-    const executionMatch = zephyrExecutionStatus === "all" ||
-      (testCase.latestExecution?.statusCategory ?? "pending") === zephyrExecutionStatus;
+    const executionMatch = zephyrExecutionStatus === "all" || latestExecutionCategory(testCase) === zephyrExecutionStatus;
     const query = zephyrSearch.trim().toLowerCase();
     const searchMatch = !query || [testCase.key, testCase.name, testCase.ownerName, testCase.projectKey,
       testCase.projectName, ...testCase.podNames, ...testCase.labels, ...testCase.linkedIssueKeys,
@@ -226,7 +229,7 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
     return scopeMatch && sprintMatch && executionMatch && searchMatch;
   });
   const executionCounts = (cases: typeof zephyrCases) => cases.reduce((counts, testCase) => {
-    const status = testCase.latestExecution?.statusCategory ?? "pending";
+    const status = latestExecutionCategory(testCase);
     counts[status] = (counts[status] ?? 0) + 1;
     return counts;
   }, {} as Record<string, number>);
@@ -247,7 +250,7 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
     }
     return Array.from(groups.values()).map((group) => {
       const cases = Array.from(group.cases.values());
-      const count = (category: string) => cases.filter((testCase) => (testCase.latestExecution?.statusCategory ?? "pending") === category).length;
+      const count = (category: string) => cases.filter((testCase) => latestExecutionCategory(testCase) === category).length;
       const passed = count("passed");
       const executed = cases.filter((testCase) => testCase.executionCount > 0).length;
       return { ...group, cases, total: cases.length, executed, passed, failed: count("failed"), blocked: count("blocked"), inProgress: count("in-progress"), pending: count("pending"), passRate: executed ? Math.round((passed / executed) * 100) : null };
@@ -343,12 +346,9 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
               type="button"
               onClick={() => open(card.title, card.subtitle, card.rows)}
               aria-label={`${card.title}: ${card.value}. ${card.note}. Click to open details.`}
-              className={`group rounded-xl border bg-white p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 sm:p-3.5 ${toneClasses[card.tone]}`}
+              className={`rounded-xl border bg-white p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 sm:p-3.5 ${toneClasses[card.tone]}`}
             >
-              <div className="flex items-start justify-between gap-2">
-                <p className="text-[9px] font-bold uppercase leading-4 tracking-[0.1em] sm:text-[10px]">{card.title}</p>
-                <span aria-hidden="true" className="text-xs text-slate-300 transition group-hover:text-indigo-500">↗</span>
-              </div>
+              <p className="text-[9px] font-bold uppercase leading-4 tracking-[0.1em] sm:text-[10px]">{card.title}</p>
               <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-[1.7rem]">{card.value}</p>
               <p className="mt-0.5 line-clamp-2 text-[10px] leading-4 text-slate-500 sm:text-[11px]">{card.note}</p>
             </button>
@@ -461,7 +461,7 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
               { label: "Not run yet", value: scopedExecutionCounts.pending ?? 0, category: "pending", color: "text-slate-700" },
             ].map((card) => {
               const matchingCases = card.category === "all" ? scopedZephyrCases
-                : scopedZephyrCases.filter((testCase) => (testCase.latestExecution?.statusCategory ?? "pending") === card.category);
+                : scopedZephyrCases.filter((testCase) => latestExecutionCategory(testCase) === card.category);
               return (
                 <button key={card.label} type="button" onClick={() => setZephyrModal({ title: card.label, subtitle: `${matchingCases.length} matching test cases in the selected filters`, cases: matchingCases })} className="rounded-xl border border-slate-200 bg-white p-3 text-left transition hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-300">
                   <p className={`text-[10px] font-bold uppercase tracking-wide ${card.color}`}>{card.label}</p>
