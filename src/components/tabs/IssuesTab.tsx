@@ -1,20 +1,108 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { IssueRow } from "@/lib/jira/types";
+import { DetailModal } from "@/components/DetailModal";
+import { DashboardFilters, IssueRow, JiraWorkItem } from "@/lib/jira/types";
 
 interface IssuesTabProps {
   issues: IssueRow[];
+  auditItems: JiraWorkItem[];
+  filters: DashboardFilters;
   jiraDomain?: string;
 }
 
 const PAGE_SIZE = 25;
 
-export function IssuesTab({ issues, jiraDomain }: IssuesTabProps) {
+export function IssuesTab({ issues, auditItems, filters, jiraDomain }: IssuesTabProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedType, setSelectedType] = useState("all");
   const [selectedStatus, setSelectedStatus] = useState("all");
   const [page, setPage] = useState(1);
+  const [auditModal, setAuditModal] = useState<{ title: string; explanation: string; issues: JiraWorkItem[] } | null>(null);
+
+  const scopedAuditItems = useMemo(() => {
+    const allByKey = new Map(auditItems.map((item) => [item.key, item]));
+    const sprintMatches = (sprints: string[]) => filters.sprintId === "all" || sprints.some((sprint) => {
+      const sprintName = sprint.trim().toLowerCase();
+      const selected = filters.sprintId.trim().toLowerCase();
+      return sprintName === selected || sprintName.includes(selected) || selected.includes(sprintName);
+    });
+    return auditItems.map((item) => {
+      if (!/^sub-?task$/i.test(item.workType) || !item.parentKey) return item;
+      const parent = allByKey.get(item.parentKey);
+      if (!parent) return item;
+      return {
+        ...item,
+        quarter: item.quarter && item.quarter !== "All" ? item.quarter : parent.quarter,
+        sprints: item.sprints.length ? item.sprints : parent.sprints,
+      };
+    }).filter((item) =>
+      (filters.podId === "all" || item.podKey === filters.podId) &&
+      (filters.quarterId === "all" || item.quarter === filters.quarterId) &&
+      sprintMatches(item.sprints)
+    );
+  }, [auditItems, filters]);
+
+  const auditCards = useMemo(() => {
+    const projectsWithFeatures = new Set(auditItems.filter((item) => /^feature$/i.test(item.workType)).map((item) => item.projectKey));
+    const isFeature = (item: JiraWorkItem) => /^feature$/i.test(item.workType) ||
+      (/^epic$/i.test(item.workType) && !projectsWithFeatures.has(item.projectKey));
+    const storyType = /^story$/i;
+    const bugType = /^(bug|defect)$/i;
+    const subtaskType = /^sub-?task$/i;
+    const byKey = new Map(auditItems.map((item) => [item.key, item]));
+    const resolvedParentType = (item: JiraWorkItem) => {
+      const parent = item.parentKey ? byKey.get(item.parentKey) : undefined;
+      return { type: item.parentWorkType || parent?.workType || "", projectKey: parent?.projectKey || item.projectKey };
+    };
+    const isOrphanedFrom = (item: JiraWorkItem, isExpectedParent: (type: string, projectKey?: string) => boolean) => {
+      if (!item.parentKey) return true;
+      const parent = resolvedParentType(item);
+      // If Jira supplied a parent key but its type is unavailable in the
+      // fetched data, don't report it as an orphan based on missing access.
+      return Boolean(parent.type && !isExpectedParent(parent.type, parent.projectKey));
+    };
+    const isFeatureParent = (type: string, projectKey?: string) => /^feature$/i.test(type) ||
+      (/^epic$/i.test(type) && !projectsWithFeatures.has(projectKey));
+    const isStoryParent = (type: string) => /^story$/i.test(type);
+    return [
+      {
+        title: "Orphan Stories",
+        note: "Stories without a linked Feature parent",
+        explanation: "A story is counted when it has no parent, or its known parent is not a Feature (Epic is used for projects with no Feature issue type).",
+        issues: scopedAuditItems.filter((item) => storyType.test(item.workType) && isOrphanedFrom(item, isFeatureParent)),
+        tone: "amber",
+      },
+      {
+        title: "Features without due date",
+        note: "Features or Epics missing Jira due dates",
+        explanation: "Feature due dates are read from Jira's due date field. Epic is used for projects with no Feature issue type.",
+        issues: scopedAuditItems.filter((item) => isFeature(item) && !item.dueDate?.trim()),
+        tone: "rose",
+      },
+      {
+        title: "Features without PI tagging",
+        note: "Features without a recognized Program Increment",
+        explanation: "PI tagging is derived from the feature's sprint name using the dashboard's quarter/PI mapping. Features with no recognized PI are included.",
+        issues: scopedAuditItems.filter((item) => isFeature(item) && item.quarter === "All"),
+        tone: "violet",
+      },
+      {
+        title: "Orphan Defects",
+        note: "Bugs without a linked Story parent",
+        explanation: "A defect is counted when it has no parent, or its parent is not a Story. Parent type is resolved from the fetched Jira issues.",
+        issues: scopedAuditItems.filter((item) => bugType.test(item.workType) && isOrphanedFrom(item, isStoryParent)),
+        tone: "orange",
+      },
+      {
+        title: "Sub-tasks without parent Story",
+        note: "Sub-tasks missing a linked Story parent",
+        explanation: "A sub-task is counted when it has no parent, or the fetched parent issue is not a Story.",
+        issues: scopedAuditItems.filter((item) => subtaskType.test(item.workType) && isOrphanedFrom(item, isStoryParent)),
+        tone: "blue",
+      },
+    ];
+  }, [auditItems, scopedAuditItems]);
 
   // Available unique types and statuses
   const availableTypes = useMemo(() => {
@@ -56,6 +144,36 @@ export function IssuesTab({ issues, jiraDomain }: IssuesTabProps) {
 
   return (
     <div className="space-y-4">
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 px-5 py-4 sm:px-6">
+          <h2 className="text-lg font-bold text-slate-900">Audit issue checks</h2>
+          <p className="mt-1 text-xs text-slate-500">Find missing parent links and planning fields in the current Pod, PI, and Sprint scope. Select a card to inspect matching Jira issues.</p>
+        </div>
+        <div className="grid grid-cols-1 gap-3 bg-slate-50/70 p-4 sm:grid-cols-2 xl:grid-cols-3 sm:p-5">
+          {auditCards.map((card) => {
+            const colors: Record<string, string> = {
+              amber: "border-amber-200 text-amber-800 hover:border-amber-300",
+              rose: "border-rose-200 text-rose-800 hover:border-rose-300",
+              violet: "border-violet-200 text-violet-800 hover:border-violet-300",
+              orange: "border-orange-200 text-orange-800 hover:border-orange-300",
+              blue: "border-blue-200 text-blue-800 hover:border-blue-300",
+            };
+            return (
+              <button
+                key={card.title}
+                type="button"
+                onClick={() => setAuditModal({ title: card.title, explanation: card.explanation, issues: card.issues })}
+                className={`rounded-xl border bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${colors[card.tone]}`}
+              >
+                <p className="text-[10px] font-bold uppercase tracking-wide">{card.title}</p>
+                <p className="mt-1 text-3xl font-bold tracking-tight text-slate-900">{card.issues.length}</p>
+                <p className="mt-1 text-[11px] text-slate-500">{card.note}</p>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
       {/* Search and Filters Bar */}
       <div className="bg-white border border-jira-border rounded-lg p-4 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
         <div className="flex-1 w-full md:w-auto relative">
@@ -263,6 +381,38 @@ export function IssuesTab({ issues, jiraDomain }: IssuesTabProps) {
           </div>
         )}
       </div>
+
+      {auditModal && (
+        <DetailModal title={auditModal.title} subtitle={`${auditModal.issues.length} matching issues in the current scope`} onClose={() => setAuditModal(null)} wide>
+          <div className="border-b border-jira-border bg-jira-bg/40 px-5 py-4 text-sm text-jira-text">{auditModal.explanation}</div>
+          {auditModal.issues.length === 0 ? (
+            <p className="p-8 text-center text-sm text-slate-500">No matching issues found in the current scope.</p>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {auditModal.issues.map((issue) => (
+                <article key={issue.key} className="p-4 sm:px-5">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <a href={jiraDomain ? `${jiraDomain}/browse/${issue.key}` : undefined} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-jira-blue hover:underline">{issue.key}</a>
+                      <h3 className="mt-1 text-sm font-semibold text-slate-900">{issue.summary}</h3>
+                    </div>
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-700">{issue.status}</span>
+                  </div>
+                  <div className="mt-3 grid gap-x-5 gap-y-1.5 text-xs text-slate-600 sm:grid-cols-2 lg:grid-cols-3">
+                    <p><b>Type:</b> {issue.workType}</p>
+                    <p><b>Parent:</b> {issue.parentKey || "None"}{issue.parentWorkType ? ` · ${issue.parentWorkType}` : ""}</p>
+                    <p><b>Pod:</b> {issue.podName || issue.projectName || issue.projectKey || "Unknown"}</p>
+                    <p><b>PI:</b> {issue.quarter === "All" ? "Not tagged" : issue.quarter}</p>
+                    <p><b>Sprint:</b> {issue.sprints.join(", ") || "Backlog"}</p>
+                    <p><b>Due date:</b> {issue.dueDate || "None"}</p>
+                    <p><b>Assignee:</b> {issue.assignee || "Unassigned"}</p>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </DetailModal>
+      )}
     </div>
   );
 }

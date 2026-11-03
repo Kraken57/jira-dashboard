@@ -28,7 +28,7 @@ const TABS = [
   { id: "developer", label: "Capacity View" },
   { id: "quality", label: "Quality" },
   { id: "diagnosis", label: "Delivery Diagnosis" },
-  { id: "issues", label: "Issues" },
+  { id: "issues", label: "Audit Issues" },
 ];
 
 // Pod / Quarter / Sprint are shared across tabs (a selection carries over).
@@ -390,6 +390,8 @@ export default function DashboardPage() {
           {activeTab === "issues" && dashboardData && (
             <IssuesTab
               issues={dashboardData.issueList}
+              auditItems={feed?.items ?? []}
+              filters={baseFilters}
               jiraDomain={dashboardData.jiraBaseUrl}
             />
           )}

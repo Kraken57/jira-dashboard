@@ -291,7 +291,7 @@ function mapIssueToWorkItem(
   const assigneeObj = fields.assignee as { displayName?: string } | undefined;
   const reporterObj = fields.reporter as { displayName?: string } | undefined;
   const priorityObj = fields.priority as { name?: string } | undefined;
-  const parentObj = fields.parent as { key?: string; id?: string } | undefined;
+  const parentObj = fields.parent as { key?: string; id?: string; fields?: { issuetype?: { name?: string } } } | undefined;
   const epicLink =
     typeof fields.customfield_10014 === "string"
       ? fields.customfield_10014
@@ -314,6 +314,7 @@ function mapIssueToWorkItem(
     projectName: project.name || project.key || "Unknown project",
     reporter: reporterObj?.displayName || "Unassigned",
     parentKey: parentObj?.key || epicLink || "",
+    parentWorkType: parentObj?.fields?.issuetype?.name || "",
     parentId: parentObj?.id || "",
     createdDate: String(fields.created || ""),
     resolutionDate: fields.resolutiondate ? String(fields.resolutiondate) : undefined,

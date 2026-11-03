@@ -184,7 +184,7 @@ async function fetchAllLiveJiraIssues(jqlOverride?: string, queryLabel = "dashbo
     const assigneeObj = fields.assignee as { displayName?: string } | undefined;
     const reporterObj = fields.reporter as { displayName?: string } | undefined;
     const priorityObj = fields.priority as { name?: string } | undefined;
-    const parentObj = fields.parent as { key?: string; id?: string } | undefined;
+    const parentObj = fields.parent as { key?: string; id?: string; fields?: { issuetype?: { name?: string } } } | undefined;
     // Company-managed projects link stories to Epics/Features through the
     // "Epic Link" field instead of `parent`.
     const epicLink =
@@ -212,6 +212,7 @@ async function fetchAllLiveJiraIssues(jqlOverride?: string, queryLabel = "dashbo
       projectName: project.name || project.key || "Unknown project",
       reporter: reporterObj?.displayName || "Unassigned",
       parentKey: parentObj?.key || epicLink || "",
+      parentWorkType: parentObj?.fields?.issuetype?.name || "",
       parentId: parentObj?.id || "",
       createdDate: String(fields.created || ""),
       resolutionDate: fields.resolutiondate

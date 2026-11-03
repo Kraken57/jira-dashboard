@@ -367,6 +367,7 @@ export interface JiraWorkItem {
   reporter?: string;
   priority?: string;
   parentKey?: string;
+  parentWorkType?: string;
   resolutionDate?: string;
   createdDate?: string;
   dueDate?: string;
