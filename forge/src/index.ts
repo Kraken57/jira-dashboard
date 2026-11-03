@@ -755,6 +755,47 @@ async function fetchZephyrExecutions(
       try { const response = await api.asApp().requestJira(route`/rest/api/3/project/${key}`); if (response.ok) { const project = await response.json() as { name?: string }; if (project.name) projectNames[key] = project.name; } } catch { /* use project key fallback */ }
     }));
     const caseRows: ZephyrCaseRow[] = projectData.flatMap(({ key, cases }) => cases.map((testCase) => ({ ...testCase, __projectKey: key })));
+    // Zephyr's case list can return an empty inline issue list while its
+    // Traceability view still has Coverage links. Follow each case's published
+    // links.self resource to retrieve those Jira work-item links.
+    const traceabilityIssues = new Map<string, unknown[]>();
+    const traceabilityTargets = caseRows.flatMap((testCase) => {
+      const links = record(testCase.links);
+      const embedded = Array.isArray(links.issues) ? links.issues : [];
+      const self = String(get(links, "self") || "");
+      const rowKey = `${testCase.__projectKey}:${testCase.key}`;
+      if (embedded.length) {
+        traceabilityIssues.set(rowKey, embedded);
+        return [];
+      }
+      if (!self) return [];
+      try {
+        const url = new URL(self);
+        if (url.protocol !== "https:" || !["prod-api.zephyr4jiracloud.com", "prod-play.zephyr4jiracloud.com"].includes(url.hostname) || !/^\/(?:connect\/)?v2\/testcases\/[^/]+\/links\/?$/.test(url.pathname)) return [];
+        return [{ rowKey, url }];
+      } catch {
+        return [];
+      }
+    });
+    let traceabilityFailures = 0;
+    for (let offset = 0; offset < traceabilityTargets.length; offset += 8) {
+      const batch = traceabilityTargets.slice(offset, offset + 8);
+      const results = await Promise.all(batch.map(async ({ rowKey, url }) => {
+        try {
+          const response = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+          if (!response.ok) return { rowKey, issues: null };
+          const body = record(await response.json());
+          return { rowKey, issues: Array.isArray(body.issues) ? body.issues : [] };
+        } catch {
+          return { rowKey, issues: null };
+        }
+      }));
+      for (const result of results) {
+        if (result.issues === null) traceabilityFailures++;
+        else traceabilityIssues.set(result.rowKey, result.issues);
+      }
+    }
+    if (traceabilityFailures) projectErrors.push(`Zephyr Traceability links unavailable for ${traceabilityFailures} of ${traceabilityTargets.length} cases`);
     const idToKey = new Map(caseRows.map((testCase) => [String(testCase.id || ""), String(testCase.key || "")]));
     const users = new Set<string>();
     for (const testCase of caseRows) { const id = personId(testCase.owner); if (id) users.add(id); }
@@ -787,9 +828,13 @@ async function fetchZephyrExecutions(
     }
     let cases = await Promise.all(caseRows.map(async (testCase) => {
       const projectKey = String(testCase.__projectKey || String(testCase.key || "").split("-T")[0] || "UNKNOWN");
-      const issueLinks = Array.isArray(record(testCase.links).issues) ? record(testCase.links).issues : [];
-      const linkedIssueKeys = issueLinks.map((issue: any) => typeof issue === "string" ? issue : String(issue?.key || issue?.issueKey || issue?.target?.match?.(/[A-Z][A-Z0-9_]+-\d+/i)?.[0] || issue?.self?.match(/\/(?:browse|issue)\/([A-Z][A-Z0-9_]+-\d+)/i)?.[1] || "")).filter((key: string) => /^[A-Z][A-Z0-9_]*-\d+$/i.test(key));
-      const linkedIssueIds = issueLinks.map((issue: any) => typeof issue === "string" ? "" : String(issue?.issueId || "")).filter((id: string) => /^\d+$/.test(id));
+      const issueLinks = traceabilityIssues.get(`${testCase.__projectKey}:${testCase.key}`) ?? [];
+      const linkedIssueKeys = issueLinks.map((issue: any) => {
+        if (typeof issue === "string") return String(issue.match(/(?:browse|issue)\/([A-Z][A-Z0-9_]+-\d+)/i)?.[1] || issue);
+        const target = String(issue?.key || issue?.issueKey || issue?.target || issue?.self || "");
+        return String(target.match(/(?:browse|issue)\/([A-Z][A-Z0-9_]+-\d+)/i)?.[1] || target.match(/[A-Z][A-Z0-9_]+-\d+/i)?.[0] || target);
+      }).filter((key: string) => /^[A-Z][A-Z0-9_]*-\d+$/i.test(key));
+      const linkedIssueIds = issueLinks.map((issue: any) => typeof issue === "string" ? String(issue.match(/\/issue\/(\d+)/i)?.[1] || "") : String(issue?.issueId || issue?.self?.match?.(/\/issue\/(\d+)/i)?.[1] || "")).filter((id: string) => /^\d+$/.test(id));
       const linkedPods = new Map<string, string>();
       const linkedSprints = new Set<string>();
       for (const key of linkedIssueKeys) {
@@ -1512,8 +1557,8 @@ function calculateKPIs(
  * is fresh enough, refreshed on demand otherwise. Values are zlib-deflated
  * and chunked because KVS caps individual values.
  */
-const FEED_META_KEY = "raw-feed-v4-meta";
-const FEED_PART_KEY = "raw-feed-v4-part-";
+const FEED_META_KEY = "raw-feed-v5-meta";
+const FEED_PART_KEY = "raw-feed-v5-part-";
 // Legacy @forge/api storage caps a single persisted value at ~128 KB raw.
 // 90 KB compressed -> ~120 KB base64, under the cap; a 930-item feed still
 // needs a single part. Raise to ~175 KB after the @forge/kvs flip (240 KiB).

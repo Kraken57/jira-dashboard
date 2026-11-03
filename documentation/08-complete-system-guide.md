@@ -484,11 +484,13 @@ The tab has two parts:
 2. **Defect metrics** (below): the original defect cards and priority distribution.
 
 Zephyr sprint labels are resolved from Jira's Sprint field on each Zephyr test-case issue
-and, when present, its linked Jira issues. Those keys are looked up separately from
-`JIRA_JQL`, so Zephyr test projects do not need to be added to the main delivery scope.
-The Jira account/app still needs permission to read those issues and their Sprint field;
-otherwise the cases remain “Backlog / no linked sprint” and the Quality section reports
-that no Jira sprint assignments were found.
+and on Jira work items linked through Zephyr Traceability coverage. If the test-case list
+has no embedded issue links, the integration follows its Zephyr `links.self` resource to
+read the coverage links, then looks up those Jira issues separately from `JIRA_JQL`.
+Zephyr test projects therefore do not need to be added to the main delivery scope. The
+Jira account/app still needs permission to read the linked issues and their Sprint field;
+otherwise cases remain “Backlog / no linked sprint”. Zephyr test-cycle names and the
+Zephyr Iteration field are not treated as Jira sprints.
 
 | Element | Popup issues |
 |---|---|

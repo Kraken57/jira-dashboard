@@ -253,7 +253,7 @@ function getFeedQueries() {
 function getFeedQueryFingerprint(): string {
   const { mainJql, defectJql, uatDefectJql, leakageDefectJql } = getFeedQueries();
   const zephyrProjects = (process.env.JIRA_ZEPHYR_PROJECT_KEYS || "").trim();
-  return createHash("sha256").update(`quality-cases-v4\n${mainJql}\n${defectJql}\n${uatDefectJql}\n${leakageDefectJql}\n${zephyrProjects}`).digest("hex");
+  return createHash("sha256").update(`quality-cases-v5\n${mainJql}\n${defectJql}\n${uatDefectJql}\n${leakageDefectJql}\n${zephyrProjects}`).digest("hex");
 }
 
 let inflightFetch: Promise<RawFeedPayload> | null = null;
@@ -399,6 +399,50 @@ async function fetchZephyrExecutions(jiraItems: JiraWorkItem[] = []): Promise<Ze
         __projectName: project.name,
       }))
     );
+    // The case list embeds a links resource URL, but its inline `issues` array
+    // can be empty even when Zephyr's Traceability tab shows Coverage links.
+    // Follow that read-only resource to get the same linked Jira work items.
+    const traceabilityIssues = new Map<string, unknown[]>();
+    const traceabilityTargets = allCases.flatMap((testCase) => {
+      const links = asRecord(testCase.links);
+      const embeddedIssues = Array.isArray(links.issues) ? links.issues : [];
+      const self = typeof links.self === "string" ? links.self : "";
+      const rowKey = `${testCase.__projectKey}:${String(testCase.key || "")}`;
+      if (embeddedIssues.length) {
+        traceabilityIssues.set(rowKey, embeddedIssues);
+        return [];
+      }
+      if (!self) return [];
+      try {
+        const url = new URL(self);
+        if (url.protocol !== "https:" || !["prod-api.zephyr4jiracloud.com", "prod-play.zephyr4jiracloud.com"].includes(url.hostname) || !/^\/(?:connect\/)?v2\/testcases\/[^/]+\/links\/?$/.test(url.pathname)) return [];
+        return [{ rowKey, url }];
+      } catch {
+        return [];
+      }
+    });
+    let traceabilityFailures = 0;
+    const traceabilityAuth = { Authorization: `Bearer ${token}`, Accept: "application/json" };
+    for (let offset = 0; offset < traceabilityTargets.length; offset += 8) {
+      const batch = traceabilityTargets.slice(offset, offset + 8);
+      const results = await Promise.all(batch.map(async ({ rowKey, url }) => {
+        try {
+          const response = await fetch(url, { headers: traceabilityAuth, cache: "no-store" });
+          if (!response.ok) return { rowKey, issues: null };
+          const body = asRecord(await response.json());
+          return { rowKey, issues: Array.isArray(body.issues) ? body.issues : [] };
+        } catch {
+          return { rowKey, issues: null };
+        }
+      }));
+      for (const result of results) {
+        if (result.issues === null) traceabilityFailures++;
+        else traceabilityIssues.set(result.rowKey, result.issues);
+      }
+    }
+    if (traceabilityFailures) {
+      projectErrors.push(`Zephyr Traceability links unavailable for ${traceabilityFailures} of ${traceabilityTargets.length} cases`);
+    }
     const allExecutions: ProjectTestExecution[] = projects.flatMap((project) =>
       project.executions.map((execution): ProjectTestExecution => ({
         ...execution,
@@ -512,13 +556,21 @@ async function fetchZephyrExecutions(jiraItems: JiraWorkItem[] = []): Promise<Ze
       const key = String(raw.key || "");
       const projectKey = String(raw.__projectKey || key.match(/^(.+?)-T\d+$/i)?.[1] || "UNKNOWN");
       const projectName = jiraProjectNames[projectKey] || String(raw.__projectName || projectKey);
-      const issueLinks = Array.isArray(asRecord(raw.links).issues) ? asRecord(raw.links).issues as unknown[] : [];
+      const issueLinks = traceabilityIssues.get(`${projectKey}:${key}`) ?? [];
       const linkedIssueKeys = issueLinks
-        .map((link) => typeof link === "string" ? link : String(pick(asRecord(link), ["key", "issueKey", "target"]) ||
-          String(asRecord(link).self || "").match(/\/(?:browse|issue)\/([A-Z][A-Z0-9_]+-\d+)/i)?.[1] || ""))
+        .map((link) => {
+          if (typeof link === "string") return String(link.match(/(?:browse|issue)\/([A-Z][A-Z0-9_]+-\d+)/i)?.[1] || link);
+          const record = asRecord(link);
+          const target = String(pick(record, ["key", "issueKey", "target"]) || record.self || "");
+          return String(target.match(/(?:browse|issue)\/([A-Z][A-Z0-9_]+-\d+)/i)?.[1] || target);
+        })
         .filter((issueKey) => /^[A-Z][A-Z0-9_]*-\d+$/i.test(issueKey));
       const linkedIssueIds = issueLinks
-        .map((link) => typeof link === "string" ? "" : String(pick(asRecord(link), ["issueId"]) || ""))
+        .map((link) => {
+          if (typeof link === "string") return String(link.match(/\/issue\/(\d+)/i)?.[1] || "");
+          const record = asRecord(link);
+          return String(pick(record, ["issueId"]) || String(record.self || "").match(/\/issue\/(\d+)/i)?.[1] || "");
+        })
         .filter((issueId) => /^\d+$/.test(issueId));
       const linkedPods = new Map<string, string>();
       const linkedSprints = new Set<string>();
