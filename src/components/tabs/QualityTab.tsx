@@ -9,6 +9,7 @@ import {
   ZephyrData,
 } from "@/lib/jira/types";
 import { IssuesModal } from "@/components/IssuesModal";
+import { DetailModal } from "@/components/DetailModal";
 
 interface QualityTabProps {
   qaCapacity?: QaCapacityData;
@@ -30,6 +31,7 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
     subtitle: string;
     issues: IssueRow[];
   } | null>(null);
+  const [zephyrModal, setZephyrModal] = useState<{ title: string; subtitle: string; cases: NonNullable<ZephyrData["cases"]> } | null>(null);
   // QA tab owns its filters: an in-tab pod filter independent from the shared
   // pod/quarter/sprint bar (which is hidden on this tab).
   const [qaPod, setQaPod] = useState("all");
@@ -39,7 +41,7 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
   const [zephyrSearch, setZephyrSearch] = useState("");
   const [zephyrProject, setZephyrProject] = useState("all");
   const [zephyrPod, setZephyrPod] = useState("all");
-  const [zephyrMember, setZephyrMember] = useState("all");
+  const [zephyrSprint, setZephyrSprint] = useState("all");
   const [zephyrExecutionStatus, setZephyrExecutionStatus] = useState("all");
 
   const defectPodKey = (issue: IssueRow) => issue.podName || issue.podKey || issue.projectName || issue.projectKey || "UNKNOWN";
@@ -155,6 +157,7 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
   const zephyrCases = zephyr?.cases ?? [];
   const zephyrProjects = Array.from(new Map(zephyrCases.map((testCase) => [testCase.projectKey, { key: testCase.projectKey, name: testCase.projectName }])).values()).sort((a, b) => a.name.localeCompare(b.name));
   const zephyrPodOptions = Array.from(new Set(zephyrCases.flatMap((testCase) => testCase.podNames))).sort((a, b) => a.localeCompare(b));
+  const zephyrSprintOptions = Array.from(new Set(zephyrCases.flatMap((testCase) => testCase.sprints ?? []))).sort((a, b) => a.localeCompare(b));
   const qaPodOptions = Array.from(new Set([
     ...(qaCapacity?.members ?? []).flatMap((m) => m.podNames),
     ...zephyrCases.flatMap((testCase) => testCase.podNames),
@@ -187,8 +190,7 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
   const scopedZephyrCases = zephyrCases.filter((testCase) => {
     const projectMatch = zephyrProject === "all" || testCase.projectKey === zephyrProject;
     const podMatch = zephyrPod === "all" || testCase.podNames.includes(zephyrPod);
-    const memberMatch = zephyrMember === "all" || testCase.ownerName === zephyrMember ||
-      testCase.executions.some((execution) => execution.assignedTo === zephyrMember || execution.executedBy === zephyrMember);
+    const sprintMatch = zephyrSprint === "all" || (zephyrSprint === "__no_sprint__" ? !(testCase.sprints?.length) : (testCase.sprints ?? []).includes(zephyrSprint));
     const executionMatch = zephyrExecutionStatus === "all" ||
       (testCase.latestExecution?.statusCategory ?? "pending") === zephyrExecutionStatus;
     const query = zephyrSearch.trim().toLowerCase();
@@ -196,41 +198,32 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
       testCase.projectName, ...testCase.podNames, ...testCase.labels, ...testCase.linkedIssueKeys,
       ...testCase.executions.flatMap((execution) => [execution.assignedTo, execution.executedBy])]
       .some((value) => value.toLowerCase().includes(query));
-    return projectMatch && podMatch && memberMatch && executionMatch && searchMatch;
+    return projectMatch && podMatch && sprintMatch && executionMatch && searchMatch;
   });
-  const zephyrMemberNames = Array.from(new Set(zephyrCases.flatMap((testCase) => [testCase.ownerName,
-    ...testCase.executions.flatMap((execution) => [execution.assignedTo, execution.executedBy])])
-    .concat(qaCapacity?.members.map((member) => member.name) ?? [])
-    .filter((name) => name && name !== "Unassigned" && name !== "Unrecorded"))).sort((a, b) => a.localeCompare(b));
   const executionCounts = (cases: typeof zephyrCases) => cases.reduce((counts, testCase) => {
     const status = testCase.latestExecution?.statusCategory ?? "pending";
     counts[status] = (counts[status] ?? 0) + 1;
     return counts;
   }, {} as Record<string, number>);
   const scopedExecutionCounts = executionCounts(scopedZephyrCases);
-  const memberPerformance = (() => {
-    const rows = new Map<string, { name: string; owned: Set<string>; assigned: Set<string>; runs: number; passed: number; failed: number; blocked: number; wip: number; pending: number }>();
-    const entry = (name: string) => {
-      if (!rows.has(name)) rows.set(name, { name, owned: new Set(), assigned: new Set(), runs: 0, passed: 0, failed: 0, blocked: 0, wip: 0, pending: 0 });
-      return rows.get(name)!;
-    };
-    for (const member of qaCapacity?.members ?? []) entry(member.name);
+  const podSprintPerformance = (() => {
+    const groups = new Map<string, { pod: string; sprint: string; cases: Map<string, (typeof scopedZephyrCases)[number]> }>();
     for (const testCase of scopedZephyrCases) {
-      if (testCase.ownerName !== "Unassigned") entry(testCase.ownerName).owned.add(testCase.key);
-      if ((testCase.latestExecution?.statusCategory ?? "pending") === "pending" && testCase.ownerName !== "Unassigned") entry(testCase.ownerName).pending++;
-      for (const execution of testCase.executions) {
-        if (execution.assignedTo !== "Unassigned") entry(execution.assignedTo).assigned.add(testCase.key);
-        if (execution.executedBy !== "Unrecorded" && execution.executedBy !== "Unassigned") {
-          const member = entry(execution.executedBy);
-          member.runs++;
-          if (execution.statusCategory === "passed") member.passed++;
-          if (execution.statusCategory === "failed") member.failed++;
-          if (execution.statusCategory === "blocked") member.blocked++;
-          if (execution.statusCategory === "in-progress") member.wip++;
-        }
+      const pods = testCase.podNames.length ? testCase.podNames : ["Unmapped pod"];
+      const sprints = testCase.sprints?.length ? testCase.sprints : ["Backlog / no linked sprint"];
+      for (const pod of pods) for (const sprint of sprints) {
+        const key = `${pod}\u0000${sprint}`;
+        if (!groups.has(key)) groups.set(key, { pod, sprint, cases: new Map() });
+        groups.get(key)!.cases.set(testCase.key, testCase);
       }
     }
-    return Array.from(rows.values()).sort((a, b) => b.owned.size + b.assigned.size - a.owned.size - a.assigned.size || a.name.localeCompare(b.name));
+    return Array.from(groups.values()).map((group) => {
+      const cases = Array.from(group.cases.values());
+      const count = (category: string) => cases.filter((testCase) => (testCase.latestExecution?.statusCategory ?? "pending") === category).length;
+      const passed = count("passed");
+      const executed = cases.filter((testCase) => testCase.executionCount > 0).length;
+      return { ...group, cases, total: cases.length, executed, passed, failed: count("failed"), blocked: count("blocked"), inProgress: count("in-progress"), pending: count("pending"), passRate: executed ? Math.round((passed / executed) * 100) : null };
+    }).sort((a, b) => a.pod.localeCompare(b.pod) || a.sprint.localeCompare(b.sprint));
   })();
 
   const sliced = (m: QaMemberStat) => sliceMember(m);
@@ -414,35 +407,77 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-200 px-5 py-5 sm:px-6">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div><h2 className="text-xl font-bold text-slate-900">Zephyr test cases</h2><p className="mt-1 text-sm text-slate-500">Track case ownership and latest execution results. Case details open only when needed.</p></div>
-              <span className="rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700">{scopedZephyrCases.length} of {zephyr.testCasesTotal ?? zephyrCases.length} cases · {zephyr.testExecutionsTotal ?? 0} executions</span>
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">Zephyr test cases</h2>
+                <p className="mt-1 text-sm text-slate-500">Explore execution progress by pod and sprint. Select a metric or table row to inspect its cases.</p>
+              </div>
+              <span className="rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700">
+                {scopedZephyrCases.length} matching cases · {scopedZephyrCases.reduce((total, testCase) => total + testCase.executionCount, 0)} runs
+              </span>
             </div>
             <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-              <input value={zephyrSearch} onChange={(event) => setZephyrSearch(event.target.value)} placeholder="Search cases or people" aria-label="Search Zephyr test cases" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 lg:col-span-1" />
+              <input value={zephyrSearch} onChange={(event) => setZephyrSearch(event.target.value)} placeholder="Search cases or people" aria-label="Search Zephyr test cases" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
               <select value={zephyrProject} onChange={(event) => setZephyrProject(event.target.value)} aria-label="Filter by Zephyr project" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="all">All projects</option>{zephyrProjects.map((project) => <option key={project.key} value={project.key}>{project.name} ({project.key})</option>)}</select>
               <select value={zephyrPod} onChange={(event) => setZephyrPod(event.target.value)} aria-label="Filter by QA pod" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="all">All pods</option>{zephyrPodOptions.map((pod) => <option key={pod} value={pod}>{pod}</option>)}</select>
-              <select value={zephyrMember} onChange={(event) => setZephyrMember(event.target.value)} aria-label="Filter by QA member" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="all">All QA members</option>{zephyrMemberNames.map((name) => <option key={name} value={name}>{name}</option>)}</select>
+              <select value={zephyrSprint} onChange={(event) => setZephyrSprint(event.target.value)} aria-label="Filter by Jira sprint" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="all">All sprints</option>{zephyrSprintOptions.map((sprint) => <option key={sprint} value={sprint}>{sprint}</option>)}<option value="__no_sprint__">Backlog / no linked sprint</option></select>
               <select value={zephyrExecutionStatus} onChange={(event) => setZephyrExecutionStatus(event.target.value)} aria-label="Filter by execution status" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="all">All execution statuses</option><option value="passed">Passed</option><option value="failed">Failed</option><option value="blocked">Blocked</option><option value="in-progress">In progress</option><option value="pending">Not run yet</option></select>
             </div>
-            <p className="mt-2 text-[11px] text-slate-500">To include more teams, add their Zephyr project keys to <code className="rounded bg-slate-100 px-1">JIRA_ZEPHYR_PROJECT_KEYS</code> in `.env.local`.</p>
+            <p className="mt-2 text-[11px] text-slate-500">Sprint and pod are inferred from linked Jira issues; cases without a linked Jira sprint appear under “Backlog / no linked sprint.” Add Zephyr projects through <code className="rounded bg-slate-100 px-1">JIRA_ZEPHYR_PROJECT_KEYS</code> in `.env.local`.</p>
           </div>
           <div className="grid grid-cols-2 gap-3 bg-slate-50 p-4 sm:grid-cols-3 lg:grid-cols-5 sm:p-5">
-            {[["Cases", scopedZephyrCases.length, "text-indigo-700"], ["Passed", scopedExecutionCounts.passed ?? 0, "text-emerald-700"], ["Failed", scopedExecutionCounts.failed ?? 0, "text-rose-700"], ["Blocked / in progress", (scopedExecutionCounts.blocked ?? 0) + (scopedExecutionCounts["in-progress"] ?? 0), "text-amber-700"], ["Not run yet", scopedExecutionCounts.pending ?? 0, "text-slate-700"]].map(([label, value, color]) => <div key={String(label)} className="rounded-xl border border-slate-200 bg-white p-3"><p className={`text-[10px] font-bold uppercase tracking-wide ${color}`}>{label}</p><p className="mt-1 text-2xl font-bold text-slate-900">{value}</p></div>)}
+            {[
+              { label: "Cases", value: scopedZephyrCases.length, category: "all", color: "text-indigo-700" },
+              { label: "Passed", value: scopedExecutionCounts.passed ?? 0, category: "passed", color: "text-emerald-700" },
+              { label: "Failed", value: scopedExecutionCounts.failed ?? 0, category: "failed", color: "text-rose-700" },
+              { label: "Blocked / in progress", value: (scopedExecutionCounts.blocked ?? 0) + (scopedExecutionCounts["in-progress"] ?? 0), category: "blocked-wip", color: "text-amber-700" },
+              { label: "Not run yet", value: scopedExecutionCounts.pending ?? 0, category: "pending", color: "text-slate-700" },
+            ].map((card) => {
+              const matchingCases = card.category === "all" ? scopedZephyrCases : card.category === "blocked-wip"
+                ? scopedZephyrCases.filter((testCase) => ["blocked", "in-progress"].includes(testCase.latestExecution?.statusCategory ?? "pending"))
+                : scopedZephyrCases.filter((testCase) => (testCase.latestExecution?.statusCategory ?? "pending") === card.category);
+              return (
+                <button key={card.label} type="button" onClick={() => setZephyrModal({ title: card.label, subtitle: `${matchingCases.length} matching test cases in the selected filters`, cases: matchingCases })} className="rounded-xl border border-slate-200 bg-white p-3 text-left transition hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-300">
+                  <p className={`text-[10px] font-bold uppercase tracking-wide ${card.color}`}>{card.label}</p>
+                  <p className="mt-1 text-2xl font-bold text-slate-900">{card.value}</p>
+                  <p className="mt-1 text-[10px] text-slate-500">Click to view cases</p>
+                </button>
+              );
+            })}
           </div>
           <div className="border-t border-slate-200 px-4 py-4 sm:px-6">
-            <h3 className="text-sm font-bold text-slate-900">QA member activity</h3><p className="mt-1 text-xs text-slate-500">Everyone in the configured Jira QA roster is listed, including members with no Zephyr activity in this filter.</p>
-            <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200"><table className="w-full min-w-[620px] text-left text-xs"><thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500"><tr><th className="px-3 py-2.5">Member</th><th className="px-3 py-2.5 text-center">Cases owned</th><th className="px-3 py-2.5 text-center">Cases assigned</th><th className="px-3 py-2.5 text-center">Runs</th><th className="px-3 py-2.5 text-center">Passed</th><th className="px-3 py-2.5 text-center">Failed</th><th className="px-3 py-2.5 text-center">Pending</th></tr></thead><tbody className="divide-y divide-slate-100">{memberPerformance.map((member) => <tr key={member.name}><th className="px-3 py-2.5 font-medium text-slate-800">{member.name}</th><td className="px-3 py-2.5 text-center">{member.owned.size}</td><td className="px-3 py-2.5 text-center">{member.assigned.size}</td><td className="px-3 py-2.5 text-center">{member.runs}</td><td className="px-3 py-2.5 text-center text-emerald-700">{member.passed}</td><td className="px-3 py-2.5 text-center text-rose-700">{member.failed}</td><td className="px-3 py-2.5 text-center">{member.pending}</td></tr>)}</tbody></table></div>
-          </div>
-          <div className="border-t border-slate-200 px-4 py-4 sm:px-6">
-            <h3 className="text-sm font-bold text-slate-900">Case list</h3>
-            {zephyrCases.length === 0 ? <p className="py-8 text-center text-sm text-slate-500">No case details were returned. Check the configured project keys.</p> : scopedZephyrCases.length === 0 ? <p className="py-8 text-center text-sm text-slate-500">No cases match these filters. Choose “All” or clear the search.</p> : (
-              <div className="mt-3 max-h-[620px] overflow-auto rounded-xl border border-slate-200"><table className="w-full min-w-[760px] text-left text-xs"><thead className="sticky top-0 bg-white text-[10px] uppercase tracking-wide text-slate-500 shadow-sm"><tr><th className="px-3 py-3">Test case</th><th className="px-3 py-3">Pod / project</th><th className="px-3 py-3">Owner</th><th className="px-3 py-3">Latest result</th><th className="px-3 py-3">Last run</th></tr></thead><tbody className="divide-y divide-slate-100">{scopedZephyrCases.map((testCase) => {
-                const latest = testCase.latestExecution;
-                const badge = latest?.statusCategory === "passed" ? "bg-emerald-50 text-emerald-700" : latest?.statusCategory === "failed" ? "bg-rose-50 text-rose-700" : latest?.statusCategory === "blocked" ? "bg-amber-50 text-amber-800" : latest?.statusCategory === "in-progress" ? "bg-sky-50 text-sky-700" : "bg-slate-100 text-slate-600";
-                return <tr key={`${testCase.projectKey}-${testCase.id}`} className="align-top hover:bg-slate-50"><td className="max-w-[340px] px-3 py-3"><span className="font-bold text-indigo-700">{testCase.key}</span><p className="mt-1 text-slate-700">{testCase.name}</p><details className="mt-2 text-[11px] text-slate-500"><summary className="cursor-pointer font-medium">More case details</summary><div className="mt-2 space-y-1"><p><b>Case status:</b> {testCase.status} · <b>Priority:</b> {testCase.priority} · <b>Folder:</b> {testCase.folder}</p>{testCase.objective && <p><b>Objective:</b> {testCase.objective}</p>}{testCase.precondition && <p><b>Precondition:</b> {testCase.precondition.replace(/<[^>]*>/g, " ")}</p>}{testCase.labels.length > 0 && <p><b>Labels:</b> {testCase.labels.join(", ")}</p>}{testCase.linkedIssueKeys.length > 0 && <p><b>Linked Jira issues:</b> {testCase.linkedIssueKeys.join(", ")}</p>}<p><b>Execution history:</b> {testCase.executionCount} run(s)</p>{testCase.executions.map((execution) => <p key={execution.id}>{execution.status} · {execution.executedBy} · {execution.executedOn ? new Date(execution.executedOn).toLocaleDateString() : "date unavailable"} · {execution.cycle || "no cycle"}</p>)}</div></details></td><td className="px-3 py-3 text-slate-700">{testCase.podNames.join(", ")}<p className="mt-1 text-[10px] text-slate-400">{testCase.projectName} ({testCase.projectKey})</p></td><td className="px-3 py-3 text-slate-700">{testCase.ownerName}{latest && <p className="mt-1 text-[10px] text-slate-500">Assigned: {latest.assignedTo}</p>}</td><td className="px-3 py-3"><span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${badge}`}>{latest?.status ?? "Not run yet"}</span>{latest?.executedBy && latest.executedBy !== "Unrecorded" && <p className="mt-1 text-[10px] text-slate-500">By {latest.executedBy}</p>}</td><td className="px-3 py-3 text-slate-600">{latest?.executedOn ? new Date(latest.executedOn).toLocaleDateString() : "—"}<p className="mt-1 text-[10px] text-slate-400">{latest?.cycle || ""}</p></td></tr>;
-              })}</tbody></table></div>
+            <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+              <div><h3 className="text-sm font-bold text-slate-900">Pod and sprint execution analysis</h3><p className="mt-1 text-xs text-slate-500">Case counts use the latest execution per case. A case linked to multiple Jira sprints appears in each applicable sprint row.</p></div>
+              <span className="text-[11px] text-slate-500">{podSprintPerformance.length} pod/sprint groups</span>
+            </div>
+            {podSprintPerformance.length === 0 ? <p className="rounded-xl border border-dashed border-slate-300 py-8 text-center text-sm text-slate-500">No cases match these filters.</p> : (
+              <div className="overflow-x-auto rounded-xl border border-slate-200">
+                <table className="w-full min-w-[850px] text-left text-xs">
+                  <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500"><tr><th className="px-3 py-3">Pod</th><th className="px-3 py-3">Sprint</th><th className="px-3 py-3 text-center">Cases</th><th className="px-3 py-3 text-center">Executed</th><th className="px-3 py-3 text-center">Passed</th><th className="px-3 py-3 text-center">Failed</th><th className="px-3 py-3 text-center">Blocked</th><th className="px-3 py-3 text-center">In progress</th><th className="px-3 py-3 text-center">Not run</th><th className="px-3 py-3 text-center">Pass rate</th></tr></thead>
+                  <tbody className="divide-y divide-slate-100">{podSprintPerformance.map((row) => (
+                    <tr key={`${row.pod}-${row.sprint}`} className="hover:bg-indigo-50/40">
+                      <th className="px-3 py-3 font-semibold text-slate-800">{row.pod}</th><td className="px-3 py-3 text-slate-600">{row.sprint}</td>
+                      <td className="px-3 py-3 text-center"><button type="button" className="font-bold text-indigo-700 underline-offset-2 hover:underline" onClick={() => setZephyrModal({ title: `${row.pod} · ${row.sprint}`, subtitle: `${row.total} test cases · ${row.executed} with an execution`, cases: row.cases })}>{row.total}</button></td>
+                      <td className="px-3 py-3 text-center">{row.executed}</td><td className="px-3 py-3 text-center font-semibold text-emerald-700">{row.passed}</td><td className="px-3 py-3 text-center font-semibold text-rose-700">{row.failed}</td><td className="px-3 py-3 text-center">{row.blocked}</td><td className="px-3 py-3 text-center">{row.inProgress}</td><td className="px-3 py-3 text-center">{row.pending}</td><td className="px-3 py-3 text-center">{row.passRate === null ? "—" : `${row.passRate}%`}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
             )}
           </div>
+          {zephyrModal && (
+            <DetailModal title={zephyrModal.title} subtitle={zephyrModal.subtitle} onClose={() => setZephyrModal(null)} wide>
+              <div className="divide-y divide-slate-100">
+                {zephyrModal.cases.length === 0 ? <p className="p-6 text-sm text-slate-500">No matching test cases.</p> : zephyrModal.cases.map((testCase) => (
+                  <article key={`${testCase.projectKey}-${testCase.id}`} className="p-4 sm:p-5">
+                    <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-xs font-bold text-indigo-700">{testCase.key} <span className="font-normal text-slate-500">· {testCase.projectName} ({testCase.projectKey})</span></p><h4 className="mt-1 text-sm font-semibold text-slate-900">{testCase.name}</h4></div><span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-700">{testCase.latestExecution?.status ?? "Not run yet"}</span></div>
+                    <div className="mt-3 grid gap-x-5 gap-y-2 text-xs text-slate-600 sm:grid-cols-2"><p><b>Pod:</b> {testCase.podNames.join(", ") || "Unmapped pod"}</p><p><b>Sprint:</b> {testCase.sprints?.join(", ") || "Backlog / no linked sprint"}</p><p><b>Owner:</b> {testCase.ownerName}</p><p><b>Priority / folder:</b> {testCase.priority} · {testCase.folder}</p><p><b>Linked Jira issues:</b> {testCase.linkedIssueKeys.join(", ") || "None"}</p><p><b>Executions:</b> {testCase.executionCount}</p></div>
+                    {testCase.objective && <p className="mt-3 text-xs text-slate-600"><b>Objective:</b> {testCase.objective}</p>}
+                    {testCase.executions.length > 0 && <div className="mt-3 rounded-lg bg-slate-50 p-3"><p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-slate-500">Execution history</p><div className="space-y-1.5">{testCase.executions.map((execution) => <p key={execution.id} className="text-xs text-slate-600">{execution.status} · {execution.executedBy} · {execution.executedOn ? new Date(execution.executedOn).toLocaleDateString() : "Date unavailable"} · {execution.cycle || "No cycle"}</p>)}</div></div>}
+                  </article>
+                ))}
+              </div>
+            </DetailModal>
+          )}
         </section>
       )}
 

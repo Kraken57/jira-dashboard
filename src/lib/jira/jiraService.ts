@@ -516,9 +516,13 @@ async function fetchZephyrExecutions(jiraItems: JiraWorkItem[] = []): Promise<Ze
           String(asRecord(link).self || "").match(/\/(?:browse|issue)\/([A-Z][A-Z0-9_]+-\d+)/i)?.[1] || ""))
         .filter(Boolean);
       const linkedPods = new Map<string, string>();
+      const linkedSprints = new Set<string>();
       for (const issueKey of linkedIssueKeys) {
         const issue = issueByKey.get(issueKey);
-        if (issue) linkedPods.set(issue.podKey, issue.podName || issue.podKey);
+        if (issue) {
+          linkedPods.set(issue.podKey, issue.podName || issue.podKey);
+          for (const sprint of issue.sprints) if (sprint) linkedSprints.add(sprint);
+        }
       }
       const projectPods = podsByProject.get(projectKey);
       const podSource: ZephyrTestCase["podSource"] = linkedPods.size
@@ -556,6 +560,7 @@ async function fetchZephyrExecutions(jiraItems: JiraWorkItem[] = []): Promise<Ze
         folder: await referenceName(folderRef, folderId ? `Folder ${folderId}` : "Unfiled"),
         labels: Array.isArray(raw.labels) ? raw.labels.map(String) : [],
         linkedIssueKeys,
+        sprints: Array.from(linkedSprints).sort((a, b) => a.localeCompare(b)),
         createdOn: String(raw.createdOn || raw.createdDate || "") || undefined,
         objective: String(raw.objective || "") || undefined,
         precondition: String(raw.precondition || "") || undefined,

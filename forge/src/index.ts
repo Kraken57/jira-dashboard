@@ -615,6 +615,7 @@ interface ZephyrApiTestCase {
 interface ZephyrCaseRow extends ZephyrApiTestCase {
   __projectKey: string;
   createdDate?: string;
+  sprints?: string[];
 }
 interface ZephyrApiTestExecution {
   id: number;
@@ -784,7 +785,14 @@ async function fetchZephyrExecutions(pool: any[]): Promise<ZephyrData> {
       const projectKey = String(testCase.__projectKey || String(testCase.key || "").split("-T")[0] || "UNKNOWN");
       const linkedIssueKeys = (Array.isArray(record(testCase.links).issues) ? record(testCase.links).issues : []).map((issue: any) => typeof issue === "string" ? issue : String(issue?.key || issue?.issueKey || issue?.self?.match(/\/(?:browse|issue)\/([A-Z][A-Z0-9_]+-\d+)/i)?.[1] || "")).filter(Boolean);
       const linkedPods = new Map<string, string>();
-      for (const key of linkedIssueKeys) { const issue = pool.find((item) => item.key === key); if (issue) linkedPods.set(issue.podKey || issue.projectKey, issue.podName || issue.projectName || issue.podKey); }
+      const linkedSprints = new Set<string>();
+      for (const key of linkedIssueKeys) {
+        const issue = pool.find((item) => item.key === key);
+        if (issue) {
+          linkedPods.set(issue.podKey || issue.projectKey, issue.podName || issue.projectName || issue.podKey);
+          for (const sprint of issue.sprints || []) if (sprint) linkedSprints.add(sprint);
+        }
+      }
       const projectPods = new Map<string, string>();
       for (const item of pool.filter((entry) => entry.projectKey === projectKey && entry.podKey)) projectPods.set(item.podKey, item.podName || item.podKey);
       const podSource = linkedPods.size ? "linked Jira issue" : projectPods.size === 1 ? "project mapping" : "project fallback";
@@ -793,7 +801,7 @@ async function fetchZephyrExecutions(pool: any[]): Promise<ZephyrData> {
       const ownerName = person(testCase.owner) || names[ownerAccountId] || ownerAccountId || "Unassigned";
       const executions = (executionMap.get(String(testCase.key || "")) || []).sort((a, b) => Date.parse(b.executedOn || "") - Date.parse(a.executedOn || ""));
       const label = async (value: unknown, fallback: string) => referenceName(value, get(value, "id") ? `Status ${get(value, "id")}` : fallback);
-      return { id: String(testCase.id || testCase.key), key: String(testCase.key || ""), name: String(testCase.name || testCase.key || ""), projectKey, projectName: projectNames[projectKey] || pool.find((item) => item.projectKey === projectKey)?.projectName || projectKey, podKeys: Array.from(pods.keys()), podNames: Array.from(pods.values()), podSource, ownerName, ownerAccountId: ownerAccountId || undefined, status: await label(testCase.status, "Unknown"), priority: await label(testCase.priority, "Unspecified"), folder: await label(testCase.folder, "Unfiled"), labels: Array.isArray(testCase.labels) ? testCase.labels.map(String) : [], linkedIssueKeys, createdOn: testCase.createdOn || testCase.createdDate, objective: testCase.objective, precondition: testCase.precondition, executionCount: executions.length, latestExecution: executions[0], executions };
+      return { id: String(testCase.id || testCase.key), key: String(testCase.key || ""), name: String(testCase.name || testCase.key || ""), projectKey, projectName: projectNames[projectKey] || pool.find((item) => item.projectKey === projectKey)?.projectName || projectKey, podKeys: Array.from(pods.keys()), podNames: Array.from(pods.values()), podSource, ownerName, ownerAccountId: ownerAccountId || undefined, status: await label(testCase.status, "Unknown"), priority: await label(testCase.priority, "Unspecified"), folder: await label(testCase.folder, "Unfiled"), labels: Array.isArray(testCase.labels) ? testCase.labels.map(String) : [], linkedIssueKeys, sprints: Array.from(linkedSprints).sort((a, b) => a.localeCompare(b)), createdOn: testCase.createdOn || testCase.createdDate, objective: testCase.objective, precondition: testCase.precondition, executionCount: executions.length, latestExecution: executions[0], executions };
     }));
     return {
       available: true,

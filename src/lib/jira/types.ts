@@ -222,6 +222,8 @@ export interface ZephyrTestCase {
   folder: string;
   labels: string[];
   linkedIssueKeys: string[];
+  /** Jira sprint names inherited from the linked Jira issues. */
+  sprints: string[];
   createdOn?: string;
   objective?: string;
   precondition?: string;
