@@ -95,7 +95,7 @@ export function IssuesTab({ issues, auditItems, filters, jiraDomain }: IssuesTab
         tone: "orange",
       },
       {
-        title: "Sub-tasks without parent Story",
+        title: "Orphan Subtasks",
         note: "Sub-tasks missing a linked Story parent",
         explanation: "A sub-task is counted when it has no parent, or the fetched parent issue is not a Story.",
         issues: scopedAuditItems.filter((item) => subtaskType.test(item.workType) && isOrphanedFrom(item, isStoryParent)),

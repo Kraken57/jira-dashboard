@@ -391,7 +391,7 @@ export default function DashboardPage() {
             <IssuesTab
               issues={dashboardData.issueList}
               auditItems={feed?.items ?? []}
-              filters={baseFilters}
+              filters={{ podId: baseFilters.pod, quarterId: baseFilters.quarter, sprintId: baseFilters.sprint }}
               jiraDomain={dashboardData.jiraBaseUrl}
             />
           )}
