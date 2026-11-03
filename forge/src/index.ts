@@ -822,7 +822,8 @@ function calculateKPIs(
   filters: any,
   developerSource: any[] = items,
   forecastSource: any[] = items,
-  forecastChildSource: any[] = forecastSource
+  forecastChildSource: any[] = forecastSource,
+  sprintMeta: Record<string, any> = {}
 ) {
   const totalIssues = items.length;
   const totalStoryPoints = items.reduce(
@@ -864,21 +865,73 @@ function calculateKPIs(
   // Group by sprint (real committed/done SP and issue counts)
   const sprintMap = new Map<
     string,
-    { count: number; sp: number; doneSp: number; doneCount: number }
+    { count: number; sp: number; doneSp: number; carriedSp: number; doneCount: number }
   >();
+  const completionSprintCache = new Map<string, string | null>();
+  const completionSprintFor = (item: any): string | null => {
+    if (!isDoneStatus(item.status)) return null;
+    if (completionSprintCache.has(item.key)) return completionSprintCache.get(item.key) ?? null;
+    const attachedSprints: string[] = Array.isArray(item.sprints) ? item.sprints : [];
+    if (!attachedSprints.length) {
+      completionSprintCache.set(item.key, null);
+      return null;
+    }
+    const resolvedAt = Date.parse(item.resolutionDate || "");
+    if (!Number.isNaN(resolvedAt)) {
+      const sprintDates = attachedSprints.map((name) => {
+        const meta = sprintMeta[name];
+        const start = meta?.startDate ? Date.parse(meta.startDate) : Number.NaN;
+        let end = meta?.endDate ? Date.parse(meta.endDate) : Number.NaN;
+        if (meta?.endDate && /^\d{4}-\d{2}-\d{2}$/.test(meta.endDate) && !Number.isNaN(end)) end += 86_400_000 - 1;
+        return { name, start, end };
+      }).filter((sprint) => !Number.isNaN(sprint.start) || !Number.isNaN(sprint.end));
+      const containsResolution = sprintDates.filter((sprint) =>
+        (Number.isNaN(sprint.start) || resolvedAt >= sprint.start) &&
+        (Number.isNaN(sprint.end) || resolvedAt <= sprint.end)
+      ).sort((a, b) => (Number.isNaN(b.start) ? -Infinity : b.start) - (Number.isNaN(a.start) ? -Infinity : a.start));
+      if (containsResolution.length) {
+        completionSprintCache.set(item.key, containsResolution[0].name);
+        return containsResolution[0].name;
+      }
+      const startedBeforeResolution = sprintDates.filter((sprint) => !Number.isNaN(sprint.start) && sprint.start <= resolvedAt)
+        .sort((a, b) => b.start - a.start);
+      if (startedBeforeResolution.length) {
+        completionSprintCache.set(item.key, startedBeforeResolution[0].name);
+        return startedBeforeResolution[0].name;
+      }
+      if (sprintDates.length) {
+        sprintDates.sort((a, b) => (Number.isNaN(a.start) ? Infinity : a.start) - (Number.isNaN(b.start) ? Infinity : b.start));
+        completionSprintCache.set(item.key, sprintDates[0].name);
+        return sprintDates[0].name;
+      }
+    }
+    const fallback = attachedSprints[attachedSprints.length - 1];
+    completionSprintCache.set(item.key, fallback);
+    return fallback;
+  };
   for (const item of items) {
     for (const sprint of item.sprints) {
+      if (filters.sprintId && filters.sprintId !== "all" && sprint !== filters.sprintId) continue;
       if (!sprintMap.has(sprint)) {
-        sprintMap.set(sprint, { count: 0, sp: 0, doneSp: 0, doneCount: 0 });
+        sprintMap.set(sprint, { count: 0, sp: 0, doneSp: 0, carriedSp: 0, doneCount: 0 });
       }
       const s = sprintMap.get(sprint)!;
       const sp = item.storyPoints || 0;
       s.count++;
       s.sp += sp;
-      if (isDoneStatus(item.status)) {
+      if (isDoneStatus(item.status) && completionSprintFor(item) === sprint) {
         s.doneSp += sp;
         s.doneCount++;
       }
+      const completionSprint = completionSprintFor(item);
+      const completionStart = completionSprint ? Date.parse(sprintMeta[completionSprint]?.startDate || "") : Number.NaN;
+      const currentStart = Date.parse(sprintMeta[sprint]?.startDate || "");
+      const completedLater = isDoneStatus(item.status) && completionSprint !== null && (
+        !Number.isNaN(completionStart) && !Number.isNaN(currentStart)
+          ? completionStart > currentStart
+          : item.sprints.indexOf(completionSprint) > item.sprints.indexOf(sprint)
+      );
+      if (!isDoneStatus(item.status) || completedLater || !completionSprint) s.carriedSp += sp;
     }
   }
 
@@ -890,6 +943,7 @@ function calculateKPIs(
       issueCount: val.count,
       storyPoints: Math.round(val.sp),
       doneStoryPoints: Math.round(val.doneSp),
+      carriedStoryPoints: Math.round(val.carriedSp),
       doneIssueCount: val.doneCount,
     }));
 
@@ -917,7 +971,7 @@ function calculateKPIs(
     s && s.storyPoints > 0 ? Math.round((s.doneStoryPoints / s.storyPoints) * 100) : 0;
   const sprintCarry = (s?: typeof allSprints[number]) =>
     s && s.storyPoints > 0
-      ? Math.round(((s.storyPoints - s.doneStoryPoints) / s.storyPoints) * 100)
+      ? Math.round((s.carriedStoryPoints / s.storyPoints) * 100)
       : 0;
 
   // Executive KPIs aggregate over the current selection using de-duplicated
@@ -928,12 +982,16 @@ function calculateKPIs(
   const totalCommittedSP = totalStoryPoints;
   const totalDoneSP = completedStoryPoints;
   const totalCarriedSP = Math.max(totalCommittedSP - totalDoneSP, 0);
+  const isAllSprints = !filters.sprintId || filters.sprintId === "all";
+  const scopeCommittedSP = isAllSprints ? totalCommittedSP : lastSprint?.storyPoints ?? 0;
+  const scopeDoneSP = isAllSprints ? totalDoneSP : lastSprint?.doneStoryPoints ?? 0;
+  const scopeCarriedSP = isAllSprints ? totalCarriedSP : lastSprint?.carriedStoryPoints ?? 0;
 
   const savedSayDo =
-    totalCommittedSP > 0 ? Math.round((totalDoneSP / totalCommittedSP) * 100) : 0;
+    scopeCommittedSP > 0 ? Math.round((scopeDoneSP / scopeCommittedSP) * 100) : 0;
   const savedCarry =
-    totalCommittedSP > 0 ? Math.round((totalCarriedSP / totalCommittedSP) * 100) : 0;
-  let currentVelocity = totalDoneSP;
+    scopeCommittedSP > 0 ? Math.round((scopeCarriedSP / scopeCommittedSP) * 100) : 0;
+  let currentVelocity = scopeDoneSP;
   let velocityPodCount = 0;
 
   // Global All Pods / All Quarters / All Sprints: average each pod's sprint
@@ -966,7 +1024,7 @@ function calculateKPIs(
       if (!podSprints.length) return;
       const perSprint = podSprints.map((s) =>
         pool
-          .filter((i) => i.sprints.includes(s.name) && isDoneStatus(i.status))
+          .filter((i) => i.sprints.includes(s.name) && isDoneStatus(i.status) && completionSprintFor(i) === s.name)
           .reduce((sum, i) => sum + (i.storyPoints || 0), 0)
       );
       podAverages.push(
@@ -988,7 +1046,7 @@ function calculateKPIs(
           if (!pool.some((i) => i.sprints.includes(name))) return;
           vals.push(
             pool
-              .filter((i) => i.sprints.includes(name) && isDoneStatus(i.status))
+              .filter((i) => i.sprints.includes(name) && isDoneStatus(i.status) && completionSprintFor(i) === name)
               .reduce((sum, i) => sum + (i.storyPoints || 0), 0)
           );
         });
@@ -1078,7 +1136,7 @@ function calculateKPIs(
 
   // Predictability across the selection: delivered / planned SP.
   const predictabilityScore =
-    totalCommittedSP > 0 ? Math.round((totalDoneSP / totalCommittedSP) * 100) : 0;
+      scopeCommittedSP > 0 ? Math.round((scopeDoneSP / scopeCommittedSP) * 100) : 0;
 
   const podsWithAll = [
     {
@@ -1197,6 +1255,8 @@ function calculateKPIs(
       createdDate: i.createdDate || "",
       dueDate: i.dueDate || "",
       isDone: isDoneStatus(i.status),
+      completionSprint: completionSprintFor(i) || undefined,
+      resolutionDate: i.resolutionDate || undefined,
       originalEstimateHours: estimateHours(i.originalEstimateSeconds),
       reason: futureForecast.reasons.get(i.key),
     }));
@@ -1314,7 +1374,7 @@ function calculateKPIs(
     },
     predictability: {
       score: predictabilityScore,
-      varianceSP: Math.abs(totalCommittedSP - totalDoneSP),
+      varianceSP: Math.abs(scopeCommittedSP - scopeDoneSP),
       epicsOnSchedule: futureForecast.score,
       forecastableFeatures: futureForecast.forecastableCount,
       unestimatedFeatures: futureForecast.unestimatedCount,
@@ -1385,6 +1445,8 @@ function calculateKPIs(
       createdDate: i.createdDate,
       dueDate: i.dueDate || "",
       isDone: isDoneStatus(i.status),
+      completionSprint: completionSprintFor(i) || undefined,
+      resolutionDate: i.resolutionDate || undefined,
       originalEstimateHours: estimateHours(i.originalEstimateSeconds),
       reason: futureForecast.reasons.get(i.key),
     })),
@@ -1624,7 +1686,8 @@ resolver.define("getDashboardData", async (req) => {
       filters,
       filteredAll,
       forecastScope,
-      forecastChildSource
+      forecastChildSource,
+      collectSprintMeta(issues, config.sprintField)
     );
 
     return {

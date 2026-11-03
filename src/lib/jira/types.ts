@@ -283,6 +283,8 @@ export interface IssueRow {
   resolutionDate?: string;
   dueDate?: string;
   isDone: boolean;
+  /** Sprint in which Jira resolved this issue, inferred from resolution/sprint dates. */
+  completionSprint?: string;
   originalEstimateHours?: number;
   isSubtask?: boolean;
   reason?: string;

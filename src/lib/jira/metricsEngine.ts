@@ -701,6 +701,51 @@ export function computeDashboardData(
           .filter((name) => !isUpcoming(name) || name === revealedFuture)
           .slice(-SPRINT_WINDOW);
 
+  const completionSprintCache = new Map<string, string | null>();
+  const completionSprintFor = (item: JiraWorkItem): string | null => {
+    if (!DONE_STATUSES.has(item.status)) return null;
+    if (completionSprintCache.has(item.key)) return completionSprintCache.get(item.key) ?? null;
+    const attachedSprints = item.sprints ?? [];
+    if (!attachedSprints.length) {
+      completionSprintCache.set(item.key, null);
+      return null;
+    }
+    const resolvedAt = Date.parse(item.resolutionDate || "");
+    if (!Number.isNaN(resolvedAt)) {
+      const sprintDates = attachedSprints.map((name) => {
+        const meta = sprintMeta[name];
+        const start = meta?.startDate ? Date.parse(meta.startDate) : Number.NaN;
+        let end = meta?.endDate ? Date.parse(meta.endDate) : Number.NaN;
+        if (meta?.endDate && /^\d{4}-\d{2}-\d{2}$/.test(meta.endDate) && !Number.isNaN(end)) end += DAY_MS - 1;
+        return { name, start, end };
+      }).filter((sprint) => !Number.isNaN(sprint.start) || !Number.isNaN(sprint.end));
+      const containsResolution = sprintDates.filter((sprint) =>
+        (Number.isNaN(sprint.start) || resolvedAt >= sprint.start) &&
+        (Number.isNaN(sprint.end) || resolvedAt <= sprint.end)
+      ).sort((a, b) => (Number.isNaN(b.start) ? -Infinity : b.start) - (Number.isNaN(a.start) ? -Infinity : a.start));
+      if (containsResolution.length) {
+        completionSprintCache.set(item.key, containsResolution[0].name);
+        return containsResolution[0].name;
+      }
+      const startedBeforeResolution = sprintDates.filter((sprint) => !Number.isNaN(sprint.start) && sprint.start <= resolvedAt)
+        .sort((a, b) => b.start - a.start);
+      if (startedBeforeResolution.length) {
+        completionSprintCache.set(item.key, startedBeforeResolution[0].name);
+        return startedBeforeResolution[0].name;
+      }
+      if (sprintDates.length) {
+        sprintDates.sort((a, b) => (Number.isNaN(a.start) ? Infinity : a.start) - (Number.isNaN(b.start) ? Infinity : b.start));
+        completionSprintCache.set(item.key, sprintDates[0].name);
+        return sprintDates[0].name;
+      }
+    }
+    // Jira can omit sprint dates (or resolutiondate on legacy items). In that
+    // case, the last sprint on the issue is the best available completion attribution.
+    const fallback = attachedSprints[attachedSprints.length - 1];
+    completionSprintCache.set(item.key, fallback);
+    return fallback;
+  };
+
   const buildSprintStat = (sprintName: string, pool: JiraWorkItem[]) => {
     const sprintItems = pool.filter((it) => matchesSprint(it.sprints, sprintName));
     let committedSP = 0;
@@ -713,10 +758,16 @@ export function computeDashboardData(
       const sp = it.storyPoints || 0;
       committedSP += sp;
       issueCount += 1;
-      if (DONE_STATUSES.has(it.status)) {
+      const isDone = DONE_STATUSES.has(it.status);
+      const completedHere = isDone && completionSprintFor(it) === sprintName;
+      const completionSprint = isDone ? completionSprintFor(it) : null;
+      if (completedHere) {
         doneSP += sp;
         doneCount += 1;
-      } else {
+      }
+      const completionIsLater = completionSprint !== null &&
+        sprintOrderKey(completionSprint, sprintMeta[completionSprint]) > sprintOrderKey(sprintName, sprintMeta[sprintName]);
+      if (!completedHere && (!isDone || completionIsLater || !completionSprint)) {
         carriedSP += sp;
       }
     });
@@ -1622,8 +1673,10 @@ export function computeDashboardData(
     assignee: it.assignee || "Unassigned",
     priority: it.priority || "Medium",
     createdDate: it.createdDate || "",
+    resolutionDate: it.resolutionDate || undefined,
     dueDate: it.dueDate || "",
     isDone: DONE_STATUSES.has(it.status),
+    completionSprint: completionSprintFor(it) ?? undefined,
     originalEstimateHours: estimateHours(it.originalEstimateSeconds),
     reason: futurePredictability.reasons.get(it.key),
   });

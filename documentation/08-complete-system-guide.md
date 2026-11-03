@@ -416,8 +416,8 @@ navigates to another tab and never triggers a new Jira request.
 
 | Card | Popup issue list | Popup subtitle |
 |---|---|---|
-| Say/Do Ratio | `isDone` only | “Accepted / completed committed work” |
-| Sprint Carry Over | `!isDone` | “Not accepted / spilled-over committed work” |
+| Say/Do Ratio | Done issues; for a selected sprint, only issues completed in that sprint | “Accepted / completed committed work” |
+| Sprint Carry Over | Open issues plus issues completed in a later sprint; for All Sprints, only currently unfinished work | “Not accepted / spilled-over committed work” |
 | Avg. Sprint Velocity / Total Sprint Velocity | `isDone` | “Completed work items” |
 | Future Predictability | open features with a due date | “Planned features vs due-date forecast” |
 
@@ -795,10 +795,14 @@ Notes:
   Jira reports an already-running sprint as `state: "future"`.
 - Display names strip prefixes: `"DTR 2026 - Q4 - Iteration 2"` → `"Iteration 2"`.
 
-Per-sprint `committed`/`done`/`carried` are sums over items that match that sprint. If an
-issue is carried across sprints, it is counted in each sprint it appears in. That is correct
-for per-sprint charts but would overcount a portfolio total — which is why the executive
-cards use the de-duplicated `summary` totals for All Sprints.
+Per-sprint `committed` includes each item Jira lists in that sprint, preserving the
+commitment across carry-over. A completed item contributes to `done` in only one sprint:
+the sprint whose start/end dates contain Jira's `resolutionDate`. If the date falls outside
+known sprint windows, the latest sprint that started before resolution is selected. When
+Jira does not provide usable resolution/sprint dates, the item's last listed sprint is the
+fallback. `carried` includes open items and items completed in a later sprint, so Sprint 0
+records the carry-over while Sprint 1 receives the completion. Executive All-Sprints cards
+continue to use de-duplicated summary totals.
 
 ### 9.6 Velocity and delivery charts
 
@@ -1383,8 +1387,9 @@ does not exist.
 - **`epicsOnSchedule` uses the Future Predictability score**, not the Say/Do score.
 - **Priority distribution is all issues**, not bugs only, despite the Quality section label.
 - **Subtasks are excluded** from all metrics and issue lists, except Developer View, which explicitly counts Story + Sub-task.
-- **Per-sprint sums can overcount carried work** because an issue can appear in several
-  sprints. Executive All-Sprints totals use de-duplicated summary totals to avoid this.
+- **Per-sprint committed sums can count carried work in several sprints** because Jira
+  retains the issue in each sprint. Completion is attributed once using resolution/sprint
+  dates, with the last-listed sprint as fallback; All-Sprints totals remain de-duplicated.
 - **The trend chart’s “moving average” is an expanding average**, unlike the trailing
   3-sprint average in the Executive velocity chart.
 - **The trend charts are capped** by `JIRA_SPRINT_WINDOW` (default 5).

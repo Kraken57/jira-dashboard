@@ -214,7 +214,19 @@ export default function DashboardPage() {
 
     switch (card.title) {
       case "Sprint Carry Over":
-        issues = all.filter((i) => !i.isDone);
+        issues = all.filter((i) => {
+          if (!i.isDone) return true;
+          if (baseFilters.sprint === "all" || !i.completionSprint) return false;
+          const selectedStart = feed?.sprintMeta?.[baseFilters.sprint]?.startDate;
+          const completionStart = feed?.sprintMeta?.[i.completionSprint]?.startDate;
+          const selectedAt = selectedStart ? Date.parse(selectedStart) : Number.NaN;
+          const completionAt = completionStart ? Date.parse(completionStart) : Number.NaN;
+          if (!Number.isNaN(selectedAt) && !Number.isNaN(completionAt)) {
+            return completionAt > selectedAt;
+          }
+          const attached = i.sprint.split(", ");
+          return attached.indexOf(i.completionSprint) > attached.indexOf(baseFilters.sprint);
+        });
         label = "Not accepted / spilled-over committed work";
         break;
       case "Avg. Sprint Velocity":
@@ -223,7 +235,9 @@ export default function DashboardPage() {
         label = "Completed work items";
         break;
       case "Say/Do Ratio":
-        issues = all.filter((i) => i.isDone);
+        issues = all.filter((i) =>
+          i.isDone && (baseFilters.sprint === "all" || i.completionSprint === baseFilters.sprint)
+        );
         label = "Accepted / completed committed work";
         break;
       case "Future Predictability":
