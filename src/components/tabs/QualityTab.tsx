@@ -76,11 +76,9 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
   const uniqueIssues = (rows: IssueRow[]) => Array.from(new Map(rows.map((issue) => [issue.key, issue] as const)).values());
   const isCompletedDefect = (issue: IssueRow) => issue.isDone || /^(done|accepted|released|closed|resolved|completed)$/i.test(issue.status);
   const isCancelledDefect = (issue: IssueRow) => /^(?:cancell?ed|rejected|won't do|wont do)$/i.test(issue.status);
-  const isReopenedDefect = (issue: IssueRow) => /\breopen(?:ed)?\b/i.test(issue.status);
   const defectAnalysisRows = uniqueIssues(defectRows.filter((issue) => /^bug$/i.test(issue.workType)));
   const cancelledDefectRows = defectAnalysisRows.filter(isCancelledDefect);
   const completedDefectRows = defectAnalysisRows.filter((issue) => isCompletedDefect(issue) && !isCancelledDefect(issue));
-  const reopenedDefectRows = defectAnalysisRows.filter(isReopenedDefect);
   const openDefectRows = defectAnalysisRows.filter((issue) => !isCompletedDefect(issue) && !isCancelledDefect(issue));
   const qaDefectCount = defectAnalysisRows.length;
   const scopedUatRows = uniqueIssues(uatDefectRows ?? []).filter((issue) => /^bug$/i.test(issue.workType));
@@ -125,7 +123,6 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
     { title: "Open Defects", value: openDefectRows.length, note: "Unresolved; includes reopened", subtitle: `${openDefectRows.length} bugs are not completed or canceled`, rows: openDefectRows, tone: "amber" },
     { title: "Closed Defects", value: completedDefectRows.length, note: "Completed, accepted, or resolved", subtitle: `${completedDefectRows.length} bugs have a completed Jira status`, rows: completedDefectRows, tone: "emerald" },
     { title: "Canceled Defects", value: cancelledDefectRows.length, note: "Canceled or rejected statuses", subtitle: `${cancelledDefectRows.length} bugs are canceled or rejected and excluded from the resolution-rate denominator`, rows: cancelledDefectRows, tone: "rose" },
-    { title: "Reopened Defects", value: reopenedDefectRows.length, note: "Current status includes “reopened”", subtitle: `${reopenedDefectRows.length} bugs currently have a reopened status; these are also included in Open Defects`, rows: reopenedDefectRows, tone: "orange" },
     { title: "Defect Density", value: defectDensity === null ? "N/A" : defectDensity, note: "Bugs per 100 completed story points", subtitle: defectDensity === null ? "Density is unavailable because no completed story points are in scope" : `${qaDefectCount} distinct QA bugs ÷ ${deliveredStoryPoints} completed story points × 100`, rows: defectAnalysisRows, tone: "blue" },
     { title: "UAT Defects", value: qaUatDefects === undefined ? "N/A" : scopedUatRows.length, note: qaUatDefects === undefined ? "Configure the UAT Jira query" : "Distinct bugs from the UAT Jira query", subtitle: qaUatDefects === undefined ? "Configure JIRA_QA_UAT_DEFECT_JQL to enable this analysis" : `${scopedUatRows.length} distinct UAT defects in the selected scope`, rows: scopedUatRows, tone: "sky" },
     { title: "Defect Leakage", value: qaLeakageDefects === undefined ? "N/A" : qaDefectCount ? `${defectLeakageRate}%` : "N/A", note: qaLeakageDefects === undefined ? "Configure the leakage Jira query" : `${leakedDefectCount} matched · ${scopedLeakageRows.length} query results`, subtitle: qaLeakageDefects === undefined ? "Configure JIRA_QA_LEAKAGE_DEFECT_JQL to enable this analysis" : `The leakage query returned ${scopedLeakageRows.length} distinct issues; ${leakedDefectCount} also match the main QA defect query. The rate is ${leakedDefectCount} ÷ ${qaDefectCount} QA defects.`, rows: scopedLeakageRows, tone: "violet" },
@@ -356,7 +353,7 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
           </div>
           <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-600">{defectPod === "all" ? "All pods" : defectPods.find((pod) => pod.key === defectPod)?.name ?? defectPod}</span>
         </div>
-        <div className="grid grid-cols-2 gap-2.5 border-b border-slate-200 bg-slate-50/70 p-4 sm:grid-cols-3 sm:gap-3 sm:p-5 lg:grid-cols-4 xl:grid-cols-5">
+        <div className="grid grid-cols-2 gap-2.5 border-b border-slate-200 bg-slate-50/70 p-4 sm:grid-cols-4 sm:gap-3 sm:p-5">
           {defectMetricCards.map((card) => (
             <button
               key={card.title}
@@ -387,7 +384,7 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
             <div className="overflow-hidden rounded-xl border border-slate-200">
               <div className="flex flex-col gap-1 border-b border-slate-200 bg-slate-50/80 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900">Reporter workload by pod</h3>
+                  <h3 className="text-sm font-bold text-slate-900">Reported Defects by Pod</h3>
                   <p className="mt-0.5 text-[11px] text-slate-500">Names are Jira reporters · click a count to view those defects</p>
                 </div>
                 <p className="text-[10px] text-slate-400">{fetchedAt ? `Updated ${new Date(fetchedAt).toLocaleString()}` : "Live Jira data"}</p>
