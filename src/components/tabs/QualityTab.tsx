@@ -44,6 +44,11 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
       executed: number;
     }>;
   } | null>(null);
+  const [memberPodModal, setMemberPodModal] = useState<{
+    person: string;
+    pod: string;
+    cases: NonNullable<ZephyrData["cases"]>;
+  } | null>(null);
   const [expandedZephyrPod, setExpandedZephyrPod] = useState<string | null>(null);
   // QA tab owns its filters: an in-tab pod filter independent from the shared
   // pod/quarter/sprint bar (which is hidden on this tab).
@@ -51,9 +56,7 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
   const [qaMember, setQaMember] = useState("all");
   const [defectPod, setDefectPod] = useState("all");
   const [defectReporterSearch, setDefectReporterSearch] = useState("");
-  const [zephyrPersonSearch, setZephyrPersonSearch] = useState("");
   const [selectedZephyrMember, setSelectedZephyrMember] = useState<string | null>(null);
-  const [showZephyrPeople, setShowZephyrPeople] = useState(false);
   const [zephyrScope, setZephyrScope] = useState("all");
   const [zephyrQuarter, setZephyrQuarter] = useState("all");
   const [zephyrSprint, setZephyrSprint] = useState("all");
@@ -277,10 +280,7 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
   });
   const qaRoster = qaCapacity?.members ?? [];
   const normalizePerson = (name: string) => name.trim().toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
-  const zephyrPeopleOptions = qaRoster.filter((member) =>
-    !zephyrPersonSearch.trim() || [member.name, ...(member.aliasNames ?? [])]
-      .some((name) => name.toLocaleLowerCase().includes(zephyrPersonSearch.trim().toLocaleLowerCase()))
-  ).sort((a, b) => a.name.localeCompare(b.name));
+  const zephyrPeopleOptions = [...qaRoster].sort((a, b) => a.name.localeCompare(b.name));
   const activeZephyrMember = qaRoster.find((member) => member.name === selectedZephyrMember) ?? null;
   const activeMemberAliases = activeZephyrMember
     ? new Set([activeZephyrMember.name, ...(activeZephyrMember.aliasNames ?? [])].map(normalizePerson))
@@ -298,7 +298,52 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
   const activeMemberCompletedCount = (activeMemberCounts.passed ?? 0) + (activeMemberCounts.failed ?? 0) + (activeMemberCounts.blocked ?? 0);
   const activeMemberPodGroups = Array.from(new Set(activeMemberCases.flatMap((testCase) => testCase.podNames.length ? testCase.podNames : ["Unmapped pod"])))
     .sort((a, b) => a.localeCompare(b))
-    .map((pod) => ({ pod, cases: activeMemberCases.filter((testCase) => testCase.podNames.includes(pod) || (!testCase.podNames.length && pod === "Unmapped pod")) }));
+    .map((pod) => {
+      const cases = activeMemberCases.filter((testCase) => testCase.podNames.includes(pod) || (!testCase.podNames.length && pod === "Unmapped pod"));
+      const countStatus = (status: string) => cases.filter((testCase) => latestExecutionCategory(testCase) === status).length;
+      return {
+        pod,
+        cases,
+        total: cases.length,
+        executed: cases.filter((testCase) => testCase.executionCount > 0).length,
+        passed: countStatus("passed"),
+        failed: countStatus("failed"),
+        blocked: countStatus("blocked"),
+        inProgress: countStatus("in-progress"),
+        pending: countStatus("pending"),
+      };
+    });
+  const memberPodSprintGroups = (cases: NonNullable<ZephyrData["cases"]>) => {
+    const groups = new Map<string, Map<string, (typeof cases)[number]>>();
+    for (const testCase of cases) {
+      const sprints = testCase.sprints?.length ? testCase.sprints : ["No linked Jira sprint"];
+      for (const sprint of sprints) {
+        const sprintCases = groups.get(sprint) ?? new Map<string, (typeof cases)[number]>();
+        sprintCases.set(testCase.key, testCase);
+        groups.set(sprint, sprintCases);
+      }
+    }
+    return Array.from(groups, ([sprint, sprintCases]) => {
+      const rows = Array.from(sprintCases.values());
+      const countStatus = (status: string) => rows.filter((testCase) => latestExecutionCategory(testCase) === status).length;
+      return {
+        sprint,
+        cases: rows,
+        total: rows.length,
+        executed: rows.filter((testCase) => testCase.executionCount > 0).length,
+        passed: countStatus("passed"),
+        failed: countStatus("failed"),
+        blocked: countStatus("blocked"),
+        inProgress: countStatus("in-progress"),
+        pending: countStatus("pending"),
+      };
+    }).sort((a, b) => {
+      if (a.sprint === "No linked Jira sprint") return 1;
+      if (b.sprint === "No linked Jira sprint") return -1;
+      return a.sprint.localeCompare(b.sprint);
+    });
+  };
+  const memberPodModalSprints = memberPodModal ? memberPodSprintGroups(memberPodModal.cases) : [];
   const executionCounts = (cases: typeof zephyrCases) => cases.reduce((counts, testCase) => {
     const status = latestExecutionCategory(testCase);
     counts[status] = (counts[status] ?? 0) + 1;
@@ -591,50 +636,12 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
               </span>
             </div>
             <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
-              <div className="relative xl:col-span-2">
-                <label htmlFor="zephyr-people-search" className="sr-only">Search people</label>
-                <input
-                  id="zephyr-people-search"
-                  value={zephyrPersonSearch}
-                  onChange={(event) => { setZephyrPersonSearch(event.target.value); setSelectedZephyrMember(null); setShowZephyrPeople(true); }}
-                  onFocus={() => setShowZephyrPeople(true)}
-                  onBlur={() => window.setTimeout(() => setShowZephyrPeople(false), 120)}
-                  placeholder="Search people"
-                  aria-label="Search people"
-                  aria-expanded={showZephyrPeople}
-                  aria-controls="zephyr-people-options"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                />
-                {showZephyrPeople && (
-                  <div id="zephyr-people-options" role="listbox" aria-label="QA members" className="absolute inset-x-0 top-full z-20 mt-1 max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
-                    {zephyrPeopleOptions.length ? zephyrPeopleOptions.map((member) => (
-                      <button
-                        key={member.name}
-                        type="button"
-                        role="option"
-                        aria-selected={selectedZephyrMember === member.name}
-                        onMouseDown={(event) => event.preventDefault()}
-                        onClick={() => { setSelectedZephyrMember(member.name); setZephyrPersonSearch(""); setShowZephyrPeople(false); }}
-                        className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
-                      >
-                        <span className="min-w-0"><span className="block truncate text-sm font-semibold text-slate-800">{member.name}</span><span className="block truncate text-[11px] text-slate-500">{member.podNames.join(" · ") || "QA team member"}</span></span>
-                        <span className="shrink-0 text-[10px] font-semibold text-indigo-700">View activity</span>
-                      </button>
-                    )) : <p className="px-3 py-4 text-center text-xs text-slate-500">No QA members match that search.</p>}
-                  </div>
-                )}
-              </div>
+              <select value={selectedZephyrMember ?? ""} onChange={(event) => setSelectedZephyrMember(event.target.value || null)} aria-label="Search people" className="min-w-0 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="">Search people</option>{zephyrPeopleOptions.map((member) => <option key={member.name} value={member.name}>{member.name}{member.podNames.length ? ` · ${member.podNames.join(", ")}` : ""}</option>)}</select>
               <select value={zephyrScope} onChange={(event) => { setZephyrScope(event.target.value); setZephyrQuarter("all"); setZephyrSprint("all"); }} aria-label="Filter by QA pod or project" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="all">All pods</option>{zephyrScopeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
               <select value={zephyrQuarter} onChange={(event) => { setZephyrQuarter(event.target.value); setZephyrSprint("all"); }} aria-label="Filter by quarter or program increment" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="all">All quarters / PIs</option>{quarterOptions.map((quarter) => <option key={quarter} value={quarter}>{quarter}</option>)}</select>
               <select value={zephyrSprint} onChange={(event) => setZephyrSprint(event.target.value)} aria-label="Filter by Jira sprint" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="all">All sprints</option>{zephyrSprintOptions.map((sprint) => <option key={sprint} value={sprint}>{sprint}</option>)}<option value="__no_sprint__">No linked Jira sprint</option></select>
               <select value={zephyrExecutionStatus} onChange={(event) => setZephyrExecutionStatus(event.target.value)} aria-label="Filter by execution status" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="all">All execution statuses</option><option value="passed">Passed</option><option value="failed">Failed</option><option value="blocked">Blocked</option><option value="in-progress">In progress</option><option value="pending">Not run yet</option></select>
             </div>
-            {selectedZephyrMember && activeZephyrMember && (
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-indigo-100 bg-indigo-50/50 px-3 py-2.5">
-                <p className="min-w-0 text-xs text-slate-700"><span className="font-bold text-slate-900">Viewing {activeZephyrMember.name}</span><span className="mx-1.5 text-slate-300">·</span>{activeZephyrMember.podNames.join(", ") || "QA team member"}</p>
-                <button type="button" onClick={() => setSelectedZephyrMember(null)} className="rounded-md px-2 py-1 text-xs font-semibold text-indigo-700 hover:bg-white">Clear person</button>
-              </div>
-            )}
             <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
               <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
                 <span className="font-semibold text-slate-700">Sprint coverage</span>
@@ -649,34 +656,28 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
           {activeZephyrMember && (
             <section className="border-t border-slate-200 bg-white px-4 py-4 sm:px-6">
               <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
-                <div><h3 className="text-sm font-bold text-slate-900">{activeZephyrMember.name} · QA activity</h3><p className="mt-1 text-xs text-slate-500">Cases owned, assigned, or executed by this person in the selected pod, quarter, sprint, and status. Completed counts cases whose latest result is passed, failed, or blocked.</p></div>
-                <span className="text-[11px] text-slate-500">{activeMemberCases.length} matching test cases</span>
+                <div><h3 className="text-sm font-bold text-slate-900">QA activity · {activeZephyrMember.name}</h3><p className="mt-1 text-xs text-slate-500">Choose a pod card to see sprint-by-sprint progress. Completed means the latest result is passed, failed, or blocked.</p></div>
+                <span className="text-[11px] text-slate-500">{activeMemberCases.length} matching cases</span>
               </div>
-              <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
+              <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
                 {[
-                  { label: "Completed", count: activeMemberCompletedCount, color: "text-indigo-700" },
-                  { label: "Passed", count: activeMemberCounts.passed ?? 0, color: "text-emerald-700" },
-                  { label: "Failed", count: activeMemberCounts.failed ?? 0, color: "text-rose-700" },
-                  { label: "Blocked", count: activeMemberCounts.blocked ?? 0, color: "text-amber-700" },
+                  { label: "Test cases", count: activeMemberCases.length, color: "text-indigo-700" },
+                  { label: "Completed", count: activeMemberCompletedCount, color: "text-emerald-700" },
                   { label: "In progress", count: activeMemberCounts["in-progress"] ?? 0, color: "text-sky-700" },
                   { label: "Not run yet", count: activeMemberCounts.pending ?? 0, color: "text-slate-700" },
-                ].map((item) => <div key={item.label} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"><p className="text-[10px] font-semibold text-slate-500">{item.label}</p><p className={`mt-0.5 text-lg font-bold ${item.color}`}>{item.count}</p></div>)}
+                ].map((item) => <div key={item.label} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5"><p className="text-[10px] font-semibold text-slate-500">{item.label}</p><p className={`mt-0.5 text-lg font-bold ${item.color}`}>{item.count}</p></div>)}
               </div>
-              {activeMemberPodGroups.length ? <div className="space-y-3">
-                {activeMemberPodGroups.map(({ pod, cases }) => (
-                  <div key={pod} className="overflow-hidden rounded-xl border border-slate-200">
-                    <div className="flex items-center justify-between gap-2 bg-slate-50 px-3 py-2.5"><h4 className="text-xs font-bold text-slate-800">{pod}</h4><span className="text-[10px] text-slate-500">{cases.length} cases</span></div>
-                    <div className="divide-y divide-slate-100">
-                      {cases.map((testCase) => (
-                        <button key={testCase.key} type="button" onClick={() => openZephyrModal(`${activeZephyrMember.name} · ${testCase.key}`, `${pod} · ${(testCase.sprints ?? []).join(", ") || "No linked Jira sprint"} · ${testCase.latestExecution?.status ?? "Not run yet"}`, [testCase])} className="grid w-full gap-1 px-3 py-2.5 text-left transition hover:bg-indigo-50/50 sm:grid-cols-[minmax(0,1fr)_minmax(130px,0.8fr)_110px] sm:items-center">
-                          <span className="min-w-0"><span className="block truncate text-xs font-semibold text-indigo-700">{testCase.key}</span><span className="block truncate text-xs text-slate-700">{testCase.name}</span></span>
-                          <span className="truncate text-[11px] text-slate-500">{(testCase.sprints ?? []).join(", ") || "No linked Jira sprint"}</span>
-                          <span className="text-[11px] font-semibold text-slate-700">{testCase.latestExecution?.status ?? "Not run yet"}<span className="ml-1 text-slate-400">· {testCase.executionCount} runs</span></span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+              {activeMemberPodGroups.length ? <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {activeMemberPodGroups.map((group) => {
+                  const completed = group.passed + group.failed + group.blocked;
+                  const progress = group.total ? Math.round((completed / group.total) * 100) : 0;
+                  return <button key={group.pod} type="button" onClick={() => setMemberPodModal({ person: activeZephyrMember.name, pod: group.pod, cases: group.cases })} className="rounded-xl border border-slate-200 bg-white p-4 text-left transition hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">
+                    <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h4 className="truncate text-sm font-bold text-slate-900">{group.pod}</h4><p className="mt-1 text-xs text-slate-500">{group.total} test cases</p></div><span className="shrink-0 rounded-full bg-indigo-50 px-2.5 py-1 text-[10px] font-bold text-indigo-700">{completed} completed</span></div>
+                    <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-slate-500"><span>{group.passed} passed</span>{group.failed > 0 && <span className="font-semibold text-rose-700">{group.failed} failed</span>}{group.blocked > 0 && <span className="font-semibold text-amber-700">{group.blocked} blocked</span>}{group.inProgress > 0 && <span className="font-semibold text-sky-700">{group.inProgress} in progress</span>}{group.pending > 0 && <span>{group.pending} not run</span>}</div>
+                    <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${progress}%` }} /></div>
+                    <p className="mt-3 text-[10px] font-semibold text-indigo-700">View sprint progress →</p>
+                  </button>;
+                })}
               </div> : <p className="rounded-xl border border-dashed border-slate-300 px-4 py-7 text-center text-sm text-slate-500">No Zephyr cases match this QA member and the selected filters.</p>}
             </section>
           )}
@@ -782,9 +783,36 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
               </div>
             </DetailModal>
           )}
+          {memberPodModal && (
+            <DetailModal
+              title={`${memberPodModal.person} · ${memberPodModal.pod}`}
+              subtitle={`${memberPodModal.cases.length} matching test cases · choose a sprint to inspect the cases`}
+              onClose={() => setMemberPodModal(null)}
+              wide
+            >
+              <div className="grid gap-3 p-4 sm:grid-cols-2 sm:p-5 xl:grid-cols-3">
+                {memberPodModalSprints.map((group) => (
+                  <button
+                    key={group.sprint}
+                    type="button"
+                    onClick={() => {
+                      setMemberPodModal(null);
+                      openZephyrModal(`${memberPodModal.person} · ${memberPodModal.pod} · ${group.sprint}`, `${group.total} test cases · ${group.executed} executed`, group.cases);
+                    }}
+                    className="rounded-xl border border-slate-200 bg-white p-4 text-left transition hover:border-indigo-300 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
+                  >
+                    <div className="flex items-start justify-between gap-2"><h4 className="text-sm font-bold leading-5 text-slate-900">{group.sprint}</h4><span className="shrink-0 rounded-full bg-indigo-50 px-2.5 py-1 text-[10px] font-bold text-indigo-700">{group.total} cases</span></div>
+                    <p className="mt-1 text-xs text-slate-500">{group.executed} executed · {group.passed + group.failed + group.blocked} completed</p>
+                    <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 border-t border-slate-100 pt-3 text-[10px] text-slate-500"><span className="font-semibold text-emerald-700">{group.passed} passed</span>{group.failed > 0 && <span className="font-semibold text-rose-700">{group.failed} failed</span>}{group.blocked > 0 && <span className="font-semibold text-amber-700">{group.blocked} blocked</span>}{group.inProgress > 0 && <span className="font-semibold text-sky-700">{group.inProgress} in progress</span>}{group.pending > 0 && <span>{group.pending} not run</span>}</div>
+                    <p className="mt-3 text-[10px] font-semibold text-indigo-700">View test cases →</p>
+                  </button>
+                ))}
+              </div>
+            </DetailModal>
+          )}
           <div className="border-t border-slate-200 px-4 py-4 sm:px-6">
             <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
-              <div><h3 className="text-sm font-bold text-slate-900">Execution by pod and sprint</h3><p className="mt-1 text-xs text-slate-500">Open a pod, then select a sprint to view its cases. Each case uses its latest run; sprint rows can overlap when linked to multiple sprints.</p></div>
+              <div><h3 className="text-sm font-bold text-slate-900">Pod and sprint test progress</h3><p className="mt-1 text-xs text-slate-500">Expand a pod to compare sprint results. Each case uses its latest run; a case linked to multiple sprints appears in each sprint group.</p></div>
               <span className="text-[11px] text-slate-500">{zephyrPodPerformance.length} pods · {podSprintPerformance.length} sprint groups</span>
             </div>
             {zephyrPodPerformance.length === 0 ? <p className="rounded-xl border border-dashed border-slate-300 py-8 text-center text-sm text-slate-500">No cases match these filters.</p> : (
