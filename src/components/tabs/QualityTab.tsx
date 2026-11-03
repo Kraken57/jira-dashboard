@@ -249,8 +249,19 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
   }, {} as Record<string, number>);
   const scopedExecutionCounts = executionCounts(scopedZephyrCases);
   const showEntqaAutomationStatus = selectedZephyrScope?.projectKeys.some((key) => key.toUpperCase() === "ENTQA") ?? false;
-  const entqaApprovedCases = scopedZephyrCases.filter((testCase) => /^approved$/i.test(testCase.status));
-  const entqaDraftCases = scopedZephyrCases.filter((testCase) => /^draft$/i.test(testCase.status));
+  const entqaFolderStatusGroups = (() => {
+    if (!showEntqaAutomationStatus) return [];
+    const folders = new Map<string, (typeof scopedZephyrCases)[number][]>();
+    for (const testCase of scopedZephyrCases.filter((item) => item.projectKey.toUpperCase() === "ENTQA")) {
+      const folder = testCase.folder && !/^unfiled$/i.test(testCase.folder) ? testCase.folder : "Unfiled";
+      folders.set(folder, [...(folders.get(folder) ?? []), testCase]);
+    }
+    return Array.from(folders, ([folder, cases]) => {
+      const automated = cases.filter((testCase) => /^approved$/i.test(testCase.status));
+      const pending = cases.filter((testCase) => /^draft$/i.test(testCase.status));
+      return { folder, cases, total: cases.length, automated, pending, other: cases.filter((testCase) => !/^(approved|draft)$/i.test(testCase.status)) };
+    }).sort((a, b) => a.folder.localeCompare(b.folder));
+  })();
   const podSprintPerformance = (() => {
     const groups = new Map<string, { pod: string; sprint: string; cases: Map<string, (typeof scopedZephyrCases)[number]> }>();
     for (const testCase of scopedZephyrCases) {
@@ -532,18 +543,50 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
           </div>
           {showEntqaAutomationStatus && (
             <div className="border-t border-slate-200 bg-white px-4 py-4 sm:px-6">
-              <div className="mb-3"><h3 className="text-sm font-bold text-slate-900">ENTQA case status</h3><p className="mt-1 text-xs text-slate-500">Approved test cases are grouped as Automated; Draft test cases are grouped as Pending.</p></div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {[
-                  { title: "Automated", status: "Approved", cases: entqaApprovedCases, style: "border-emerald-200 bg-emerald-50 text-emerald-800" },
-                  { title: "Pending", status: "Draft", cases: entqaDraftCases, style: "border-amber-200 bg-amber-50 text-amber-800" },
-                ].map((card) => (
-                  <button key={card.title} type="button" onClick={() => openZephyrModal(`ENTQA · ${card.title}`, `${card.cases.length} test cases with Zephyr status “${card.status}”`, card.cases)} className={`rounded-xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-300 ${card.style}`}>
-                    <span className="text-[10px] font-bold uppercase tracking-wide">{card.title}</span>
-                    <span className="mt-1 flex items-end justify-between"><span className="text-2xl font-bold">{card.cases.length}</span><span className="text-[11px]">Zephyr status: {card.status} · View cases</span></span>
-                  </button>
-                ))}
+              <div className="mb-4">
+                <h3 className="text-sm font-bold text-slate-900">ENTQA automation by pod</h3>
+                <p className="mt-1 text-xs text-slate-500">Grouped by Zephyr folder (for example, SRG, Finance_ERP, DTP, DTR, and Platform_SF). Approved = Automated · Draft = Pending. Click a count to view cases.</p>
               </div>
+              {entqaFolderStatusGroups.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-slate-300 px-4 py-7 text-center text-sm text-slate-500">No ENTQA test cases match the current filters.</p>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {entqaFolderStatusGroups.map((group) => {
+                    const automatedPercent = group.total ? (group.automated.length / group.total) * 100 : 0;
+                    const pendingPercent = group.total ? (group.pending.length / group.total) * 100 : 0;
+                    const otherPercent = group.total ? (group.other.length / group.total) * 100 : 0;
+                    return (
+                      <article key={group.folder} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <h4 className="truncate text-sm font-bold text-slate-900">{group.folder}</h4>
+                            <p className="mt-0.5 text-xs text-slate-500">{group.total} total test cases</p>
+                          </div>
+                          <button type="button" onClick={() => openZephyrModal(`ENTQA · ${group.folder}`, `${group.total} test cases in this Zephyr folder`, group.cases)} className="shrink-0 rounded-lg px-2 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-50">View all</button>
+                        </div>
+                        <div className="mt-3 grid grid-cols-3 gap-2">
+                          <button type="button" onClick={() => openZephyrModal(`ENTQA · ${group.folder} · Automated`, `${group.automated.length} Approved test cases`, group.automated)} className="rounded-lg border border-emerald-100 bg-emerald-50/70 p-2 text-left transition hover:bg-emerald-100">
+                            <p className="text-[10px] font-semibold text-emerald-800">Automated</p><p className="mt-1 text-lg font-bold leading-none text-emerald-900">{group.automated.length}</p>
+                          </button>
+                          <button type="button" onClick={() => openZephyrModal(`ENTQA · ${group.folder} · Pending`, `${group.pending.length} Draft test cases`, group.pending)} className="rounded-lg border border-amber-100 bg-amber-50/70 p-2 text-left transition hover:bg-amber-100">
+                            <p className="text-[10px] font-semibold text-amber-800">Pending</p><p className="mt-1 text-lg font-bold leading-none text-amber-900">{group.pending.length}</p>
+                          </button>
+                          <button type="button" onClick={() => openZephyrModal(`ENTQA · ${group.folder} · Other statuses`, `${group.other.length} test cases in other Zephyr statuses`, group.other)} className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-left transition hover:bg-slate-100">
+                            <p className="text-[10px] font-semibold text-slate-600">Other</p><p className="mt-1 text-lg font-bold leading-none text-slate-800">{group.other.length}</p>
+                          </button>
+                        </div>
+                        <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100" role="img" aria-label={`${group.automated.length} automated, ${group.pending.length} pending, ${group.other.length} other out of ${group.total} cases`}>
+                          <div className="flex h-full w-full">
+                            <span className="h-full bg-emerald-500" style={{ width: `${automatedPercent}%` }} />
+                            <span className="h-full bg-amber-400" style={{ width: `${pendingPercent}%` }} />
+                            <span className="h-full bg-slate-300" style={{ width: `${otherPercent}%` }} />
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
           <div className="border-t border-slate-200 px-4 py-4 sm:px-6">
