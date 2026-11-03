@@ -336,18 +336,21 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
           </div>
           <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-600">{defectPod === "all" ? "All pods" : defectPods.find((pod) => pod.key === defectPod)?.name ?? defectPod}</span>
         </div>
-        <div className="grid grid-cols-1 gap-3 border-b border-slate-200 bg-slate-50/70 p-5 sm:grid-cols-2 sm:p-7 xl:grid-cols-3">
+        <div className="grid grid-cols-2 gap-2.5 border-b border-slate-200 bg-slate-50/70 p-4 sm:grid-cols-3 sm:gap-3 sm:p-5 lg:grid-cols-4 xl:grid-cols-5">
           {defectMetricCards.map((card) => (
             <button
               key={card.title}
               type="button"
               onClick={() => open(card.title, card.subtitle, card.rows)}
-              className={`rounded-xl border bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${toneClasses[card.tone]}`}
+              aria-label={`${card.title}: ${card.value}. ${card.note}. Click to open details.`}
+              className={`group rounded-xl border bg-white p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 sm:p-3.5 ${toneClasses[card.tone]}`}
             >
-              <p className="text-[10px] font-bold uppercase tracking-[0.12em]">{card.title}</p>
-              <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900">{card.value}</p>
-              <p className="mt-1 text-[11px] text-slate-500">{card.note}</p>
-              <p className="mt-3 text-[10px] font-semibold text-slate-400">View Jira analysis ↗</p>
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-[9px] font-bold uppercase leading-4 tracking-[0.1em] sm:text-[10px]">{card.title}</p>
+                <span aria-hidden="true" className="text-xs text-slate-300 transition group-hover:text-indigo-500">↗</span>
+              </div>
+              <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-[1.7rem]">{card.value}</p>
+              <p className="mt-0.5 line-clamp-2 text-[10px] leading-4 text-slate-500 sm:text-[11px]">{card.note}</p>
             </button>
           ))}
         </div>
