@@ -451,16 +451,16 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
               <select value={zephyrExecutionStatus} onChange={(event) => setZephyrExecutionStatus(event.target.value)} aria-label="Filter by execution status" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="all">All execution statuses</option><option value="passed">Passed</option><option value="failed">Failed</option><option value="blocked">Blocked</option><option value="in-progress">In progress</option><option value="pending">Not run yet</option></select>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3 bg-slate-50 p-4 sm:grid-cols-3 lg:grid-cols-5 sm:p-5">
+          <div className="grid grid-cols-2 gap-3 bg-slate-50 p-4 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-6 sm:p-5">
             {[
-              { label: "Cases", value: scopedZephyrCases.length, category: "all", color: "text-indigo-700" },
+              { label: "Total test cases", value: scopedZephyrCases.length, category: "all", color: "text-indigo-700" },
               { label: "Passed", value: scopedExecutionCounts.passed ?? 0, category: "passed", color: "text-emerald-700" },
               { label: "Failed", value: scopedExecutionCounts.failed ?? 0, category: "failed", color: "text-rose-700" },
-              { label: "Blocked / in progress", value: (scopedExecutionCounts.blocked ?? 0) + (scopedExecutionCounts["in-progress"] ?? 0), category: "blocked-wip", color: "text-amber-700" },
+              { label: "Blocked", value: scopedExecutionCounts.blocked ?? 0, category: "blocked", color: "text-amber-700" },
+              { label: "In progress", value: scopedExecutionCounts["in-progress"] ?? 0, category: "in-progress", color: "text-sky-700" },
               { label: "Not run yet", value: scopedExecutionCounts.pending ?? 0, category: "pending", color: "text-slate-700" },
             ].map((card) => {
-              const matchingCases = card.category === "all" ? scopedZephyrCases : card.category === "blocked-wip"
-                ? scopedZephyrCases.filter((testCase) => ["blocked", "in-progress"].includes(testCase.latestExecution?.statusCategory ?? "pending"))
+              const matchingCases = card.category === "all" ? scopedZephyrCases
                 : scopedZephyrCases.filter((testCase) => (testCase.latestExecution?.statusCategory ?? "pending") === card.category);
               return (
                 <button key={card.label} type="button" onClick={() => setZephyrModal({ title: card.label, subtitle: `${matchingCases.length} matching test cases in the selected filters`, cases: matchingCases })} className="rounded-xl border border-slate-200 bg-white p-3 text-left transition hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-300">
