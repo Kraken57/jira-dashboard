@@ -698,7 +698,8 @@ async function fetchLiveFeed(): Promise<RawFeedPayload> {
         const chunk = lookupKeys.slice(offset, offset + 80);
         if (!chunk.length) continue;
         const jql = `key in (${chunk.join(", ")})`;
-        sprintItems.push(...await fetchAllLiveJiraIssues(jql, "Zephyr sprint mapping"));
+        const sprintFeed = await fetchAllLiveJiraIssues(jql, "Zephyr sprint mapping");
+        sprintItems.push(...sprintFeed.items);
       }
       const byKey = new Map(sprintItems.map((item) => [item.key, item]));
       zephyr.cases = zephyr.cases.map((testCase) => {
