@@ -288,16 +288,14 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
     <div className="space-y-6">
       {/* ---- QA defects ---- */}
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-900/5">
-        <div className="relative overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 px-5 py-6 text-white sm:px-7">
-          <div className="pointer-events-none absolute -right-8 -top-16 h-56 w-56 rounded-full bg-indigo-500/20 blur-3xl" />
-          <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+        <div className="border-b border-slate-200 bg-white px-5 py-5 sm:px-7">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-200">Quality overview</p>
-              <div className="mt-2 flex flex-wrap items-center gap-3">
-                <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">QA Defects</h2>
-                <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold text-indigo-50">{qaDefectCount} bugs</span>
+              <div className="flex flex-wrap items-center gap-3">
+                <h2 className="text-xl font-bold tracking-tight text-slate-900">QA Defects</h2>
+                <span className="rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">{qaDefectCount} bugs</span>
               </div>
-              <p className="mt-2 max-w-2xl text-sm text-slate-300">Track defect status and reporter ownership across QA pods. Select a count to inspect the matching Jira issues.</p>
+              <p className="mt-1.5 max-w-2xl text-sm text-slate-500">Track defect status and reporter ownership across QA pods. Select a count to inspect the matching Jira issues.</p>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row">
               <label className="relative block min-w-0 sm:w-72">
@@ -309,7 +307,7 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
                   onChange={(event) => setDefectReporterSearch(event.target.value)}
                   placeholder="Search reporter by name"
                   aria-label="Search QA reporter by name"
-                  className="w-full rounded-xl border border-white/15 bg-white/10 py-2.5 pl-9 pr-3 text-sm text-white outline-none placeholder:text-slate-400 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-400/30"
+                  className="w-full rounded-xl border border-slate-300 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                 />
                 <datalist id="qa-reporter-name-options">
                   {allReporterNames.map((name) => <option key={name} value={name} />)}
@@ -321,7 +319,7 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
                   value={defectPod}
                   onChange={(event) => setDefectPod(event.target.value)}
                   aria-label="Filter QA defects by pod"
-                  className="w-full rounded-xl border border-white/15 bg-slate-800 px-3 py-2.5 text-sm font-medium text-white outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-400/30"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                 >
                   <option value="all">All pods</option>
                   {defectPods.map((pod) => <option key={pod.key} value={pod.key}>{pod.name}</option>)}
@@ -449,7 +447,6 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
               <select value={zephyrSprint} onChange={(event) => setZephyrSprint(event.target.value)} aria-label="Filter by Jira sprint" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="all">All sprints</option>{zephyrSprintOptions.map((sprint) => <option key={sprint} value={sprint}>{sprint}</option>)}<option value="__no_sprint__">Backlog / no linked sprint</option></select>
               <select value={zephyrExecutionStatus} onChange={(event) => setZephyrExecutionStatus(event.target.value)} aria-label="Filter by execution status" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="all">All execution statuses</option><option value="passed">Passed</option><option value="failed">Failed</option><option value="blocked">Blocked</option><option value="in-progress">In progress</option><option value="pending">Not run yet</option></select>
             </div>
-            <p className="mt-2 text-[11px] text-slate-500">Sprint and pod are inferred from linked Jira issues; cases without a linked Jira sprint appear under “Backlog / no linked sprint.” Add Zephyr projects through <code className="rounded bg-slate-100 px-1">JIRA_ZEPHYR_PROJECT_KEYS</code> in `.env.local`.</p>
           </div>
           <div className="grid grid-cols-2 gap-3 bg-slate-50 p-4 sm:grid-cols-3 lg:grid-cols-5 sm:p-5">
             {[
