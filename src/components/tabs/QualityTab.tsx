@@ -51,8 +51,11 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
   const [qaMember, setQaMember] = useState("all");
   const [defectPod, setDefectPod] = useState("all");
   const [defectReporterSearch, setDefectReporterSearch] = useState("");
-  const [zephyrSearch, setZephyrSearch] = useState("");
+  const [zephyrPersonSearch, setZephyrPersonSearch] = useState("");
+  const [selectedZephyrMember, setSelectedZephyrMember] = useState<string | null>(null);
+  const [showZephyrPeople, setShowZephyrPeople] = useState(false);
   const [zephyrScope, setZephyrScope] = useState("all");
+  const [zephyrQuarter, setZephyrQuarter] = useState("all");
   const [zephyrSprint, setZephyrSprint] = useState("all");
   const [zephyrExecutionStatus, setZephyrExecutionStatus] = useState("all");
 
@@ -204,7 +207,31 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
     }
     return Array.from(options.values()).sort((a, b) => a.label.localeCompare(b.label));
   })();
-  const zephyrSprintOptions = Array.from(new Set(zephyrCases.flatMap((testCase) => testCase.sprints ?? []))).sort((a, b) => a.localeCompare(b));
+  const selectedZephyrScope = zephyrScopeOptions.find((option) => option.value === zephyrScope);
+  const quarterFromZephyrSprint = (sprint: string) => {
+    const pi = sprint.match(/CY(\d{2})\s*PI\.?\s*(\d)/i);
+    if (pi) return `CY${pi[1]} PI.${Number(pi[2])}`;
+    const yearQuarter = sprint.match(/(\d{4})\s*-?\s*Q\s*([1-4])/i);
+    if (yearQuarter) return `CY${yearQuarter[1].slice(-2)} PI.${Number(yearQuarter[2])}`;
+    return "Other / unclassified";
+  };
+  const scopeCasesForZephyrFilters = zephyrCases.filter((testCase) => {
+    if (zephyrScope === "all") return true;
+    return Boolean(selectedZephyrScope && (
+      selectedZephyrScope.podNames.some((pod) => testCase.podNames.includes(pod)) ||
+      selectedZephyrScope.projectKeys.some((key) => testCase.projectKey.toLowerCase() === key.toLowerCase())
+    ));
+  });
+  const quarterOptions = Array.from(new Set(scopeCasesForZephyrFilters.flatMap((testCase) => testCase.sprints ?? []).map(quarterFromZephyrSprint)))
+    .sort((a, b) => {
+      if (a === "Other / unclassified") return 1;
+      if (b === "Other / unclassified") return -1;
+      const [, ay = "0", aq = "0"] = a.match(/^CY(\d{2}) PI\.(\d+)$/) ?? [];
+      const [, by = "0", bq = "0"] = b.match(/^CY(\d{2}) PI\.(\d+)$/) ?? [];
+      return Number(ay) - Number(by) || Number(aq) - Number(bq);
+    });
+  const quarterScopedZephyrCases = scopeCasesForZephyrFilters.filter((testCase) => zephyrQuarter === "all" || (testCase.sprints ?? []).some((sprint) => quarterFromZephyrSprint(sprint) === zephyrQuarter));
+  const zephyrSprintOptions = Array.from(new Set(quarterScopedZephyrCases.flatMap((testCase) => testCase.sprints ?? []))).sort((a, b) => a.localeCompare(b));
   const qaPodOptions = Array.from(new Set([
     ...(qaCapacity?.members ?? []).flatMap((m) => m.podNames),
     ...zephyrCases.flatMap((testCase) => testCase.podNames),
@@ -238,21 +265,40 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
   // latest execution outcome. A case with no execution is counted as pending.
   const latestExecutionCategory = (testCase: (typeof zephyrCases)[number]) =>
     testCase.latestExecution?.statusCategory ?? "pending";
-  const selectedZephyrScope = zephyrScopeOptions.find((option) => option.value === zephyrScope);
   const scopedZephyrCases = zephyrCases.filter((testCase) => {
     const scopeMatch = zephyrScope === "all" || Boolean(selectedZephyrScope && (
       selectedZephyrScope.podNames.some((pod) => testCase.podNames.includes(pod)) ||
       selectedZephyrScope.projectKeys.some((key) => testCase.projectKey.toLowerCase() === key.toLowerCase())
     ));
+    const quarterMatch = zephyrQuarter === "all" || (testCase.sprints ?? []).some((sprint) => quarterFromZephyrSprint(sprint) === zephyrQuarter);
     const sprintMatch = zephyrSprint === "all" || (zephyrSprint === "__no_sprint__" ? !(testCase.sprints?.length) : (testCase.sprints ?? []).includes(zephyrSprint));
     const executionMatch = zephyrExecutionStatus === "all" || latestExecutionCategory(testCase) === zephyrExecutionStatus;
-    const query = zephyrSearch.trim().toLowerCase();
-    const searchMatch = !query || [testCase.key, testCase.name, testCase.ownerName, testCase.projectKey,
-      testCase.projectName, ...testCase.podNames, ...testCase.labels, ...testCase.linkedIssueKeys,
-      ...testCase.executions.flatMap((execution) => [execution.assignedTo, execution.executedBy])]
-      .some((value) => value.toLowerCase().includes(query));
-    return scopeMatch && sprintMatch && executionMatch && searchMatch;
+    return scopeMatch && quarterMatch && sprintMatch && executionMatch;
   });
+  const qaRoster = qaCapacity?.members ?? [];
+  const normalizePerson = (name: string) => name.trim().toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const zephyrPeopleOptions = qaRoster.filter((member) =>
+    !zephyrPersonSearch.trim() || [member.name, ...(member.aliasNames ?? [])]
+      .some((name) => name.toLocaleLowerCase().includes(zephyrPersonSearch.trim().toLocaleLowerCase()))
+  ).sort((a, b) => a.name.localeCompare(b.name));
+  const activeZephyrMember = qaRoster.find((member) => member.name === selectedZephyrMember) ?? null;
+  const activeMemberAliases = activeZephyrMember
+    ? new Set([activeZephyrMember.name, ...(activeZephyrMember.aliasNames ?? [])].map(normalizePerson))
+    : new Set<string>();
+  const activeMemberCases = activeZephyrMember ? scopedZephyrCases.filter((testCase) =>
+    activeMemberAliases.has(normalizePerson(testCase.ownerName)) || testCase.executions.some((execution) =>
+      activeMemberAliases.has(normalizePerson(execution.assignedTo)) || activeMemberAliases.has(normalizePerson(execution.executedBy))
+    )
+  ) : [];
+  const activeMemberCounts = activeMemberCases.reduce((counts, testCase) => {
+    const category = latestExecutionCategory(testCase);
+    counts[category] = (counts[category] ?? 0) + 1;
+    return counts;
+  }, {} as Record<string, number>);
+  const activeMemberCompletedCount = (activeMemberCounts.passed ?? 0) + (activeMemberCounts.failed ?? 0) + (activeMemberCounts.blocked ?? 0);
+  const activeMemberPodGroups = Array.from(new Set(activeMemberCases.flatMap((testCase) => testCase.podNames.length ? testCase.podNames : ["Unmapped pod"])))
+    .sort((a, b) => a.localeCompare(b))
+    .map((pod) => ({ pod, cases: activeMemberCases.filter((testCase) => testCase.podNames.includes(pod) || (!testCase.podNames.length && pod === "Unmapped pod")) }));
   const executionCounts = (cases: typeof zephyrCases) => cases.reduce((counts, testCase) => {
     const status = latestExecutionCategory(testCase);
     counts[status] = (counts[status] ?? 0) + 1;
@@ -276,7 +322,7 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
   const openEntqaSprintModal = (folder: string, cases: NonNullable<ZephyrData["cases"]>) => {
     const bySprint = new Map<string, Map<string, (typeof cases)[number]>>();
     for (const testCase of cases) {
-      const sprints = testCase.sprints?.length ? testCase.sprints : ["Backlog / no linked sprint"];
+      const sprints = testCase.sprints?.length ? testCase.sprints : ["No linked Jira sprint"];
       for (const sprint of sprints) {
         const sprintCases = bySprint.get(sprint) ?? new Map<string, (typeof cases)[number]>();
         sprintCases.set(testCase.key, testCase);
@@ -296,8 +342,8 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
         executed: sprintCases.filter((testCase) => testCase.executionCount > 0).length,
       };
     }).sort((a, b) => {
-      if (a.sprint === "Backlog / no linked sprint") return 1;
-      if (b.sprint === "Backlog / no linked sprint") return -1;
+      if (a.sprint === "No linked Jira sprint") return 1;
+      if (b.sprint === "No linked Jira sprint") return -1;
       return a.sprint.localeCompare(b.sprint);
     });
     setEntqaSprintModal({ folder, groups });
@@ -306,7 +352,7 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
     const groups = new Map<string, { pod: string; sprint: string; cases: Map<string, (typeof scopedZephyrCases)[number]> }>();
     for (const testCase of scopedZephyrCases) {
       const pods = testCase.podNames.length ? testCase.podNames : ["Unmapped pod"];
-      const sprints = testCase.sprints?.length ? testCase.sprints : ["Backlog / no linked sprint"];
+      const sprints = testCase.sprints?.length ? testCase.sprints : ["No linked Jira sprint"];
       for (const pod of pods) for (const sprint of sprints) {
         const key = `${pod}\u0000${sprint}`;
         if (!groups.has(key)) groups.set(key, { pod, sprint, cases: new Map() });
@@ -544,23 +590,96 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
                 {scopedZephyrCases.length} matching cases · {scopedZephyrCases.reduce((total, testCase) => total + testCase.executionCount, 0)} runs
               </span>
             </div>
-            <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-              <input value={zephyrSearch} onChange={(event) => setZephyrSearch(event.target.value)} placeholder="Search cases or people" aria-label="Search Zephyr test cases" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
-              <select value={zephyrScope} onChange={(event) => setZephyrScope(event.target.value)} aria-label="Filter by QA pod or project" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="all">All pods</option>{zephyrScopeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
-              <select value={zephyrSprint} onChange={(event) => setZephyrSprint(event.target.value)} aria-label="Filter by Jira sprint" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="all">All sprints</option>{zephyrSprintOptions.map((sprint) => <option key={sprint} value={sprint}>{sprint}</option>)}<option value="__no_sprint__">Backlog / no linked sprint</option></select>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+              <div className="relative xl:col-span-2">
+                <label htmlFor="zephyr-people-search" className="sr-only">Search people</label>
+                <input
+                  id="zephyr-people-search"
+                  value={zephyrPersonSearch}
+                  onChange={(event) => { setZephyrPersonSearch(event.target.value); setSelectedZephyrMember(null); setShowZephyrPeople(true); }}
+                  onFocus={() => setShowZephyrPeople(true)}
+                  onBlur={() => window.setTimeout(() => setShowZephyrPeople(false), 120)}
+                  placeholder="Search people"
+                  aria-label="Search people"
+                  aria-expanded={showZephyrPeople}
+                  aria-controls="zephyr-people-options"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                />
+                {showZephyrPeople && (
+                  <div id="zephyr-people-options" role="listbox" aria-label="QA members" className="absolute inset-x-0 top-full z-20 mt-1 max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
+                    {zephyrPeopleOptions.length ? zephyrPeopleOptions.map((member) => (
+                      <button
+                        key={member.name}
+                        type="button"
+                        role="option"
+                        aria-selected={selectedZephyrMember === member.name}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => { setSelectedZephyrMember(member.name); setZephyrPersonSearch(""); setShowZephyrPeople(false); }}
+                        className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
+                      >
+                        <span className="min-w-0"><span className="block truncate text-sm font-semibold text-slate-800">{member.name}</span><span className="block truncate text-[11px] text-slate-500">{member.podNames.join(" · ") || "QA team member"}</span></span>
+                        <span className="shrink-0 text-[10px] font-semibold text-indigo-700">View activity</span>
+                      </button>
+                    )) : <p className="px-3 py-4 text-center text-xs text-slate-500">No QA members match that search.</p>}
+                  </div>
+                )}
+              </div>
+              <select value={zephyrScope} onChange={(event) => { setZephyrScope(event.target.value); setZephyrQuarter("all"); setZephyrSprint("all"); }} aria-label="Filter by QA pod or project" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="all">All pods</option>{zephyrScopeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
+              <select value={zephyrQuarter} onChange={(event) => { setZephyrQuarter(event.target.value); setZephyrSprint("all"); }} aria-label="Filter by quarter or program increment" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="all">All quarters / PIs</option>{quarterOptions.map((quarter) => <option key={quarter} value={quarter}>{quarter}</option>)}</select>
+              <select value={zephyrSprint} onChange={(event) => setZephyrSprint(event.target.value)} aria-label="Filter by Jira sprint" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="all">All sprints</option>{zephyrSprintOptions.map((sprint) => <option key={sprint} value={sprint}>{sprint}</option>)}<option value="__no_sprint__">No linked Jira sprint</option></select>
               <select value={zephyrExecutionStatus} onChange={(event) => setZephyrExecutionStatus(event.target.value)} aria-label="Filter by execution status" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="all">All execution statuses</option><option value="passed">Passed</option><option value="failed">Failed</option><option value="blocked">Blocked</option><option value="in-progress">In progress</option><option value="pending">Not run yet</option></select>
             </div>
+            {selectedZephyrMember && activeZephyrMember && (
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-indigo-100 bg-indigo-50/50 px-3 py-2.5">
+                <p className="min-w-0 text-xs text-slate-700"><span className="font-bold text-slate-900">Viewing {activeZephyrMember.name}</span><span className="mx-1.5 text-slate-300">·</span>{activeZephyrMember.podNames.join(", ") || "QA team member"}</p>
+                <button type="button" onClick={() => setSelectedZephyrMember(null)} className="rounded-md px-2 py-1 text-xs font-semibold text-indigo-700 hover:bg-white">Clear person</button>
+              </div>
+            )}
             <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
               <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
                 <span className="font-semibold text-slate-700">Sprint coverage</span>
-                <span className="text-slate-600"><b className="text-slate-900">{scopedCasesWithSprint}</b> of {scopedZephyrCases.length} cases linked to a sprint <span className="mx-1 text-slate-300">·</span> {scopedZephyrCases.length - scopedCasesWithSprint} in backlog</span>
+                <span className="text-slate-600"><b className="text-slate-900">{scopedCasesWithSprint}</b> of {scopedZephyrCases.length} cases linked to a sprint <span className="mx-1 text-slate-300">·</span> {scopedZephyrCases.length - scopedCasesWithSprint} with no linked Jira sprint</span>
               </div>
               <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200" role="progressbar" aria-label="Cases linked to a Jira sprint" aria-valuemin={0} aria-valuemax={100} aria-valuenow={sprintCoveragePercent}>
                 <div className="h-full rounded-full bg-indigo-600 transition-all" style={{ width: `${sprintCoveragePercent}%` }} />
               </div>
-              {scopedCasesWithSprint < scopedZephyrCases.length && <p className="mt-2 text-[11px] leading-4 text-slate-500">Backlog means no readable Jira Sprint was found on the test case or its Traceability-linked work item.</p>}
+              {scopedCasesWithSprint < scopedZephyrCases.length && <p className="mt-2 text-[11px] leading-4 text-slate-500">“No linked Jira sprint” means no readable Jira Sprint was found on the test case or its Traceability-linked work item.</p>}
             </div>
           </div>
+          {activeZephyrMember && (
+            <section className="border-t border-slate-200 bg-white px-4 py-4 sm:px-6">
+              <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
+                <div><h3 className="text-sm font-bold text-slate-900">{activeZephyrMember.name} · QA activity</h3><p className="mt-1 text-xs text-slate-500">Cases owned, assigned, or executed by this person in the selected pod, quarter, sprint, and status. Completed counts cases whose latest result is passed, failed, or blocked.</p></div>
+                <span className="text-[11px] text-slate-500">{activeMemberCases.length} matching test cases</span>
+              </div>
+              <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
+                {[
+                  { label: "Completed", count: activeMemberCompletedCount, color: "text-indigo-700" },
+                  { label: "Passed", count: activeMemberCounts.passed ?? 0, color: "text-emerald-700" },
+                  { label: "Failed", count: activeMemberCounts.failed ?? 0, color: "text-rose-700" },
+                  { label: "Blocked", count: activeMemberCounts.blocked ?? 0, color: "text-amber-700" },
+                  { label: "In progress", count: activeMemberCounts["in-progress"] ?? 0, color: "text-sky-700" },
+                  { label: "Not run yet", count: activeMemberCounts.pending ?? 0, color: "text-slate-700" },
+                ].map((item) => <div key={item.label} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"><p className="text-[10px] font-semibold text-slate-500">{item.label}</p><p className={`mt-0.5 text-lg font-bold ${item.color}`}>{item.count}</p></div>)}
+              </div>
+              {activeMemberPodGroups.length ? <div className="space-y-3">
+                {activeMemberPodGroups.map(({ pod, cases }) => (
+                  <div key={pod} className="overflow-hidden rounded-xl border border-slate-200">
+                    <div className="flex items-center justify-between gap-2 bg-slate-50 px-3 py-2.5"><h4 className="text-xs font-bold text-slate-800">{pod}</h4><span className="text-[10px] text-slate-500">{cases.length} cases</span></div>
+                    <div className="divide-y divide-slate-100">
+                      {cases.map((testCase) => (
+                        <button key={testCase.key} type="button" onClick={() => openZephyrModal(`${activeZephyrMember.name} · ${testCase.key}`, `${pod} · ${(testCase.sprints ?? []).join(", ") || "No linked Jira sprint"} · ${testCase.latestExecution?.status ?? "Not run yet"}`, [testCase])} className="grid w-full gap-1 px-3 py-2.5 text-left transition hover:bg-indigo-50/50 sm:grid-cols-[minmax(0,1fr)_minmax(130px,0.8fr)_110px] sm:items-center">
+                          <span className="min-w-0"><span className="block truncate text-xs font-semibold text-indigo-700">{testCase.key}</span><span className="block truncate text-xs text-slate-700">{testCase.name}</span></span>
+                          <span className="truncate text-[11px] text-slate-500">{(testCase.sprints ?? []).join(", ") || "No linked Jira sprint"}</span>
+                          <span className="text-[11px] font-semibold text-slate-700">{testCase.latestExecution?.status ?? "Not run yet"}<span className="ml-1 text-slate-400">· {testCase.executionCount} runs</span></span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div> : <p className="rounded-xl border border-dashed border-slate-300 px-4 py-7 text-center text-sm text-slate-500">No Zephyr cases match this QA member and the selected filters.</p>}
+            </section>
+          )}
           <div className="grid grid-cols-2 gap-3 bg-slate-50 p-4 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-6 sm:p-5">
             {[
               { label: "Total test cases", value: scopedZephyrCases.length, category: "all", color: "text-indigo-700" },
@@ -678,7 +797,7 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                           <div className="flex min-w-0 items-center gap-3">
                             <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 transition ${isExpanded ? "rotate-90 bg-indigo-50 text-indigo-700" : "bg-slate-100"}`} aria-hidden="true">›</span>
-                            <div className="min-w-0"><h4 className="truncate text-sm font-bold text-slate-900">{pod.pod}</h4><p className="mt-0.5 text-[11px] text-slate-500">{pod.total} test cases · {pod.withSprint} assigned to a sprint · {pod.total - pod.withSprint} backlog</p></div>
+                            <div className="min-w-0"><h4 className="truncate text-sm font-bold text-slate-900">{pod.pod}</h4><p className="mt-0.5 text-[11px] text-slate-500">{pod.total} test cases · {pod.withSprint} assigned to a sprint · {pod.total - pod.withSprint} with no linked sprint</p></div>
                           </div>
                           <div className="grid grid-cols-3 gap-3 text-right sm:min-w-[330px]">
                             <div><p className="text-[10px] text-slate-500">Executed</p><p className="text-xs font-bold text-slate-800">{pod.executed}/{pod.total}</p></div>
@@ -727,7 +846,7 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
                 {zephyrModalCases.length === 0 ? <p className="p-6 text-sm text-slate-500">{zephyrModal.cases.length ? "No test cases match your search." : "No matching test cases."}</p> : zephyrModalCases.map((testCase) => (
                   <article key={`${testCase.projectKey}-${testCase.id}`} className="p-4 sm:p-5">
                     <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-xs font-bold text-indigo-700">{jiraDomain ? <a href={`${jiraDomain}/browse/${testCase.key}`} target="_blank" rel="noopener noreferrer" className="hover:underline">{testCase.key}</a> : testCase.key} <span className="font-normal text-slate-500">· {testCase.projectName} ({testCase.projectKey})</span></p><h4 className="mt-1 text-sm font-semibold text-slate-900">{testCase.name}</h4></div><span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-700">{testCase.latestExecution?.status ?? "Not run yet"}</span></div>
-                    <div className="mt-3 grid gap-x-5 gap-y-2 text-xs text-slate-600 sm:grid-cols-2"><p><b>Pod:</b> {testCase.podNames.join(", ") || "Unmapped pod"}</p><p><b>Sprint:</b> {testCase.sprints?.join(", ") || "Backlog / no linked sprint"}</p><p><b>Owner:</b> {testCase.ownerName}</p><p><b>Priority / folder:</b> {testCase.priority} · {testCase.folder}</p><p className="sm:col-span-2"><b>Linked Jira issues:</b> {testCase.linkedIssueKeys.length ? testCase.linkedIssueKeys.map((key, index) => <span key={key}>{index > 0 ? ", " : ""}{jiraDomain ? <a href={`${jiraDomain}/browse/${key}`} target="_blank" rel="noopener noreferrer" className="font-semibold text-indigo-700 hover:underline">{key}</a> : key}</span>) : "None"}</p><p><b>Executions:</b> {testCase.executionCount}</p></div>
+                    <div className="mt-3 grid gap-x-5 gap-y-2 text-xs text-slate-600 sm:grid-cols-2"><p><b>Pod:</b> {testCase.podNames.join(", ") || "Unmapped pod"}</p><p><b>Sprint:</b> {testCase.sprints?.join(", ") || "No linked Jira sprint"}</p><p><b>Owner:</b> {testCase.ownerName}</p><p><b>Priority / folder:</b> {testCase.priority} · {testCase.folder}</p><p className="sm:col-span-2"><b>Linked Jira issues:</b> {testCase.linkedIssueKeys.length ? testCase.linkedIssueKeys.map((key, index) => <span key={key}>{index > 0 ? ", " : ""}{jiraDomain ? <a href={`${jiraDomain}/browse/${key}`} target="_blank" rel="noopener noreferrer" className="font-semibold text-indigo-700 hover:underline">{key}</a> : key}</span>) : "None"}</p><p><b>Executions:</b> {testCase.executionCount}</p></div>
                     {testCase.objective && <p className="mt-3 text-xs text-slate-600"><b>Objective:</b> {testCase.objective}</p>}
                     {testCase.executions.length > 0 && <div className="mt-3 rounded-lg bg-slate-50 p-3"><p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-slate-500">Execution history</p><div className="space-y-1.5">{testCase.executions.map((execution) => <p key={execution.id} className="text-xs text-slate-600">{execution.status} · {execution.executedBy} · {execution.executedOn ? new Date(execution.executedOn).toLocaleDateString() : "Date unavailable"} · {execution.cycle || "No cycle"}</p>)}</div></div>}
                   </article>
