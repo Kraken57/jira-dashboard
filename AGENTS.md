@@ -40,19 +40,22 @@ There is **no database and no mock data** — no Jira config means an error, nev
 pnpm dev                 # dev server (predev restores the local /api/jira route if needed)
 pnpm build               # local production build (server + API route)
 pnpm run build:forge     # static export into ./out, copied to forge/out
+pnpm run validate:forge  # validate export, asset paths, manifest, and copied resource
+pnpm run test:forge      # Forge asset-validation regression tests
+pnpm run preview:forge   # serve forge/out under a nested iframe-like URL
 pnpm lint                # ESLint (flat config, eslint-config-next)
 pnpm discover:fields     # list Jira custom fields + sample values (reads .env.local)
 pnpm probe               # identify SP/POD fields and done statuses
 forge deploy / install   # from forge/ — deploy the Forge app (see doc 08 §13)
 ```
 
-Verification before declaring done (no test suite exists — typecheck, lint, build, and manual checks are the only gates):
+Verification before declaring done (typecheck, lint, builds, validator tests, and manual checks):
 
 ```bash
 node_modules/typescript/bin/tsc --noEmit                              # app typecheck
 cd forge && node node_modules/typescript/bin/tsc --noEmit             # Forge typecheck
 node node_modules/eslint/bin/eslint.js src                            # lint
-pnpm build && pnpm run build:forge                                    # both build modes
+pnpm run test:forge && pnpm build && pnpm run build:forge             # tests and both build modes
 ```
 
 Runtime sanity: `GET /api/jira?pod=all&quarter=all&sprint=all` returns `summary.totalIssues`, `metrics`, `issueList`, `jiraBaseUrl`. Doc 08 §16 has the full checklist (executive Say/Do = completed/total SP, popups match cards, sprint dropdown survives a specific selection, Pod/Quarter change resets Sprint, Forge build leaves `route.ts` restored with `force-dynamic`).
@@ -87,7 +90,7 @@ Mental model: issues are downloaded once (and cached raw), filtered in memory in
 - Changing Pod or Quarter resets Sprint to `all` (sprints belong to a pod/quarter). When a specific sprint is selected, `page.tsx` fires a second parallel request with `sprint=all` to keep the sprint dropdown populated — keep that two-request logic.
 - Quarter ids (`CY26 PI.3`) derive from the **last** sprint name on an issue locally (Forge: first). Sprint naming regexes live in `quarterFromSprint` (both copies), `sprintDisplayName`/`sprintOrderKey` in `metricsEngine.ts`; add regex branches if sprint names change.
 - New card titles need a `metricDefinitions.ts` entry so popups are never blank.
-- `next.config.ts` switches to `output: "export"` when `FORGE_BUILD=true`. Do not try to satisfy the export by disabling the API route in code; rely on the build script's temporary route swap.
+- `next.config.mjs` switches to `output: "export"` and a relative asset prefix when `FORGE_BUILD=true`. Do not disable the local API route in app code; rely on the build script's temporary route swap.
 - `.env.example` documents every env var (Jira host/email/token, JQL, custom field IDs, done statuses, cache TTL, sprint window). Field IDs differ per Jira site — always discover them with the scripts.
 - The `out/` and `.next/` build outputs, `forge/out/`, and `.env*` files are gitignored and can be ignored during analysis.
 
@@ -103,4 +106,4 @@ Mental model: issues are downloaded once (and cached raw), filtered in memory in
 
 The current detailed reference is `documentation/08-complete-system-guide.md`; `documentation/01`–`07` are historical snapshots and may describe obsolete behavior. `documentation/09-forge-deployment-playbook.md` is the current deployment reference. Local mode fetches a cached raw Jira feed through `/api/jira`; Forge mode invokes resolvers through `@forge/bridge` and `api.asApp()`. The browser computes filtered dashboard views from the feed. Keep `src/lib/jira/metricsEngine.ts` pure and synchronize duplicated rules in `forge/src/index.ts`.
 
-Key areas: `src/app/page.tsx` owns tabs and filters; `src/lib/jira/jiraService.ts` fetches/maps Jira data and optionally queries Zephyr; `src/lib/jira/types.ts` defines the data contract; `forge/manifest.yml` declares Forge modules and scopes; `scripts/build-forge.mjs` creates the static bundle and restores the local API route. There is no automated test suite. Main commands: `pnpm dev`, `pnpm build`, `pnpm run build:forge`, `pnpm lint`, `pnpm discover:fields`, and `pnpm probe`. Keep Jira tokens in ignored `.env.local`; Forge uses app authentication and Forge variables.
+Key areas: `src/app/page.tsx` owns tabs and filters; `src/lib/jira/jiraService.ts` fetches/maps Jira data and optionally queries Zephyr; `src/lib/jira/types.ts` defines the data contract; `forge/manifest.yml` declares Forge modules and scopes; `scripts/build-forge.mjs` creates the static bundle and restores the local API route. Main commands: `pnpm dev`, `pnpm build`, `pnpm run build:forge`, `pnpm run validate:forge`, `pnpm run test:forge`, `pnpm lint`, `pnpm discover:fields`, and `pnpm probe`. Keep Jira tokens in ignored `.env.local`; Forge uses app authentication and Forge variables.

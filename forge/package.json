@@ -7,6 +7,7 @@
   },
   "description": "Atlassian Forge backend resolver for Enterprise Sprint Performance Dashboard",
   "scripts": {
+    "predeploy": "pnpm --dir .. run build:forge && pnpm --dir .. run validate:forge",
     "deploy": "forge deploy",
     "install-app": "forge install",
     "lint": "eslint src",

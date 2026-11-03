@@ -15,6 +15,7 @@
 
 # next.js
 /.next/
+/.tsupgrader/
 /out/
 
 # production
@@ -62,3 +63,4 @@ src/app/api/jira/route.ts.localhost.bak
 
 # Forge CLI tunnel local bundle
 forge/.forge/
+forge/.container-service-assets/

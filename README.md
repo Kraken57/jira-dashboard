@@ -6,6 +6,12 @@ Start with [`documentation/08-complete-system-guide.md`](documentation/08-comple
 It is the current source of truth for architecture, data flow, metrics, filters, popups,
 Jira setup, and Forge deployment. Files `01`–`07` are older design snapshots.
 
+For production Custom UI builds, see the [Forge deployment audit](forgeDeploymentAudit.md)
+and [pre-deploy checklist](forgePreDeployChecklist.md). Run `pnpm run build:forge`
+and `pnpm run validate:forge` before deploying. From the repository root,
+`pnpm --dir forge run deploy` runs the validated build through its `predeploy` hook;
+raw `forge deploy` bypasses that hook.
+
 ## Getting Started
 
 First, run the development server:

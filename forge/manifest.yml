@@ -48,6 +48,11 @@ resources:
     path: out
 
 permissions:
+  content:
+    scripts:
+      - unsafe-inline
+    styles:
+      - unsafe-inline
   external:
     fetch:
       backend:

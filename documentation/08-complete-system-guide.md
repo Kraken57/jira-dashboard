@@ -1070,13 +1070,17 @@ Forge Custom UI requires a static bundle. `scripts/build-forge.mjs`:
 
 1. Backs up `src/app/api/jira/route.ts`.
 2. Replaces it with a `force-static` 404 stub.
-3. Runs `next build` with `FORGE_BUILD=true`, which sets `output: "export"` in
-   `next.config.ts`.
+3. Runs the installed Next.js build with `FORGE_BUILD=true`, which sets static
+   export and a relative asset prefix in the canonical `next.config.mjs`.
 4. Writes the bundle to `./out`.
 5. Copies the bundle to `./forge/out`.
-6. Restores the original API route on success, failure, or Ctrl+C/SIGTERM.
+6. Restores the original API route, normalizes HTML/RSC asset paths for each
+   file's directory, copies the bundle, and validates export and resource parity.
+   Catchable interrupt signals also restore the route.
 
 The Forge manifest points `dashboard-ui` and `admin-ui` at `out` (inside `forge/`).
+The validator checks the resource mapping, inline content permissions, Tailwind
+CSS output, Webpack runtime path, copied file parity, and restored local API route.
 
 ### 13.2 Build
 
@@ -1084,11 +1088,11 @@ The Forge manifest points `dashboard-ui` and `admin-ui` at `out` (inside `forge/
 pnpm run build:forge
 ```
 
-Verify `out/` contains `index.html` and static assets. The build rewrites
-every remaining absolute `/_next/...` reference to a relative `./_next/...`
-(`assetPrefix: "./"` plus a sweep in `scripts/build-forge.mjs`) because Forge
-serves the resource from a nested path — absolute URLs 404 and the page renders
-as bare HTML with no CSS/JS
+The build uses Webpack on Next 16+ (`next build --webpack`) and the default
+Webpack builder on Next 14/15. It normalizes markup/RSC references only; it
+does not patch generated JavaScript. Run `pnpm run validate:forge` to recheck
+the export and Forge resource. See the pre-deploy checklist and deployment audit
+at the repository root for release gates and production acceptance steps.
 
 ### 13.3 Configure the Forge app
 

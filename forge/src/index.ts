@@ -581,6 +581,77 @@ interface ZephyrData {
   >;
 }
 
+interface ZephyrApiResourceLink {
+  id: number;
+  self?: string;
+}
+interface ZephyrApiUserLink {
+  accountId: string | null;
+  self?: string;
+}
+interface ZephyrApiIssueLink {
+  issueId: number;
+  id?: number;
+  self?: string;
+  target?: string;
+  type?: "COVERAGE" | "BLOCKS" | "RELATED";
+}
+/** Fields consumed from the Zephyr Cloud v2 TestCase API response. */
+interface ZephyrApiTestCase {
+  id: number;
+  key: string;
+  name: string;
+  project: ZephyrApiResourceLink;
+  status: ZephyrApiResourceLink;
+  priority: ZephyrApiResourceLink;
+  folder?: ZephyrApiResourceLink | null;
+  owner?: ZephyrApiUserLink | null;
+  labels?: string[];
+  createdOn?: string;
+  objective?: string | null;
+  precondition?: string | null;
+  links?: { self?: string; issues?: ZephyrApiIssueLink[] };
+}
+interface ZephyrCaseRow extends ZephyrApiTestCase {
+  __projectKey: string;
+  createdDate?: string;
+}
+interface ZephyrApiTestExecution {
+  id: number;
+  key?: string;
+  project: ZephyrApiResourceLink;
+  testCase: { id?: number; self?: string };
+  testExecutionStatus: ZephyrApiResourceLink;
+  testCycle?: ZephyrApiResourceLink | null;
+  actualEndDate?: string;
+  executedById?: string | null;
+  assignedToId?: string | null;
+}
+interface ZephyrCompatibleTestExecution extends ZephyrApiTestExecution {
+  testCaseId?: number;
+  assignee?: ZephyrApiUserLink | string | null;
+  assignedTo?: ZephyrApiUserLink | string | null;
+  executedBy?: ZephyrApiUserLink | string | null;
+  executor?: ZephyrApiUserLink | string | null;
+}
+interface ZephyrApiPage<T> {
+  startAt: number;
+  maxResults: number;
+  values?: T[];
+  total?: number;
+  isLast?: boolean;
+  next?: string | null;
+}
+interface ZephyrEndpointRows {
+  testcases: ZephyrApiTestCase;
+  testexecutions: ZephyrCompatibleTestExecution;
+}
+interface ZephyrProjectData {
+  key: string;
+  cases: ZephyrApiTestCase[];
+  executions: ZephyrCompatibleTestExecution[];
+}
+
 
 function qaPoolFromItems(items: any[]): any[] {
   return items.filter((i: any) => !/^sub-?task$/i.test(String(i.workType || "")));
@@ -595,13 +666,13 @@ async function fetchZephyrExecutions(pool: any[]): Promise<ZephyrData> {
     return { available: false, message: "Configure JIRA_ZEPHYR_API_TOKEN and JIRA_ZEPHYR_PROJECT_KEYS in Forge variables" };
   }
   const base = "https://prod-api.zephyr4jiracloud.com/v2";
-  const allPages = async (endpoint: string, projectKey: string) => {
+  const allPages = async <E extends keyof ZephyrEndpointRows>(endpoint: E, projectKey: string) => {
     const firstUrl = new URL(`${base}/${endpoint}`);
     firstUrl.search = new URLSearchParams({ projectKey, startAt: "0", maxResults: "100" }).toString();
     let url: URL | null = firstUrl;
     let startAt = 0;
     let total: number | undefined;
-    const values: Record<string, unknown>[] = [];
+    const values: ZephyrEndpointRows[E][] = [];
     const allowedHosts = new Set(["prod-api.zephyr4jiracloud.com", "prod-play.zephyr4jiracloud.com"]);
     let pageCount = 0;
     while (url && pageCount++ < 1000) {
@@ -614,13 +685,7 @@ async function fetchZephyrExecutions(pool: any[]): Promise<ZephyrData> {
       if (!response.ok) {
         throw new Error(`Zephyr Essential API GET ${url.pathname} for project ${projectKey} returned ${response.status}`);
       }
-      const page = await response.json() as {
-        values?: Record<string, unknown>[];
-        total?: number;
-        isLast?: boolean;
-        next?: string;
-        maxResults?: number;
-      };
+      const page = await response.json() as ZephyrApiPage<ZephyrEndpointRows[E]>;
       const rows = page.values ?? [];
       if (total === undefined) total = page.total;
       values.push(...rows);
@@ -642,12 +707,12 @@ async function fetchZephyrExecutions(pool: any[]): Promise<ZephyrData> {
   };
   try {
     const metricsByAlias: NonNullable<ZephyrData["metricsByAlias"]> = {};
-    const projectData: { key: string; cases: Record<string, unknown>[]; executions: Record<string, unknown>[] }[] = [];
+    const projectData: ZephyrProjectData[] = [];
     const projectErrors: string[] = [];
     for (const project of projects) {
       try {
         const cases = await allPages("testcases", project);
-        let executions: Record<string, unknown>[] = [];
+        let executions: ZephyrCompatibleTestExecution[] = [];
         try { executions = (await allPages("testexecutions", project)).values; }
         catch (error) { projectErrors.push(`${project} executions: ${error instanceof Error ? error.message : "request failed"}`); }
         projectData.push({ key: project, cases: cases.values, executions });
@@ -684,7 +749,7 @@ async function fetchZephyrExecutions(pool: any[]): Promise<ZephyrData> {
     await Promise.all(projects.map(async (key) => {
       try { const response = await api.asApp().requestJira(route`/rest/api/3/project/${key}`); if (response.ok) { const project = await response.json() as { name?: string }; if (project.name) projectNames[key] = project.name; } } catch { /* use project key fallback */ }
     }));
-    const caseRows = projectData.flatMap(({ key, cases }) => cases.map((testCase) => ({ ...testCase, __projectKey: key })));
+    const caseRows: ZephyrCaseRow[] = projectData.flatMap(({ key, cases }) => cases.map((testCase) => ({ ...testCase, __projectKey: key })));
     const idToKey = new Map(caseRows.map((testCase) => [String(testCase.id || ""), String(testCase.key || "")]));
     const users = new Set<string>();
     for (const testCase of caseRows) { const id = personId(testCase.owner); if (id) users.add(id); }

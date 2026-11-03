@@ -60,6 +60,7 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [now, setNow] = useState(Date.now);
   const [issueModal, setIssueModal] = useState<{
     title: string;
     subtitle: string;
@@ -71,22 +72,10 @@ export default function DashboardPage() {
     ? baseFilters.sprint
     : "all";
 
-  // Browser-side compute: every filter click re-derives from the raw feed
-  // with zero network. The all-scope pass keeps the sprint dropdown populated
-  // under pod/quarter filters (replaces the old second parallel request).
-  const allSprintData: DashboardData | null = useMemo(
-    () =>
-      feed && Array.isArray(feed.items)
-        ? computeDashboardData(
-            feed.items,
-            { podId: "all", quarterId: "all", sprintId: "all" },
-            feed.sprintMeta,
-            feed.config,
-            feed.zephyr
-          )
-        : null,
-    [feed]
-  );
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   // Dropdown sources are scoped to the selected pod/quarter (sprint excluded)
   // so the sprint list shows the pod's own sprints, not other pods'.
@@ -123,8 +112,9 @@ export default function DashboardPage() {
     };
   }, [feed, baseFilters.pod, baseFilters.quarter, effectiveSprint]);
 
-  const feedAgeMin =
-    feed ? Math.max(0, Math.round((Date.now() - feed.fetchedAt) / 60000)) : 0;
+  const feedAgeMin = feed
+    ? Math.max(0, Math.round((now - feed.fetchedAt) / 60000))
+    : 0;
 
   const filterKeys = TAB_FILTERS[activeTab] || [];
   const filters: FilterState = {

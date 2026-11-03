@@ -384,8 +384,26 @@ async function fetchZephyrExecutions(jiraItems: JiraWorkItem[] = []): Promise<Ze
       const person = asRecord(value);
       return String(pick(person, ["displayName", "name", "fullName", "username"]) || "");
     };
-    const allCases = projects.flatMap((project) => project.testCases.map((testCase) => ({ ...testCase, __projectKey: project.key, __projectName: project.name })));
-    const allExecutions = projects.flatMap((project) => project.executions.map((execution) => ({ ...execution, __projectKey: project.key })));
+    type ProjectTestCase = Record<string, unknown> & {
+      __projectKey: string;
+      __projectName: string;
+    };
+    type ProjectTestExecution = Record<string, unknown> & {
+      __projectKey: string;
+    };
+    const allCases: ProjectTestCase[] = projects.flatMap((project) =>
+      project.testCases.map((testCase): ProjectTestCase => ({
+        ...testCase,
+        __projectKey: project.key,
+        __projectName: project.name,
+      }))
+    );
+    const allExecutions: ProjectTestExecution[] = projects.flatMap((project) =>
+      project.executions.map((execution): ProjectTestExecution => ({
+        ...execution,
+        __projectKey: project.key,
+      }))
+    );
     const caseIdToKey = new Map(allCases.map((testCase) => [String(testCase.id || ""), String(testCase.key || "")]));
     const userIds = new Set<string>();
     for (const testCase of allCases) {

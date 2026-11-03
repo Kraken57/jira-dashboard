@@ -39,7 +39,9 @@ pnpm run build:forge
 
 - Output: `./out` copied to `forge/out` (the manifest resource paths read `out` relative to `forge/`).
 - The script temporarily swaps `src/app/api/jira/route.ts` for the Forge stub and **restores it** on success/failure/kill — the last log line must say `Restored original /api/jira route`.
-- Two build steps live inside it and matter: `assetPrefix: "./"` + a sweep for absolute `/_next/...` (Forge serves Custom UI from a **nested** path — absolute asset URLs 404 and the page renders as bare HTML), and `next build --webpack` (Turbopack's chunk runtime throws an invariant under Forge and aborts hydration).
+- The canonical config is `next.config.mjs`. Forge builds set `assetPrefix: "./"` before compilation, and a markup/RSC-only sweep handles public asset links and nested HTML paths. Generated JavaScript is never patched.
+- The build uses Webpack: default on Next 14/15 and `next build --webpack` on Next 16+. The validator fails if the runtime or exported assets do not match the expected layout.
+- Run `pnpm run validate:forge` to recheck the export/resource mapping and byte parity. Tailwind uses the shared `postcss.config.js` for local and Forge builds.
 - Tailwind runs through the shared `postcss.config.js` for local development and Forge builds, so utility classes compile under either Webpack or Turbopack.
 
 ---
@@ -82,7 +84,7 @@ forge variables list --environment development     # verify
 (`--environment development` is the default; use `-e production` for the prod run in §6.)
 
 Two timing rules:
-1. **Variables are baked into the deployed app version** — after changing any variable, re-run `forge deploy` or the running app keeps the old value (the resolver reads `kvs` saved config first, then Forge variables, then code defaults).
+1. **Variables are baked into the deployed app version** — after changing any variable, redeploy through `pnpm --dir forge run deploy -- --environment ENV` or the running app keeps the old value (the resolver reads `kvs` saved config first, then Forge variables, then code defaults).
 2. Do **not** set email/token variables — the resolver authenticates with `api.asApp()`.
 
 Values live in Atlassian, never in git.
@@ -92,7 +94,8 @@ Values live in Atlassian, never in git.
 ## 5. Deploy and install (development)
 
 ```bash
-forge deploy --environment development --approve MAJOR_VERSION_RULE
+pnpm --dir forge run deploy -- --environment development
+cd forge
 forge install --site YOUR_SITE.atlassian.net --product jira --environment development
 ```
 
@@ -104,7 +107,7 @@ forge install --site YOUR_SITE.atlassian.net --product jira --environment develo
 forge install --upgrade --site YOUR_SITE.atlassian.net --product jira --environment development
 ```
 
-After later code changes: re-run `pnpm run build:forge` → `forge deploy` → hard-refresh the page (the iframe embed URL is versioned; stale tabs can pin an older version — test in a new/incognito window if the page misbehaves).
+After later code changes, use the package deployment command so it rebuilds and validates before deployment, then hard-refresh Jira (the iframe embed URL is versioned; stale tabs can pin an older version — test in a new/incognito window if the page misbehaves).
 
 ---
 
@@ -113,7 +116,9 @@ After later code changes: re-run `pnpm run build:forge` → `forge deploy` → h
 ```bash
 forge variables set --environment production JIRA_HOST https://YOUR_SITE.atlassian.net
 # …repeat every variable from (including the four QA-capacity ones) §4 with --environment production
-forge deploy --environment production --approve MAJOR_VERSION_RULE
+cd ..
+pnpm --dir forge run deploy -- --environment production
+cd forge
 forge install --site YOUR_SITE.atlassian.net --product jira --environment production
 # …or --upgrade if it was already installed
 ```
@@ -145,8 +150,8 @@ Success signals:
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Page = bare HTML, no CSS/JS/interactivity in the iframe | Absolute `/_next/...` asset URLs 404 under Forge's nested path | `assetPrefix: "./"` in `next.config.ts` (Forge builds only) + the `/_next` path sweep in `scripts/build-forge.mjs` |
-| `Invariant: Expected document.currentScript src to contain './​_next/'` and the page freezes prerendered | Turbopack chunk runtime aborts when assetPrefix is relative (browsers strip `./` during URL resolution) | Build with `next build --webpack` (set in `scripts/build-forge.mjs`) |
+| Page = bare HTML, no CSS/JS/interactivity in the iframe | Asset URLs escape the nested resource, files are missing, or an older resource is installed | Check `assetPrefix: "./"` in `next.config.mjs`, rebuild, run `pnpm run validate:forge`, and inspect the installed version's network requests |
+| Relative asset prefix breaks lazy chunks | The bundler runtime does not use the expected public path | Keep the version-aware Webpack invocation in `scripts/build-forge.mjs`; do not patch generated JavaScript |
 | Page hydrates + data loads but **no styling/colors** | Tailwind PostCSS plugin missing, dependency install incomplete, or stale build output | Confirm `@tailwindcss/postcss` is installed, keep its plugin enabled in `postcss.config.js`, clear `.next`/`out`, and rebuild |
 | `Function with handler "index.handler" was not found` in the browser | Frontend browser cache or the Jira SPA pinned a stale embed/version | Fresh/incognito window; re-run `forge install --upgrade` if it persists |
 | `Forge raw feed failed: …` / `Failed to fetch dashboard data` after variables changed | Variables are baked into the deployed version | Re-run `forge deploy` after `forge variables set` |

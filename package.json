@@ -12,6 +12,11 @@
     "build": "next build",
     "prebuild": "node scripts/ensure-local-route.mjs",
     "build:forge": "node scripts/build-forge.mjs",
+    "validate:forge": "node scripts/validate-forge.mjs forge",
+    "validate:assets": "node scripts/validate-forge.mjs assets",
+    "validate:export": "node scripts/validate-forge.mjs export",
+    "test:forge": "node --test scripts/validate-forge.test.mjs",
+    "preview:forge": "node scripts/preview-forge.mjs",
     "start": "next start",
     "lint": "eslint",
     "discover:fields": "node scripts/discover-fields.mjs",
@@ -20,7 +25,7 @@
   "dependencies": {
     "@forge/bridge": "^7.2.1",
     "chart.js": "^4.5.1",
-    "next": "16 .4.2",
+    "next": "16.4.2",
     "react": "19.3.0",
     "react-chartjs-2": "^5.3.1",
     "react-dom": "19.3.0"
@@ -32,6 +37,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.4.2",
+    "js-yaml": "^4.3.2",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
