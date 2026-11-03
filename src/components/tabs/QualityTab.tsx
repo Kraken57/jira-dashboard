@@ -156,10 +156,29 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
   const zephyrCases = zephyr?.cases ?? [];
   const zephyrProjects = Array.from(new Map(zephyrCases.map((testCase) => [testCase.projectKey, { key: testCase.projectKey, name: testCase.projectName }])).values()).sort((a, b) => a.name.localeCompare(b.name));
   const zephyrPodOptions = Array.from(new Set(zephyrCases.flatMap((testCase) => testCase.podNames))).sort((a, b) => a.localeCompare(b));
-  const zephyrScopeOptions = [
-    ...zephyrPodOptions.map((pod) => ({ value: `pod:${pod}`, label: pod })),
-    ...zephyrProjects.map((project) => ({ value: `project:${project.key}`, label: `${project.name} (${project.key})` })),
-  ].sort((a, b) => a.label.localeCompare(b.label));
+  const zephyrScopeOptions = (() => {
+    const options = new Map<string, { value: string; label: string; podNames: string[]; projectKeys: string[] }>();
+    for (const pod of zephyrPodOptions) {
+      const normalized = pod.trim().toLowerCase();
+      options.set(`name:${normalized}`, { value: `scope:${normalized}`, label: pod, podNames: [pod], projectKeys: [] });
+    }
+    for (const project of zephyrProjects) {
+      const normalizedName = project.name.trim().toLowerCase();
+      const existing = options.get(`name:${normalizedName}`);
+      if (existing) {
+        existing.projectKeys.push(project.key);
+        existing.label = `${project.name} (${existing.projectKeys.join(", ")})`;
+      } else {
+        options.set(`project:${project.key.toLowerCase()}`, {
+          value: `scope:project:${project.key.toLowerCase()}`,
+          label: `${project.name} (${project.key})`,
+          podNames: [],
+          projectKeys: [project.key],
+        });
+      }
+    }
+    return Array.from(options.values()).sort((a, b) => a.label.localeCompare(b.label));
+  })();
   const zephyrSprintOptions = Array.from(new Set(zephyrCases.flatMap((testCase) => testCase.sprints ?? []))).sort((a, b) => a.localeCompare(b));
   const qaPodOptions = Array.from(new Set([
     ...(qaCapacity?.members ?? []).flatMap((m) => m.podNames),
@@ -190,10 +209,12 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
     };
   };
 
+  const selectedZephyrScope = zephyrScopeOptions.find((option) => option.value === zephyrScope);
   const scopedZephyrCases = zephyrCases.filter((testCase) => {
-    const scopeMatch = zephyrScope === "all" || (zephyrScope.startsWith("project:")
-      ? testCase.projectKey.toLowerCase() === zephyrScope.slice("project:".length).toLowerCase()
-      : testCase.podNames.includes(zephyrScope.slice("pod:".length)));
+    const scopeMatch = zephyrScope === "all" || Boolean(selectedZephyrScope && (
+      selectedZephyrScope.podNames.some((pod) => testCase.podNames.includes(pod)) ||
+      selectedZephyrScope.projectKeys.some((key) => testCase.projectKey.toLowerCase() === key.toLowerCase())
+    ));
     const sprintMatch = zephyrSprint === "all" || (zephyrSprint === "__no_sprint__" ? !(testCase.sprints?.length) : (testCase.sprints ?? []).includes(zephyrSprint));
     const executionMatch = zephyrExecutionStatus === "all" ||
       (testCase.latestExecution?.statusCategory ?? "pending") === zephyrExecutionStatus;
@@ -210,8 +231,7 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
     return counts;
   }, {} as Record<string, number>);
   const scopedExecutionCounts = executionCounts(scopedZephyrCases);
-  const selectedZephyrProject = zephyrScope.startsWith("project:") ? zephyrScope.slice("project:".length) : "";
-  const showEntqaAutomationStatus = selectedZephyrProject.toUpperCase() === "ENTQA";
+  const showEntqaAutomationStatus = selectedZephyrScope?.projectKeys.some((key) => key.toUpperCase() === "ENTQA") ?? false;
   const entqaApprovedCases = scopedZephyrCases.filter((testCase) => /^approved$/i.test(testCase.status));
   const entqaDraftCases = scopedZephyrCases.filter((testCase) => /^draft$/i.test(testCase.status));
   const podSprintPerformance = (() => {
