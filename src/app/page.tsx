@@ -18,7 +18,6 @@ import { DashboardData, RawFeedPayload, IssueRow } from "@/lib/jira/types";
 import { PodTab } from "@/components/tabs/PodTab";
 import { DeveloperTab } from "@/components/tabs/DeveloperTab";
 import { QualityTab } from "@/components/tabs/QualityTab";
-import { PredictabilityTab } from "@/components/tabs/PredictabilityTab";
 import { TrendsCharts } from "@/components/TrendsCharts";
 import { DiagnosisTab } from "@/components/tabs/DiagnosisTab";
 import { IssuesTab } from "@/components/tabs/IssuesTab";
@@ -26,9 +25,8 @@ import { IssuesTab } from "@/components/tabs/IssuesTab";
 const TABS = [
   { id: "executive", label: "Executive Summary" },
   { id: "pod", label: "Pod View" },
-  { id: "developer", label: "Developer View" },
+  { id: "developer", label: "Capacity View" },
   { id: "quality", label: "Quality" },
-  { id: "predictability", label: "Predictability" },
   { id: "diagnosis", label: "Delivery Diagnosis" },
   { id: "issues", label: "Issues" },
 ];
@@ -40,7 +38,6 @@ const TAB_FILTERS: Record<string, FilterKey[]> = {
   pod: ["pod", "quarter", "sprint"],
   developer: ["pod", "quarter", "sprint", "developer"],
   quality: [], // QA tab owns its filters (per-member, per-team slicing)
-  predictability: ["pod", "quarter"],
   diagnosis: ["pod", "quarter", "sprint", "status"],
   issues: ["pod", "quarter", "sprint"],
 };
@@ -379,10 +376,6 @@ export default function DashboardPage() {
               fetchedAt={feed?.fetchedAt}
               jiraDomain={dashboardData.jiraBaseUrl}
             />
-          )}
-
-          {activeTab === "predictability" && dashboardData && (
-            <PredictabilityTab data={dashboardData.predictability} />
           )}
 
           {activeTab === "diagnosis" && dashboardData && (
