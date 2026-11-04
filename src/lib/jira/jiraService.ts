@@ -888,6 +888,11 @@ export async function getRawFeed(forceRefresh = false): Promise<RawFeedPayload> 
 
   if (disk && ageMs <= STALE_MAX_MS) {
     // Serve stale now; refresh quietly. Never make the user wait here.
+    console.info("[JIRA_FETCH] Serving stale feed while refreshing", {
+      source: "disk-stale",
+      ageMs,
+      issueCount: disk.items.length,
+    });
     void withInflight(fetchLiveFeed).then(writeDiskFeed).catch((err) => {
       console.warn("[jiraService] Background feed refresh failed:", err);
     });
@@ -926,4 +931,3 @@ export async function getDashboardData(
     jiraBaseUrl: feed.jiraBaseUrl,
   };
 }
-    console.info("[JIRA_FETCH] Serving stale feed while refreshing", { source: "disk-stale", ageMs, issueCount: disk.items.length });

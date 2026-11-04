@@ -212,7 +212,6 @@ export async function fetchRawFeed(
       if (!feed || !Array.isArray(feed.items)) {
         throw createDashboardLoadError("Forge returned a feed without an items array.", "Forge resolver");
       }
-      if (feed.zephyr?.failure) throw new DashboardLoadError(feed.zephyr.failure);
       console.info("[JIRA_FETCH] Forge resolver request completed", {
         source: feed.source,
         itemCount: feed.items.length,
@@ -273,7 +272,6 @@ export async function fetchRawFeed(
     if (!Array.isArray(feed.items)) {
       throw new Error("The dashboard API response is missing its items array.");
     }
-    if (feed.zephyr?.failure) throw new DashboardLoadError(feed.zephyr.failure);
     console.info("[JIRA_FETCH] Local request completed", {
       source: feed.source,
       itemCount: feed.items.length,
