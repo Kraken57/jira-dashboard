@@ -475,8 +475,12 @@ async function fetchZephyrExecutions(jiraItems: JiraWorkItem[] = []): Promise<Ze
     });
     let traceabilityFailures = 0;
     const traceabilityAuth = { Authorization: `Bearer ${token}`, Accept: "application/json" };
-    for (let offset = 0; offset < traceabilityTargets.length; offset += 8) {
-      const batch = traceabilityTargets.slice(offset, offset + 8);
+    // Traceability is one request per Zephyr test case. Keep concurrency
+    // bounded, but avoid serializing hundreds of small requests into many
+    // slow waves that block the initial dashboard feed.
+    const traceabilityConcurrency = 32;
+    for (let offset = 0; offset < traceabilityTargets.length; offset += traceabilityConcurrency) {
+      const batch = traceabilityTargets.slice(offset, offset + traceabilityConcurrency);
       const results = await Promise.all(batch.map(async ({ rowKey, url }) => {
         try {
           const response = await fetch(url, { headers: traceabilityAuth, cache: "no-store" });
