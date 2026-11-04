@@ -68,10 +68,19 @@ export class JiraClient {
     fields: string[],
     maxResults = 100
   ): Promise<any[]> {
+    const startedAt = Date.now();
     const allIssues: any[] = [];
     let nextPageToken: string | undefined = undefined;
+    let pageCount = 0;
+    console.info("[JIRA_FETCH] Forge search started", {
+      jqlLength: jql.length,
+      containsCurrentUser: /\bcurrentUser\s*\(/i.test(jql),
+      fieldsCount: fields.length,
+      maxResults,
+    });
 
     while (true) {
+      pageCount++;
       const body: any = { jql, maxResults, fields };
       if (nextPageToken) body.nextPageToken = nextPageToken;
 
@@ -82,6 +91,7 @@ export class JiraClient {
       });
 
       if (!response.ok) {
+        console.error("[JIRA_FETCH] Forge search failed", { statusCode: response.status, page: pageCount });
         throw new Error(`Jira search failed: ${response.status} ${response.statusText}`);
       }
 
@@ -93,6 +103,11 @@ export class JiraClient {
       if (!nextPageToken) break;
     }
 
+    console.info("[JIRA_FETCH] Forge search completed", {
+      issueCount: allIssues.length,
+      pageCount,
+      durationMs: Date.now() - startedAt,
+    });
     return allIssues;
   }
 

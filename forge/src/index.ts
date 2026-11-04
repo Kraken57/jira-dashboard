@@ -573,6 +573,7 @@ function buildQaCapacity(items: any[]): any {
 interface ZephyrData {
   available: boolean;
   message?: string;
+  failure?: { api: string; statusCode: number | null; message: string };
   testCasesTotal?: number;
   testExecutionsTotal?: number;
   cases?: any[];
@@ -668,8 +669,14 @@ async function fetchZephyrExecutions(
   const projects = (process.env.JIRA_ZEPHYR_PROJECT_KEYS || "")
     .split(",").map((x) => x.trim()).filter(Boolean);
   if (!token || !projects.length) {
+    console.info("[ZEPHYR_FETCH] Skipped: configuration is incomplete", {
+      tokenConfigured: Boolean(token),
+      projectCount: projects.length,
+    });
     return { available: false, message: "Configure JIRA_ZEPHYR_API_TOKEN and JIRA_ZEPHYR_PROJECT_KEYS in Forge variables" };
   }
+  const startedAt = Date.now();
+  console.info("[ZEPHYR_FETCH] Forge request started", { projectCount: projects.length });
   const base = "https://prod-api.zephyr4jiracloud.com/v2";
   const allPages = async <E extends keyof ZephyrEndpointRows>(endpoint: E, projectKey: string) => {
     const firstUrl = new URL(`${base}/${endpoint}`);
@@ -726,7 +733,11 @@ async function fetchZephyrExecutions(
       }
     }
     if (!projectData.length) {
-      return { available: false, message: projectErrors.join("; ") || "No Zephyr projects could be read" };
+      const message = projectErrors.join("; ") || "No Zephyr projects could be read";
+      const statusCode = message.match(/(?:returned|failed:|rate limited)\s*(\d{3})\b/i)?.[1];
+      const failure = { api: "Zephyr Essentials API", statusCode: statusCode ? Number(statusCode) : null, message };
+      console.error("[ZEPHYR_FETCH] Forge request failed", failure);
+      return { available: false, message, failure };
     }
     const record = (value: unknown): Record<string, any> => value && typeof value === "object" ? value as Record<string, any> : {};
     const get = (value: unknown, ...keys: string[]) => { const object = record(value); for (const key of keys) if (object[key] != null) return object[key]; return undefined; };
@@ -901,6 +912,20 @@ async function fetchZephyrExecutions(
     } catch (error) {
       projectErrors.push(`Jira sprint lookup: ${error instanceof Error ? error.message : "request failed"}`);
     }
+    const projectErrorMessage = projectErrors.join("; ");
+    const statusCode = projectErrorMessage.match(/(?:returned|failed:|rate limited)\s*(\d{3})\b/i)?.[1];
+    const failure = projectErrors.length ? {
+      api: /Jira sprint lookup:/i.test(projectErrorMessage) ? "Jira API" : "Zephyr Essentials API",
+      statusCode: statusCode ? Number(statusCode) : null,
+      message: projectErrorMessage,
+    } : undefined;
+    console.info("[ZEPHYR_FETCH] Forge request completed", {
+      projectCount: projectData.length,
+      caseCount: cases.length,
+      executionCount: cases.reduce((total, testCase) => total + testCase.executionCount, 0),
+      partialFailureCount: projectErrors.length,
+      durationMs: Date.now() - startedAt,
+    });
     return {
       available: true,
       cases,
@@ -908,9 +933,14 @@ async function fetchZephyrExecutions(
       testCasesTotal: cases.length,
       testExecutionsTotal: cases.reduce((total, testCase) => total + testCase.executionCount, 0),
       ...(projectErrors.length ? { message: `Partial Zephyr data: ${projectErrors.join("; ")}` } : {}),
+      ...(failure ? { failure } : {}),
     };
   } catch (error) {
-    return { available: false, message: error instanceof Error ? error.message : "Zephyr Cloud unavailable" };
+    const message = error instanceof Error ? error.message : "Zephyr Cloud unavailable";
+    const statusCode = message.match(/(?:returned|failed:|rate limited)\s*(\d{3})\b/i)?.[1];
+    const failure = { api: "Zephyr Essentials API", statusCode: statusCode ? Number(statusCode) : null, message };
+    console.error("[ZEPHYR_FETCH] Forge request failed", failure);
+    return { available: false, message, failure };
   }
 }
 
@@ -1614,6 +1644,7 @@ interface FeedEnvelope {
 }
 
 async function fetchAndStoreFeed(): Promise<FeedEnvelope> {
+  const startedAt = Date.now();
   const config = await getFieldConfig();
   const fields = [
     "summary",
@@ -1637,6 +1668,11 @@ async function fetchAndStoreFeed(): Promise<FeedEnvelope> {
   const defectJql = process.env.JIRA_QA_DEFECT_JQL?.trim() || `(${baseDefectJql}) AND issuetype = Bug`;
   const uatDefectJql = process.env.JIRA_QA_UAT_DEFECT_JQL?.trim() || "";
   const leakageDefectJql = process.env.JIRA_QA_LEAKAGE_DEFECT_JQL?.trim() || "";
+  console.info("[JIRA_FETCH] Forge feed assembly started", {
+    uatQueryConfigured: Boolean(uatDefectJql),
+    leakageQueryConfigured: Boolean(leakageDefectJql),
+    zephyrProjectCount: (process.env.JIRA_ZEPHYR_PROJECT_KEYS || "").split(",").filter((key) => key.trim()).length,
+  });
   const [issues, defectIssues, uatDefectIssues, leakageDefectIssues] = await Promise.all([
     jiraClient.searchIssuesJql(config.jql, fields),
     jiraClient.searchIssuesJql(defectJql, fields),
@@ -1682,6 +1718,13 @@ async function fetchAndStoreFeed(): Promise<FeedEnvelope> {
 
   const zephyr = await fetchZephyrExecutions(qaPoolFromItems(envelope.items), config);
   envelope.zephyr = zephyr;
+  console.info("[JIRA_FETCH] Forge feed assembled", {
+    issueCount: envelope.items.length,
+    defectCount: envelope.qaDefects.length,
+    uatDefectCount: envelope.qaUatDefects?.length ?? null,
+    leakageDefectCount: envelope.qaLeakageDefects?.length ?? null,
+    durationMs: Date.now() - startedAt,
+  });
 
   const compressed = zlib
     .deflateSync(Buffer.from(JSON.stringify(envelope)))
@@ -1863,9 +1906,14 @@ resolver.define("getRawFeed", async (req) => {
       ageMs: Date.now() - envelope.fetchedAt,
     };
   } catch (err) {
-    console.error("Forge raw feed resolver error:", err);
+    const message = err instanceof Error ? err.message : "Unknown error";
+    const statusCode = message.match(/(?:returned|failed:|rate limited)\s*(\d{3})\b/i)?.[1];
+    const apiName = /zephyr/i.test(message) ? "Zephyr Essentials API" : /jira/i.test(message) ? "Jira API" : "Forge resolver";
+    console.error("[JIRA_FETCH] Forge raw feed failed", { api: apiName, statusCode: statusCode ? Number(statusCode) : null, message });
     return {
-      error: err instanceof Error ? err.message : "Unknown error",
+      error: message,
+      api: apiName,
+      statusCode: statusCode ? Number(statusCode) : null,
       source: "forge-live",
     };
   }

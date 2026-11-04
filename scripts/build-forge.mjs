@@ -47,9 +47,12 @@ function rewriteMarkupPaths(root) {
   for (const file of filesIn(root)) {
     if (![".html", ".txt"].includes(extname(file))) continue;
     const prefix = relative(dirname(file), root).split(sep).join("/") || ".";
+    const assetPrefix = prefix === "." ? "./" : `${prefix}/`;
     const raw = readFileSync(file, "utf8");
     const next = raw
       .replace(/(?<![\w./])\/_next\//g, `${prefix}/_next/`)
+      .replace(/(?<![\w./])\.\/_next\//g, `${assetPrefix}_next/`)
+      .replace(/(\b(?:src|href)=["'])\.\/(?!\/)/g, `$1${assetPrefix}`)
       .replace(/(\b(?:src|href)=["'])\/(?!\/)/g, `$1${prefix}/`);
     if (next !== raw) { writeFileSync(file, next); changed++; }
   }

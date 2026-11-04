@@ -197,6 +197,7 @@ export interface QaCapacityData {
 export interface ZephyrData {
   available: boolean;
   message?: string;
+  failure?: DashboardLoadFailure;
   testCasesTotal?: number;
   testExecutionsTotal?: number;
   cases?: ZephyrTestCase[];
@@ -204,6 +205,12 @@ export interface ZephyrData {
     string,
     { pass: number; fail: number; wip: number; blocked: number; unexecuted: number; total: number }
   >;
+}
+
+export interface DashboardLoadFailure {
+  api: string;
+  statusCode: number | null;
+  message: string;
 }
 
 export interface ZephyrTestCase {

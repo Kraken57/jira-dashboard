@@ -1,6 +1,51 @@
-import { DashboardData, DashboardFilters, RawFeedPayload } from "./jira/types";
+import {
+  DashboardData,
+  DashboardFilters,
+  DashboardLoadFailure,
+  RawFeedPayload,
+} from "./jira/types";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "";
+
+export type RawFeedLoadStage = "connecting" | "jira";
+
+export class DashboardLoadError extends Error {
+  readonly failure: DashboardLoadFailure;
+
+  constructor(failure: DashboardLoadFailure) {
+    super(failure.message);
+    this.name = "DashboardLoadError";
+    this.failure = failure;
+  }
+}
+
+function createDashboardLoadError(
+  error: unknown,
+  fallbackApi: string,
+  fallbackStatusCode: number | null = null,
+): DashboardLoadError {
+  const message = error instanceof Error ? error.message : String(error);
+  const parsedStatus = message.match(/(?:returned|failed:|rate limited)\s*(\d{3})\b/i);
+  const api = /zephyr/i.test(message)
+    ? "Zephyr Essentials API"
+    : /\bjira\b/i.test(message)
+      ? "Jira API"
+      : fallbackApi;
+  return new DashboardLoadError({
+    api,
+    statusCode: parsedStatus ? Number(parsedStatus[1]) : fallbackStatusCode,
+    message,
+  });
+}
+
+export function getDashboardLoadFailure(error: unknown): DashboardLoadFailure {
+  if (error instanceof DashboardLoadError) return error.failure;
+  return {
+    api: "Dashboard",
+    statusCode: null,
+    message: error instanceof Error ? error.message : String(error),
+  };
+}
 
 // @forge/bridge v7 may wrap resolver payloads in { body, metadata }; unwrap.
 function unwrapBody<D>(response: unknown): D {
@@ -128,23 +173,69 @@ export function writeSessionRawFeed(feed: RawFeedPayload): void {
  * - Inside Jira (Forge iframe): resolver getRawFeed (KVS-backed).
  * - Localhost: GET /api/jira?raw=1 (disk-file backed).
  */
-export async function fetchRawFeed(forceRefresh = false): Promise<RawFeedPayload> {
+export async function fetchRawFeed(
+  forceRefresh = false,
+  onStage?: (stage: RawFeedLoadStage) => void,
+): Promise<RawFeedPayload> {
   if (typeof window === "undefined") {
     throw new Error("fetchRawFeed must be called in the browser");
   }
 
+  onStage?.("connecting");
   const inForgeIframe = window.self !== window.top;
   if (inForgeIframe) {
-    const { invoke } = await import("@forge/bridge");
-    const feed = (await invoke("getRawFeed", forceRefresh ? { refresh: true } : undefined)) as RawFeedPayload & { error?: string };
-    // The resolver packages its own failures as { error } instead of throwing.
-    if (feed && typeof feed.error === "string") {
-      throw new Error(`Forge raw feed failed: ${feed.error}`);
+    let bridge: typeof import("@forge/bridge");
+    try {
+      bridge = await import("@forge/bridge");
+    } catch (error) {
+      throw createDashboardLoadError(error, "Forge bridge");
     }
-    return feed;
+
+    onStage?.("jira");
+    console.info("[JIRA_FETCH] Forge resolver request started", {
+      resolver: "getRawFeed",
+      forceRefresh,
+    });
+    try {
+      const feed = unwrapBody<RawFeedPayload & {
+        error?: string;
+        api?: string;
+        statusCode?: number | null;
+      }>(await bridge.invoke("getRawFeed", forceRefresh ? { refresh: true } : undefined));
+      if (typeof feed?.error === "string") {
+        throw new DashboardLoadError({
+          api: feed.api || "Forge resolver",
+          statusCode: feed.statusCode ?? null,
+          message: feed.error,
+        });
+      }
+      if (!feed || !Array.isArray(feed.items)) {
+        throw createDashboardLoadError("Forge returned a feed without an items array.", "Forge resolver");
+      }
+      if (feed.zephyr?.failure) throw new DashboardLoadError(feed.zephyr.failure);
+      console.info("[JIRA_FETCH] Forge resolver request completed", {
+        source: feed.source,
+        itemCount: feed.items.length,
+        ageMs: feed.ageMs ?? null,
+      });
+      console.info("[ZEPHYR_FETCH] Forge data summary", {
+        available: feed.zephyr?.available ?? false,
+        caseCount: feed.zephyr?.testCasesTotal ?? feed.zephyr?.cases?.length ?? 0,
+        executionCount: feed.zephyr?.testExecutionsTotal ?? 0,
+      });
+      return feed;
+    } catch (error) {
+      if (error instanceof DashboardLoadError) throw error;
+      throw createDashboardLoadError(error, "Forge resolver");
+    }
   }
 
+  onStage?.("jira");
   const url = `${BASE_URL.replace(/\/+$/, "")}/api/jira?raw=1${forceRefresh ? "&refresh=1" : ""}`;
+  console.info("[JIRA_FETCH] Local request started", {
+    endpoint: "/api/jira?raw=1",
+    forceRefresh,
+  });
   let res: Response;
   try {
     res = await fetch(url, {
@@ -152,25 +243,55 @@ export async function fetchRawFeed(forceRefresh = false): Promise<RawFeedPayload
       cache: "no-store",
     });
   } catch (err) {
-    throw new Error(
-      `Could not reach ${url}. Is the Next.js dev server running? ${err instanceof Error ? err.message : String(err)}`
+    throw createDashboardLoadError(
+      `Could not reach ${url}. Is the Next.js dev server running? ${err instanceof Error ? err.message : String(err)}`,
+      "Jira API",
     );
   }
   const body = await res.text();
   if (!res.ok) {
     let detail = body;
+    let api = "Jira API";
+    let statusCode = res.status;
     try {
-      const json = JSON.parse(body) as { error?: string; details?: string };
+      const json = JSON.parse(body) as {
+        error?: string;
+        details?: string;
+        api?: string;
+        statusCode?: number | null;
+      };
       detail = json.details || json.error || body;
+      api = json.api || api;
+      statusCode = json.statusCode ?? statusCode;
     } catch {
       // Response was HTML or empty; keep the raw text.
     }
-    throw new Error(`Failed to fetch raw feed (${res.status}): ${detail.slice(0, 400)}`);
+    throw createDashboardLoadError(detail.slice(0, 400), api, statusCode);
   }
   try {
-    return JSON.parse(body) as RawFeedPayload;
-  } catch {
-    throw new Error("The dashboard API returned an invalid JSON response.");
+    const feed = JSON.parse(body) as RawFeedPayload;
+    if (!Array.isArray(feed.items)) {
+      throw new Error("The dashboard API response is missing its items array.");
+    }
+    if (feed.zephyr?.failure) throw new DashboardLoadError(feed.zephyr.failure);
+    console.info("[JIRA_FETCH] Local request completed", {
+      source: feed.source,
+      itemCount: feed.items.length,
+      ageMs: feed.ageMs ?? null,
+    });
+    console.info("[ZEPHYR_FETCH] Local data summary", {
+      available: feed.zephyr?.available ?? false,
+      caseCount: feed.zephyr?.testCasesTotal ?? feed.zephyr?.cases?.length ?? 0,
+      executionCount: feed.zephyr?.testExecutionsTotal ?? 0,
+    });
+    return feed;
+  } catch (error) {
+    if (error instanceof DashboardLoadError) throw error;
+    throw createDashboardLoadError(
+      error instanceof Error ? error.message : "The dashboard API returned invalid JSON.",
+      "Dashboard API",
+      res.status,
+    );
   }
 }
 

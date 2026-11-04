@@ -4,6 +4,7 @@ import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node
 import { fileURLToPath, pathToFileURL } from "node:url";
 import yaml from "js-yaml";
 
+const STUB_MARKER = "Static stub for the Forge build";
 export const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 export function filesIn(root) {

@@ -1,5 +1,5 @@
 import { isJiraConfigured, missingJiraConfig, JIRA_CONFIG } from "./config";
-import { DashboardData, DashboardFilters, JiraWorkItem, SprintMeta, ZephyrExecution, ZephyrTestCase } from "./types";
+import { DashboardData, DashboardFilters, DashboardLoadFailure, JiraWorkItem, SprintMeta, ZephyrExecution, ZephyrTestCase } from "./types";
 import { computeDashboardData, resolveMetricConfig } from "./metricsEngine";
 import { RawFeedPayload, ZephyrData } from "./types";
 import { deflateSync, inflateSync } from "node:zlib";
@@ -51,6 +51,16 @@ async function fetchAllLiveJiraIssues(jqlOverride?: string, queryLabel = "dashbo
   const sprintField = process.env.JIRA_SPRINT_FIELD || "customfield_10020";
   const podField = process.env.JIRA_POD_FIELD || "customfield_10050";
   const jql = jqlOverride || process.env.JIRA_JQL || "project in (DTR)";
+  const startedAt = Date.now();
+  console.info("[JIRA_FETCH] Local search started", {
+    queryLabel,
+    jqlLength: jql.length,
+    containsCurrentUser: /\bcurrentUser\s*\(/i.test(jql),
+    storyPointsField: spField,
+    sprintField,
+    podField,
+    credentialsConfigured: Boolean(host && email && apiToken),
+  });
 
   const allIssues: Record<string, unknown>[] = [];
   let nextPageToken: string | undefined = undefined;
@@ -105,6 +115,11 @@ async function fetchAllLiveJiraIssues(jqlOverride?: string, queryLabel = "dashbo
       } catch {
         // Jira sometimes returns HTML for gateway errors.
       }
+      console.error("[JIRA_FETCH] Local search failed", {
+        queryLabel,
+        statusCode: response.status,
+        pagesFetched,
+      });
       throw new Error(
         `Jira API returned ${response.status}: ${String(detail).slice(0, 500)}`
       );
@@ -120,7 +135,12 @@ async function fetchAllLiveJiraIssues(jqlOverride?: string, queryLabel = "dashbo
     nextPageToken = json.nextPageToken;
   }
 
-  console.info(`[jiraService] Jira ${queryLabel} search returned ${allIssues.length} issues across ${pagesFetched} page(s)`);
+  console.info("[JIRA_FETCH] Local search completed", {
+    queryLabel,
+    issueCount: allIssues.length,
+    pagesFetched,
+    durationMs: Date.now() - startedAt,
+  });
 
   const sprintMeta: Record<string, SprintMeta> = {};
 
@@ -241,12 +261,30 @@ const CACHE_TTL_MS = Number(process.env.JIRA_CACHE_TTL_MS || 300000); // 5 min
 const STALE_MAX_MS = Number(process.env.JIRA_CACHE_STALE_MAX_MS || 1800000); // 30 min
 const CACHE_FILE = join(process.cwd(), ".cache", "jira-feed.json.deflate");
 
+function getZephyrFailure(errors: string[]): DashboardLoadFailure | undefined {
+  const apiErrors = errors.filter((message) => !message.startsWith("No Jira sprint values found"));
+  if (!apiErrors.length) return undefined;
+  const message = apiErrors.join("; ");
+  const status = message.match(/(?:returned|failed:|rate limited)\s*(\d{3})\b/i);
+  return {
+    api: /Jira sprint lookup:/i.test(message) ? "Jira API" : "Zephyr Essentials API",
+    statusCode: status ? Number(status[1]) : null,
+    message,
+  };
+}
+
 function getFeedQueries() {
   const mainJql = process.env.JIRA_JQL || "project in (DTR)";
   const baseDefectJql = mainJql.replace(/\s+ORDER\s+BY[\s\S]*$/i, "").trim();
   const defectJql = process.env.JIRA_QA_DEFECT_JQL?.trim() || `(${baseDefectJql}) AND issuetype = Bug`;
   const uatDefectJql = process.env.JIRA_QA_UAT_DEFECT_JQL?.trim() || "";
   const leakageDefectJql = process.env.JIRA_QA_LEAKAGE_DEFECT_JQL?.trim() || "";
+  console.info("[JIRA_QUERY_AUDIT] Feed query configuration", {
+    mainConfigured: Boolean(process.env.JIRA_JQL),
+    defectConfigured: Boolean(process.env.JIRA_QA_DEFECT_JQL),
+    uatConfigured: Boolean(uatDefectJql),
+    leakageConfigured: Boolean(leakageDefectJql),
+  });
   return { mainJql, defectJql, uatDefectJql, leakageDefectJql };
 }
 
@@ -289,12 +327,20 @@ function writeDiskFeed(feed: RawFeedPayload): void {
 /** Zephyr Essential Cloud v2.9 uses a UI-generated Bearer access token. */
 async function fetchZephyrExecutions(jiraItems: JiraWorkItem[] = []): Promise<ZephyrData> {
   const token = process.env.JIRA_ZEPHYR_API_TOKEN?.trim();
-  if (!token) return { available: false, message: "Configure JIRA_ZEPHYR_API_TOKEN to enable Zephyr Essentials data" };
   const projectKeys = (process.env.JIRA_ZEPHYR_PROJECT_KEYS || "")
     .split(",")
     .map((k) => k.trim())
     .filter(Boolean);
-  if (!projectKeys.length) return { available: false, message: "Set JIRA_ZEPHYR_PROJECT_KEYS to the Jira projects containing Zephyr tests" };
+  if (!token) {
+    console.info("[ZEPHYR_FETCH] Skipped: API token is not configured");
+    return { available: false, message: "Configure JIRA_ZEPHYR_API_TOKEN to enable Zephyr Essentials data" };
+  }
+  if (!projectKeys.length) {
+    console.info("[ZEPHYR_FETCH] Skipped: no projects are configured");
+    return { available: false, message: "Set JIRA_ZEPHYR_PROJECT_KEYS to the Jira projects containing Zephyr tests" };
+  }
+  const startedAt = Date.now();
+  console.info("[ZEPHYR_FETCH] Request started", { projectCount: projectKeys.length });
 
   const base = "https://prod-api.zephyr4jiracloud.com/v2";
   const requestAllPages = async (endpoint: string, projectKey: string) => {
@@ -367,7 +413,13 @@ async function fetchZephyrExecutions(jiraItems: JiraWorkItem[] = []): Promise<Ze
     }
 
     if (!projects.length) {
-      return { available: false, message: projectErrors.join("; ") || "No Zephyr projects could be read" };
+      const message = projectErrors.join("; ") || "No Zephyr projects could be read";
+      console.error("[ZEPHYR_FETCH] No projects loaded", { projectCount: projectKeys.length, errorCount: projectErrors.length });
+      return {
+        available: false,
+        message,
+        ...(getZephyrFailure(projectErrors) ? { failure: getZephyrFailure(projectErrors) } : {}),
+      };
     }
 
     const asRecord = (value: unknown): Record<string, unknown> =>
@@ -640,6 +692,14 @@ async function fetchZephyrExecutions(jiraItems: JiraWorkItem[] = []): Promise<Ze
       else if (execution.statusCategory === "blocked") bucket.blocked++;
       else bucket.unexecuted++;
     }
+    const failure = getZephyrFailure(projectErrors);
+    console.info("[ZEPHYR_FETCH] Request completed", {
+      projectCount: projects.length,
+      caseCount: cases.length,
+      executionCount: cases.reduce((total, testCase) => total + testCase.executionCount, 0),
+      partialFailureCount: projectErrors.length,
+      durationMs: Date.now() - startedAt,
+    });
     return {
       available: true,
       cases,
@@ -647,14 +707,38 @@ async function fetchZephyrExecutions(jiraItems: JiraWorkItem[] = []): Promise<Ze
       testCasesTotal: totalTestCases,
       testExecutionsTotal: cases.reduce((total, testCase) => total + testCase.executionCount, 0),
       ...(projectErrors.length ? { message: `Partial Zephyr data: ${projectErrors.join("; ")}` } : {}),
+      ...(failure ? { failure } : {}),
     };
   } catch (err) {
-    return { available: false, message: err instanceof Error ? err.message : "Zephyr Cloud unavailable" };
+    const message = err instanceof Error ? err.message : "Zephyr Cloud unavailable";
+    const failure = getZephyrFailure([message]) || {
+      api: "Zephyr Essentials API",
+      statusCode: null,
+      message,
+    };
+    console.error("[ZEPHYR_FETCH] Request failed", failure);
+    return { available: false, message, failure };
   }
 }
 
 async function fetchLiveFeed(): Promise<RawFeedPayload> {
+  const startedAt = Date.now();
   const { mainJql, defectJql, uatDefectJql, leakageDefectJql } = getFeedQueries();
+  console.info("[CONFIG_AUDIT] Local Jira configuration", {
+    hostConfigured: Boolean(JIRA_CONFIG.host),
+    emailConfigured: Boolean(JIRA_CONFIG.email),
+    apiTokenConfigured: Boolean(JIRA_CONFIG.apiToken),
+    mainQueryConfigured: Boolean(process.env.JIRA_JQL),
+    defectQueryConfigured: Boolean(process.env.JIRA_QA_DEFECT_JQL),
+    qaMemberCount: resolveMetricConfig().qaMembers.length,
+    zephyrTokenConfigured: Boolean(process.env.JIRA_ZEPHYR_API_TOKEN),
+    zephyrProjectCount: (process.env.JIRA_ZEPHYR_PROJECT_KEYS || "").split(",").filter((key) => key.trim()).length,
+  });
+  console.info("[JIRA_FETCH] Feed assembly started", {
+    qaUatQueryConfigured: Boolean(uatDefectJql),
+    qaLeakageQueryConfigured: Boolean(leakageDefectJql),
+    zephyrProjectCount: (process.env.JIRA_ZEPHYR_PROJECT_KEYS || "").split(",").filter((key) => key.trim()).length,
+  });
   const [live, defectFeed, uatDefectFeed, leakageDefectFeed] = await Promise.all([
     fetchAllLiveJiraIssues(mainJql, "dashboard"),
     fetchAllLiveJiraIssues(defectJql, "QA defects"),
@@ -748,6 +832,13 @@ async function fetchLiveFeed(): Promise<RawFeedPayload> {
     originalEstimateHours: Math.round((item.originalEstimateSeconds || 0) / 360) / 10,
   }));
   const qaDefects = mapDefects(defectFeed.items);
+  console.info("[JIRA_FETCH] Feed assembly completed", {
+    issueCount: live.items.length,
+    defectCount: qaDefects.length,
+    uatDefectCount: uatDefectJql ? uatDefectFeed.items.length : null,
+    leakageDefectCount: leakageDefectJql ? leakageDefectFeed.items.length : null,
+    durationMs: Date.now() - startedAt,
+  });
   return {
     items: live.items,
     qaDefects,
@@ -780,6 +871,7 @@ async function withInflight(job: () => Promise<RawFeedPayload>): Promise<RawFeed
  * - no/too-old copy -> block on one live Jira fetch (the only slow moment)
  */
 export async function getRawFeed(forceRefresh = false): Promise<RawFeedPayload> {
+  console.info("[JIRA_FETCH] Raw feed requested", { forceRefresh });
   if (!isJiraConfigured()) {
     throw new Error(
       `Jira is not configured. Missing ${missingJiraConfig().join(", ")} in .env.local`
@@ -790,6 +882,7 @@ export async function getRawFeed(forceRefresh = false): Promise<RawFeedPayload> 
   const ageMs = disk ? Date.now() - disk.fetchedAt : Infinity;
 
   if (disk && ageMs <= CACHE_TTL_MS) {
+    console.info("[JIRA_FETCH] Serving cached feed", { source: "disk", ageMs, issueCount: disk.items.length });
     return { ...disk, config: resolveMetricConfig(), source: "disk", ageMs };
   }
 
@@ -805,6 +898,7 @@ export async function getRawFeed(forceRefresh = false): Promise<RawFeedPayload> 
   // refresh queue ever contends across Jira instances (it cannot today).
   const feed = await withInflight(fetchLiveFeed);
   writeDiskFeed(feed);
+  console.info("[JIRA_FETCH] Raw feed ready", { source: "jira-live", issueCount: feed.items.length, ageMs: Date.now() - feed.fetchedAt });
   return { ...feed, config: resolveMetricConfig(), source: "jira-live", ageMs: Date.now() - feed.fetchedAt };
 }
 
@@ -832,3 +926,4 @@ export async function getDashboardData(
     jiraBaseUrl: feed.jiraBaseUrl,
   };
 }
+    console.info("[JIRA_FETCH] Serving stale feed while refreshing", { source: "disk-stale", ageMs, issueCount: disk.items.length });

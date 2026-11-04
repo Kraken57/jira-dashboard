@@ -8,13 +8,19 @@ import { VelocityGrid } from "@/components/VelocityGrid";
 import { TabFilters, FilterKey, FilterState, FilterOption } from "@/components/TabFilters";
 import { IssuesModal } from "@/components/IssuesModal";
 import {
+  DashboardLoadErrorPanel,
+  DashboardLoadingOverlay,
+} from "@/components/DashboardLoadState";
+import type { DashboardLoadingStage } from "@/components/DashboardLoadState";
+import {
   fetchRawFeed,
+  getDashboardLoadFailure,
   isRawFeedStale,
   readSessionRawFeed,
   writeSessionRawFeed,
 } from "@/lib/api";
 import { computeDashboardData } from "@/lib/jira/metricsEngine";
-import { DashboardData, RawFeedPayload, IssueRow } from "@/lib/jira/types";
+import { DashboardData, DashboardLoadFailure, RawFeedPayload, IssueRow } from "@/lib/jira/types";
 import { PodTab } from "@/components/tabs/PodTab";
 import { DeveloperTab } from "@/components/tabs/DeveloperTab";
 import { QualityTab } from "@/components/tabs/QualityTab";
@@ -55,7 +61,10 @@ export default function DashboardPage() {
   const [feed, setFeed] = useState<RawFeedPayload | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadingStage, setLoadingStage] = useState<DashboardLoadingStage>("connecting");
+  const [loadingTimedOut, setLoadingTimedOut] = useState(false);
+  const [feedRequestComplete, setFeedRequestComplete] = useState(false);
+  const [loadFailure, setLoadFailure] = useState<DashboardLoadFailure | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [now, setNow] = useState(Date.now);
   const [issueModal, setIssueModal] = useState<{
@@ -70,9 +79,19 @@ export default function DashboardPage() {
     : "all";
 
   useEffect(() => {
+    console.info("[DASHBOARD_INIT] Client started", {
+      runtime: window.self !== window.top ? "forge" : "local",
+      route: window.location.pathname,
+    });
     const timer = window.setInterval(() => setNow(Date.now()), 60_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!isLoading) return;
+    const timer = window.setTimeout(() => setLoadingTimedOut(true), 15_000);
+    return () => window.clearTimeout(timer);
+  }, [isLoading, reloadKey]);
 
   // Dropdown sources are scoped to the selected pod/quarter (sprint excluded)
   // so the sprint list shows the pod's own sprints, not other pods'.
@@ -124,6 +143,12 @@ export default function DashboardPage() {
     async function loadRaw(hard: boolean) {
       // Tab copy: an instant restore so refresh never waits when fresh.
       const cached = hard ? null : readSessionRawFeed();
+      let requestCompleted = false;
+      setLoadingStage("connecting");
+      setLoadingTimedOut(false);
+      setFeedRequestComplete(false);
+      setLoadFailure(null);
+      setRefreshing(false);
       if (cached) {
         setFeed(cached);
         setIsLoading(false);
@@ -133,28 +158,46 @@ export default function DashboardPage() {
       }
 
       try {
-        const next = await fetchRawFeed(hard);
+        const next = await fetchRawFeed(hard, (stage) => {
+          if (!cancelled) setLoadingStage(stage);
+        });
         if (!next || !Array.isArray(next.items)) {
           throw new Error("Raw feed response is missing its items array.");
         }
         if (cancelled) return;
+        console.info("[JIRA_FETCH] Feed accepted", {
+          source: next.source,
+          itemCount: next.items.length,
+          defectCount: next.qaDefects?.length ?? 0,
+          sprintCount: Object.keys(next.sprintMeta ?? {}).length,
+        });
+        if (next.zephyr) {
+          console.info("[ZEPHYR_FETCH] Feed accepted", {
+            available: next.zephyr.available,
+            caseCount: next.zephyr.testCasesTotal ?? next.zephyr.cases?.length ?? 0,
+            executionCount: next.zephyr.testExecutionsTotal ?? 0,
+            hasMessage: Boolean(next.zephyr.message),
+          });
+        }
         writeSessionRawFeed(next);
         setFeed(next);
+        setLoadingStage("metrics");
+        setFeedRequestComplete(true);
         setRefreshing(false);
+        requestCompleted = true;
       } catch (err) {
-        console.error("Failed to load dashboard data:", err);
+        const failure = getDashboardLoadFailure(err);
+        console.error("[DASHBOARD_LOAD] Request failed", failure);
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load dashboard data");
+          setLoadFailure(failure);
         }
         // Never blank the tab on refresh failure: keep the copy on screen.
         if (!cached) {
           setFeed(null);
-          setIsLoading(false);
-        } else {
-          setRefreshing(false);
         }
+        setRefreshing(false);
       } finally {
-        if (!cancelled) setIsLoading(false);
+        if (!cancelled && !requestCompleted) setIsLoading(false);
       }
     }
 
@@ -164,6 +207,41 @@ export default function DashboardPage() {
       cancelled = true;
     };
   }, [reloadKey]);
+
+  useEffect(() => {
+    if (
+      !isLoading ||
+      !feedRequestComplete ||
+      loadFailure ||
+      !feed ||
+      !dashboardData ||
+      !dropdownData
+    ) return;
+
+    let zephyrFrame = 0;
+    let prepareFrame = 0;
+    let readyFrame = 0;
+    zephyrFrame = window.requestAnimationFrame(() => {
+      setLoadingStage("zephyr");
+      prepareFrame = window.requestAnimationFrame(() => {
+        setLoadingStage("preparing");
+        readyFrame = window.requestAnimationFrame(() => {
+          console.info("[DASHBOARD_READY] Dashboard prepared", {
+            source: feed.source,
+            itemCount: feed.items.length,
+            totalIssues: dashboardData.summary.totalIssues,
+            chartsReady: true,
+          });
+          setIsLoading(false);
+        });
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(zephyrFrame);
+      window.cancelAnimationFrame(prepareFrame);
+      if (readyFrame) window.cancelAnimationFrame(readyFrame);
+    };
+  }, [isLoading, feedRequestComplete, loadFailure, feed, dashboardData, dropdownData]);
 
   const updateFilter = (key: FilterKey, value: string) => {
     if (key === "pod" || key === "quarter" || key === "sprint") {
@@ -274,8 +352,22 @@ export default function DashboardPage() {
     ],
   };
 
+  if (loadFailure && !feed) {
+    return (
+      <DashboardLayout>
+        <DashboardLoadErrorPanel
+          failure={loadFailure}
+          onRetry={() => setReloadKey((key) => key + 1)}
+        />
+      </DashboardLayout>
+    );
+  }
+
   return (
     <DashboardLayout>
+      {isLoading && (
+        <DashboardLoadingOverlay stage={loadingStage} timedOut={loadingTimedOut} />
+      )}
       <div className="dashboard-workspace space-y-6">
         {/* Page heading with live dataset summary */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
@@ -306,20 +398,11 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {error && (
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-lg border border-jira-red/30 bg-jira-red-bg px-4 py-3">
-            <div>
-              <p className="text-sm font-bold text-jira-red">Could not load dashboard data</p>
-              <p className="text-xs text-jira-text-muted mt-0.5 break-words">{error}</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setReloadKey((k) => k + 1)}
-              className="self-start sm:self-auto text-xs font-semibold px-3 py-1.5 rounded-md bg-white border border-jira-red/30 text-jira-red hover:bg-jira-red/10 transition"
-            >
-              Retry
-            </button>
-          </div>
+        {loadFailure && (
+          <DashboardLoadErrorPanel
+            failure={loadFailure}
+            onRetry={() => setReloadKey((key) => key + 1)}
+          />
         )}
 
         {/* Tab Navigation */}
