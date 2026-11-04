@@ -676,7 +676,11 @@ async function fetchZephyrExecutions(
     return { available: false, message: "Configure JIRA_ZEPHYR_API_TOKEN and JIRA_ZEPHYR_PROJECT_KEYS in Forge variables" };
   }
   const startedAt = Date.now();
-  console.info("[ZEPHYR_FETCH] Forge request started", { projectCount: projects.length });
+  console.info("[ZEPHYR_FETCH] Forge request started", {
+    tokenConfigured: Boolean(token),
+    projectKeys: projects,
+    authorizationScheme: "Bearer",
+  });
   const base = "https://prod-api.zephyr4jiracloud.com/v2";
   const allPages = async <E extends keyof ZephyrEndpointRows>(endpoint: E, projectKey: string) => {
     const firstUrl = new URL(`${base}/${endpoint}`);
@@ -695,7 +699,29 @@ async function fetchZephyrExecutions(
         headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
       });
       if (!response.ok) {
-        throw new Error(`Zephyr Essential API GET ${url.pathname} for project ${projectKey} returned ${response.status}`);
+        const contentType = response.headers.get("content-type") || "unknown";
+        const wwwAuthenticate = response.headers.get("www-authenticate") || undefined;
+        const rawBody = await response.text();
+        let responseMessage: string | undefined;
+        try {
+          const body = JSON.parse(rawBody) as Record<string, unknown>;
+          const candidate = body.message ?? body.error_description ?? body.error ?? body.title;
+          if (typeof candidate === "string") responseMessage = candidate.slice(0, 240);
+        } catch {
+          // Do not log arbitrary response bodies; they may contain sensitive data.
+        }
+        console.error("[ZEPHYR_FETCH] Zephyr API request rejected", {
+          endpoint: url.pathname,
+          projectKey,
+          statusCode: response.status,
+          contentType,
+          wwwAuthenticate,
+          responseMessage,
+          tokenConfigured: Boolean(token),
+          authorizationScheme: "Bearer",
+        });
+        const detail = responseMessage ? `: ${responseMessage}` : "";
+        throw new Error(`Zephyr Essential API GET ${url.pathname} for project ${projectKey} returned ${response.status}${detail}`);
       }
       const page = await response.json() as ZephyrApiPage<ZephyrEndpointRows[E]>;
       const rows = page.values ?? [];

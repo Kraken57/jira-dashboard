@@ -5,6 +5,29 @@
  */
 import api, { route } from "@forge/api";
 
+function projectKeysFromJql(jql: string): string[] {
+  const inMatch = jql.match(/\bproject\s+in\s*\(([^)]+)\)/i);
+  const singleMatch = jql.match(/\bproject\s*=\s*([A-Z][A-Z0-9_]*)/i);
+  const source = inMatch?.[1] ?? singleMatch?.[1] ?? "";
+  return Array.from(new Set(source.split(",")
+    .map((key) => key.trim().replace(/^['"]|['"]$/g, ""))
+    .filter((key) => /^[A-Z][A-Z0-9_]*$/i.test(key))));
+}
+
+function safeJiraErrorSummary(body: string): { messages: string[]; errorFields: string[] } {
+  try {
+    const json = JSON.parse(body) as { errorMessages?: unknown; errors?: Record<string, unknown> };
+    return {
+      messages: Array.isArray(json.errorMessages)
+        ? json.errorMessages.filter((item): item is string => typeof item === "string").slice(0, 3).map((item) => item.slice(0, 240))
+        : [],
+      errorFields: json.errors && typeof json.errors === "object" ? Object.keys(json.errors).slice(0, 20) : [],
+    };
+  } catch {
+    return { messages: [], errorFields: [] };
+  }
+}
+
 export interface JiraClientOptions {
   maxRetries?: number;
   baseDelayMs?: number;
@@ -69,6 +92,7 @@ export class JiraClient {
     maxResults = 100
   ): Promise<any[]> {
     const startedAt = Date.now();
+    const requestedProjectKeys = projectKeysFromJql(jql);
     const allIssues: any[] = [];
     let nextPageToken: string | undefined = undefined;
     let pageCount = 0;
@@ -91,13 +115,26 @@ export class JiraClient {
       });
 
       if (!response.ok) {
-        console.error("[JIRA_FETCH] Forge search failed", { statusCode: response.status, page: pageCount });
+        const errorBody = await response.text();
+        console.error("[JIRA_FETCH] Forge search failed", {
+          statusCode: response.status,
+          statusText: response.statusText,
+          page: pageCount,
+          requestedProjectKeys,
+          ...safeJiraErrorSummary(errorBody),
+        });
         throw new Error(`Jira search failed: ${response.status} ${response.statusText}`);
       }
 
       const json = await response.json();
       const issues = json.issues || [];
       allIssues.push(...issues);
+      console.info("[JIRA_FETCH] Forge search page completed", {
+        statusCode: response.status,
+        page: pageCount,
+        issuesInPage: issues.length,
+        requestedProjectKeys,
+      });
 
       nextPageToken = json.nextPageToken;
       if (!nextPageToken) break;
@@ -105,9 +142,33 @@ export class JiraClient {
 
     console.info("[JIRA_FETCH] Forge search completed", {
       issueCount: allIssues.length,
+      projectKeysReturned: Array.from(new Set(allIssues
+        .map((issue) => issue?.fields?.project?.key)
+        .filter((key): key is string => typeof key === "string"))),
       pageCount,
       durationMs: Date.now() - startedAt,
     });
+
+    if (allIssues.length === 0 && requestedProjectKeys.length > 0) {
+      const projectChecks = await Promise.all(requestedProjectKeys.map(async (projectKey) => {
+        try {
+          const response = await api.asApp().requestJira(route`/rest/api/3/project/${projectKey}`);
+          return { projectKey, statusCode: response.status, visibleToApp: response.ok };
+        } catch (error) {
+          return {
+            projectKey,
+            statusCode: null,
+            visibleToApp: false,
+            errorType: error instanceof Error ? error.name : "UnknownError",
+          };
+        }
+      }));
+      console.warn("[JIRA_ACCESS_DIAGNOSTIC] Zero-result project visibility check", {
+        requestedProjectKeys,
+        projectChecks,
+        note: "A 200 project response confirms project visibility, but issue security or JQL filters can still hide issues.",
+      });
+    }
     return allIssues;
   }
 
