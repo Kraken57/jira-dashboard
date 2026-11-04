@@ -70,7 +70,9 @@ async function fetchAllLiveJiraIssues(jqlOverride?: string, queryLabel = "dashbo
     pagesFetched += 1;
     const requestBody: Record<string, unknown> = {
       jql,
-      maxResults: 100,
+      // A larger page size avoids dozens of serial round trips for broad
+      // dashboards while Jira still caps/returns whatever its endpoint allows.
+      maxResults: 500,
       fields: [
         "summary",
         "status",
@@ -290,11 +292,17 @@ function getFeedQueries() {
 
 function getFeedQueryFingerprint(): string {
   const { mainJql, defectJql, uatDefectJql, leakageDefectJql } = getFeedQueries();
-  const zephyrProjects = (process.env.JIRA_ZEPHYR_PROJECT_KEYS || "").trim();
-  return createHash("sha256").update(`quality-cases-v5\n${mainJql}\n${defectJql}\n${uatDefectJql}\n${leakageDefectJql}\n${zephyrProjects}`).digest("hex");
+  const authFingerprint = createHash("sha256")
+    .update(`${JIRA_CONFIG.host}\n${JIRA_CONFIG.email}\n${JIRA_CONFIG.apiToken}`)
+    .digest("hex");
+  return createHash("sha256")
+    .update(`quality-cases-v7\n${mainJql}\n${defectJql}\n${uatDefectJql}\n${leakageDefectJql}\n${authFingerprint}`)
+    .digest("hex");
 }
 
 let inflightFetch: Promise<RawFeedPayload> | null = null;
+let zephyrInflight: Promise<ZephyrData> | null = null;
+let zephyrMemoryCache: { fetchedAt: number; fingerprint: string; data: ZephyrData } | null = null;
 
 function readDiskFeed(): RawFeedPayload | null {
   try {
@@ -725,6 +733,72 @@ async function fetchZephyrExecutions(jiraItems: JiraWorkItem[] = []): Promise<Ze
   }
 }
 
+const ZEPHYR_CACHE_TTL_MS = 5 * 60 * 1000;
+
+async function fetchZephyrForItems(jiraItems: JiraWorkItem[]): Promise<ZephyrData> {
+  const zephyr = await fetchZephyrExecutions(jiraItems);
+  if (!zephyr.available || !zephyr.cases?.length) return zephyr;
+
+  const linkedIdToKey = new Map<string, string>();
+  const linkedIds = Array.from(new Set(zephyr.cases.flatMap((testCase) => testCase.linkedIssueIds ?? [])));
+  const authHeader = Buffer.from(`${JIRA_CONFIG.email}:${JIRA_CONFIG.apiToken}`).toString("base64");
+  for (let offset = 0; offset < linkedIds.length; offset += 32) {
+    const chunk = linkedIds.slice(offset, offset + 32);
+    const resolved = await Promise.all(chunk.map(async (issueId) => {
+      try {
+        const response = await fetch(`${JIRA_CONFIG.host.replace(/\/+$/, "")}/rest/api/3/issue/${issueId}?fields=key`, {
+          headers: { Authorization: `Basic ${authHeader}`, Accept: "application/json" },
+          cache: "no-store",
+        });
+        if (!response.ok) return null;
+        const issue = await response.json() as { key?: string };
+        return issue.key ? [issueId, issue.key] as const : null;
+      } catch {
+        return null;
+      }
+    }));
+    for (const entry of resolved) if (entry) linkedIdToKey.set(entry[0], entry[1]);
+  }
+  const lookupKeys = Array.from(new Set(zephyr.cases.flatMap((testCase) => [
+    testCase.key,
+    ...testCase.linkedIssueKeys,
+    ...(testCase.linkedIssueIds ?? []).map((id) => linkedIdToKey.get(id) || ""),
+  ]))).filter((key) => /^[A-Z][A-Z0-9_]*-\d+$/i.test(key));
+  const sprintItems: JiraWorkItem[] = [];
+  try {
+    for (let offset = 0; offset < lookupKeys.length; offset += 80) {
+      const chunk = lookupKeys.slice(offset, offset + 80);
+      if (!chunk.length) continue;
+      const sprintFeed = await fetchAllLiveJiraIssues(`key in (${chunk.join(", ")})`, "Zephyr sprint mapping");
+      sprintItems.push(...sprintFeed.items);
+    }
+    const byKey = new Map(sprintItems.map((item) => [item.key, item]));
+    zephyr.cases = zephyr.cases.map((testCase) => {
+      const resolvedKeys = (testCase.linkedIssueIds ?? []).map((id) => linkedIdToKey.get(id) || "").filter(Boolean);
+      const linkedIssueKeys = Array.from(new Set([...testCase.linkedIssueKeys, ...resolvedKeys]));
+      const linkedItems = linkedIssueKeys.map((key) => byKey.get(key)).filter((item): item is JiraWorkItem => Boolean(item));
+      const linkedSprints = linkedItems.flatMap((item) => item.sprints);
+      const caseSprints = byKey.get(testCase.key)?.sprints ?? [];
+      const linkedPods = new Map(linkedItems.map((item) => [item.podKey, item.podName || item.podKey]));
+      return {
+        ...testCase,
+        linkedIssueKeys,
+        ...(linkedPods.size ? { podKeys: Array.from(linkedPods.keys()), podNames: Array.from(linkedPods.values()), podSource: "linked Jira issue" as const } : {}),
+        sprints: Array.from(new Set(linkedSprints.length ? linkedSprints : caseSprints.length ? caseSprints : testCase.sprints)),
+      };
+    });
+    if (!zephyr.cases.some((testCase) => testCase.sprints.length)) {
+      zephyr.message = [zephyr.message, "No Jira sprint assignments were found for Zephyr test cases or linked issues; verify Jira visibility and sprint assignment"]
+        .filter(Boolean).join("; ");
+    }
+  } catch (error) {
+    console.warn("[jiraService] Could not map Jira sprints for Zephyr cases:", error);
+    zephyr.message = [zephyr.message, `Jira sprint lookup unavailable: ${error instanceof Error ? error.message : "request failed"}`]
+      .filter(Boolean).join("; ");
+  }
+  return zephyr;
+}
+
 async function fetchLiveFeed(): Promise<RawFeedPayload> {
   const startedAt = Date.now();
   const { mainJql, defectJql, uatDefectJql, leakageDefectJql } = getFeedQueries();
@@ -749,71 +823,6 @@ async function fetchLiveFeed(): Promise<RawFeedPayload> {
     uatDefectJql ? fetchAllLiveJiraIssues(uatDefectJql, "QA UAT defects") : Promise.resolve({ items: [], sprintMeta: {} }),
     leakageDefectJql ? fetchAllLiveJiraIssues(leakageDefectJql, "QA leaked defects") : Promise.resolve({ items: [], sprintMeta: {} }),
   ]);
-  const zephyr = await fetchZephyrExecutions(live.items);
-  if (zephyr.available && zephyr.cases?.length) {
-    const linkedIdToKey = new Map<string, string>();
-    const linkedIds = Array.from(new Set(zephyr.cases.flatMap((testCase) => testCase.linkedIssueIds ?? [])));
-    const authHeader = Buffer.from(`${JIRA_CONFIG.email}:${JIRA_CONFIG.apiToken}`).toString("base64");
-    for (let offset = 0; offset < linkedIds.length; offset += 8) {
-      const chunk = linkedIds.slice(offset, offset + 8);
-      const resolved = await Promise.all(chunk.map(async (issueId) => {
-        try {
-          const response = await fetch(`${JIRA_CONFIG.host.replace(/\/+$/, "")}/rest/api/3/issue/${issueId}?fields=key`, {
-            headers: { Authorization: `Basic ${authHeader}`, Accept: "application/json" },
-            cache: "no-store",
-          });
-          if (!response.ok) return null;
-          const issue = await response.json() as { key?: string };
-          return issue.key ? [issueId, issue.key] as const : null;
-        } catch {
-          return null;
-        }
-      }));
-      for (const entry of resolved) if (entry) linkedIdToKey.set(entry[0], entry[1]);
-    }
-    const lookupKeys = Array.from(new Set(zephyr.cases.flatMap((testCase) => [
-      testCase.key,
-      ...testCase.linkedIssueKeys,
-      ...(testCase.linkedIssueIds ?? []).map((id) => linkedIdToKey.get(id) || ""),
-    ])))
-      .filter((key) => /^[A-Z][A-Z0-9_]*-\d+$/i.test(key));
-    const sprintItems: JiraWorkItem[] = [];
-    try {
-      // Zephyr test projects are not always part of JIRA_JQL. Fetch their Jira
-      // issues separately so their Sprint field (and linked story sprints) is
-      // available without widening the dashboard's main issue scope.
-      for (let offset = 0; offset < lookupKeys.length; offset += 80) {
-        const chunk = lookupKeys.slice(offset, offset + 80);
-        if (!chunk.length) continue;
-        const jql = `key in (${chunk.join(", ")})`;
-        const sprintFeed = await fetchAllLiveJiraIssues(jql, "Zephyr sprint mapping");
-        sprintItems.push(...sprintFeed.items);
-      }
-      const byKey = new Map(sprintItems.map((item) => [item.key, item]));
-      zephyr.cases = zephyr.cases.map((testCase) => {
-        const resolvedKeys = (testCase.linkedIssueIds ?? []).map((id) => linkedIdToKey.get(id) || "").filter(Boolean);
-        const linkedIssueKeys = Array.from(new Set([...testCase.linkedIssueKeys, ...resolvedKeys]));
-        const linkedItems = linkedIssueKeys.map((key) => byKey.get(key)).filter((item): item is JiraWorkItem => Boolean(item));
-        const linkedSprints = linkedItems.flatMap((item) => item.sprints);
-        const caseSprints = byKey.get(testCase.key)?.sprints ?? [];
-        const linkedPods = new Map(linkedItems.map((item) => [item.podKey, item.podName || item.podKey]));
-        return {
-          ...testCase,
-          linkedIssueKeys,
-          ...(linkedPods.size ? { podKeys: Array.from(linkedPods.keys()), podNames: Array.from(linkedPods.values()), podSource: "linked Jira issue" as const } : {}),
-          sprints: Array.from(new Set(linkedSprints.length ? linkedSprints : caseSprints.length ? caseSprints : testCase.sprints)),
-        };
-      });
-      if (zephyr.cases.length && !zephyr.cases.some((testCase) => testCase.sprints.length)) {
-        zephyr.message = [zephyr.message, "No Jira sprint assignments were found for Zephyr test cases or linked issues; verify Jira visibility and sprint assignment"]
-          .filter(Boolean).join("; ");
-      }
-    } catch (error) {
-      console.warn("[jiraService] Could not map Jira sprints for Zephyr cases:", error);
-      zephyr.message = [zephyr.message, `Jira sprint lookup unavailable: ${error instanceof Error ? error.message : "request failed"}`]
-        .filter(Boolean).join("; ");
-    }
-  }
   const doneStatuses = new Set(resolveMetricConfig().doneStatuses);
   const mapDefects = (items: JiraWorkItem[]) => items.map((item) => ({
     key: item.key,
@@ -853,7 +862,6 @@ async function fetchLiveFeed(): Promise<RawFeedPayload> {
     jiraBaseUrl: (JIRA_CONFIG.host || "").replace(/\/+$/, ""),
     fetchedAt: Date.now(),
     config: resolveMetricConfig(),
-    zephyr,
     source: "jira-live",
   };
 }
@@ -909,6 +917,31 @@ export async function getRawFeed(forceRefresh = false): Promise<RawFeedPayload> 
   writeDiskFeed(feed);
   console.info("[JIRA_FETCH] Raw feed ready", { source: "jira-live", issueCount: feed.items.length, ageMs: Date.now() - feed.fetchedAt });
   return { ...feed, config: resolveMetricConfig(), source: "jira-live", ageMs: Date.now() - feed.fetchedAt };
+}
+
+/** Load the optional Zephyr portfolio separately so it cannot delay Jira tabs. */
+export async function getZephyrData(forceRefresh = false): Promise<ZephyrData> {
+  if (!isJiraConfigured()) {
+    throw new Error(`Jira is not configured. Missing ${missingJiraConfig().join(", ")} in .env.local`);
+  }
+  const feed = await getRawFeed(false);
+  const fingerprint = createHash("sha256")
+    .update(`${feed.queryFingerprint || getFeedQueryFingerprint()}\n${process.env.JIRA_ZEPHYR_PROJECT_KEYS || ""}\n${process.env.JIRA_ZEPHYR_API_TOKEN || ""}`)
+    .digest("hex");
+  if (!forceRefresh && zephyrMemoryCache &&
+      zephyrMemoryCache.fingerprint === fingerprint &&
+      Date.now() - zephyrMemoryCache.fetchedAt < ZEPHYR_CACHE_TTL_MS) {
+    return zephyrMemoryCache.data;
+  }
+  if (zephyrInflight) return zephyrInflight;
+
+  zephyrInflight = fetchZephyrForItems(feed.items)
+    .then((data) => {
+      zephyrMemoryCache = { fetchedAt: Date.now(), fingerprint, data };
+      return data;
+    })
+    .finally(() => { zephyrInflight = null; });
+  return zephyrInflight;
 }
 
 /**

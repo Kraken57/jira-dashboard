@@ -15,6 +15,7 @@ interface QualityTabProps {
   qaCapacity?: QaCapacityData;
   qaRosterConfigured?: number;
   zephyr?: ZephyrData;
+  zephyrLoading?: boolean;
   issues?: IssueRow[];
   qualityItems?: JiraWorkItem[];
   doneStatuses?: string[];
@@ -25,7 +26,7 @@ interface QualityTabProps {
   jiraDomain?: string;
 }
 
-export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues = [], qualityItems, doneStatuses, qaDefects = [], qaUatDefects, qaLeakageDefects, fetchedAt, jiraDomain }: QualityTabProps) {
+export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, zephyrLoading = false, issues = [], qualityItems, doneStatuses, qaDefects = [], qaUatDefects, qaLeakageDefects, fetchedAt, jiraDomain }: QualityTabProps) {
   const [modal, setModal] = useState<{
     title: string;
     subtitle: string;
@@ -623,6 +624,11 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
       </section>
 
       {/* ---- Zephyr test case portfolio ---- */}
+      {zephyrLoading && !zephyr?.available && (
+        <section className="rounded-xl border border-jira-blue/25 bg-jira-blue-bg/50 px-5 py-4 text-sm text-jira-text">
+          Jira dashboard data is ready. Zephyr test cases are loading in the background and will appear here when available.
+        </section>
+      )}
       {zephyr?.available && (
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-200 px-5 py-5 sm:px-6">
@@ -888,7 +894,7 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, issues 
       {/* ---- QA Team Capacity & Workload (phase 1) ---- */}
       {qaCapacity && (
         <>
-          {zephyr?.message && (
+          {zephyr?.message && !zephyrLoading && (
             <div className="rounded-md border border-jira-amber/40 bg-jira-amber/10 px-4 py-3">
               <p className="text-xs font-bold text-jira-text">
                 {zephyr.available ? "Some Zephyr project data is unavailable" : "Zephyr execution data is unavailable"}

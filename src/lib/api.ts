@@ -3,6 +3,7 @@ import {
   DashboardFilters,
   DashboardLoadFailure,
   RawFeedPayload,
+  ZephyrData,
 } from "./jira/types";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "";
@@ -291,6 +292,26 @@ export async function fetchRawFeed(
       res.status,
     );
   }
+}
+
+/** Fetch the optional, slower Zephyr portfolio after the Jira dashboard renders. */
+export async function fetchLocalZephyrData(forceRefresh = false): Promise<ZephyrData> {
+  const url = `${BASE_URL.replace(/\/+$/, "")}/api/jira?zephyr=1${forceRefresh ? "&refresh=1" : ""}`;
+  const response = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
+  const body = await response.text();
+  if (!response.ok) {
+    let detail = body;
+    try {
+      const json = JSON.parse(body) as { details?: string; error?: string };
+      detail = json.details || json.error || body;
+    } catch {
+      // Keep a plain-text server response as the diagnostic.
+    }
+    throw new Error(`Zephyr request failed (${response.status}): ${detail.slice(0, 400)}`);
+  }
+  const result = JSON.parse(body) as { zephyr?: ZephyrData };
+  if (!result.zephyr) throw new Error("The dashboard API returned no Zephyr data.");
+  return result.zephyr;
 }
 
 /** True when the tab copy is older than the 5-min fresh window. */

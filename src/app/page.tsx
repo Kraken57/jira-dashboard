@@ -14,6 +14,7 @@ import {
 import type { DashboardLoadingStage } from "@/components/DashboardLoadState";
 import {
   fetchRawFeed,
+  fetchLocalZephyrData,
   getDashboardLoadFailure,
   isRawFeedStale,
   readSessionRawFeed,
@@ -59,6 +60,7 @@ export default function DashboardPage() {
   >(() => Object.fromEntries(TABS.map((t) => [t.id, { ...EXTRA_DEFAULT }])));
 
   const [feed, setFeed] = useState<RawFeedPayload | null>(null);
+  const [zephyrLoading, setZephyrLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [loadingStage, setLoadingStage] = useState<DashboardLoadingStage>("connecting");
@@ -181,6 +183,31 @@ export default function DashboardPage() {
         }
         writeSessionRawFeed(next);
         setFeed(next);
+        const localRuntime = window.self === window.top;
+        const shouldLoadZephyrSeparately = localRuntime &&
+          (hard || !next.zephyr || isRawFeedStale(next));
+        setZephyrLoading(shouldLoadZephyrSeparately);
+        if (shouldLoadZephyrSeparately) {
+          void fetchLocalZephyrData(hard).then((zephyr) => {
+            if (cancelled) return;
+            setFeed((current) => {
+              if (!current) return current;
+              const updated = { ...current, zephyr };
+              writeSessionRawFeed(updated);
+              return updated;
+            });
+          }).catch((error) => {
+            if (cancelled) return;
+            const message = error instanceof Error ? error.message : "Zephyr data could not be loaded.";
+            console.error("[ZEPHYR_FETCH] Background request failed", message);
+            setFeed((current) => current ? {
+              ...current,
+              zephyr: { available: false, message },
+            } : current);
+          }).finally(() => {
+            if (!cancelled) setZephyrLoading(false);
+          });
+        }
         setLoadingStage("metrics");
         setFeedRequestComplete(true);
         setRefreshing(false);
@@ -195,6 +222,7 @@ export default function DashboardPage() {
         if (!cached) {
           setFeed(null);
         }
+        setZephyrLoading(false);
         setRefreshing(false);
       } finally {
         if (!cancelled && !requestCompleted) setIsLoading(false);
@@ -464,6 +492,7 @@ export default function DashboardPage() {
               qaCapacity={dashboardData.qaCapacity}
               qaRosterConfigured={feed?.config?.qaMembers?.length ?? 0}
               zephyr={dashboardData.zephyr}
+              zephyrLoading={zephyrLoading}
               issues={dashboardData.issueList}
               qualityItems={feed?.items}
               doneStatuses={feed?.config?.doneStatuses}
