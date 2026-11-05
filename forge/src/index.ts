@@ -665,7 +665,10 @@ async function fetchZephyrExecutions(
   pool: any[],
   config: { storyPointsField: string; sprintField: string; podField: string }
 ): Promise<ZephyrData> {
-  const token = process.env.JIRA_ZEPHYR_API_TOKEN?.trim();
+  const token = (process.env.JIRA_ZEPHYR_API_TOKEN?.trim() || "").replace(
+    /^Bearer\s+/i,
+    "",
+  );
   const projects = (process.env.JIRA_ZEPHYR_PROJECT_KEYS || "")
     .split(",").map((x) => x.trim()).filter(Boolean);
   if (!token || !projects.length) {
@@ -682,6 +685,19 @@ async function fetchZephyrExecutions(
     authorizationScheme: "Bearer",
   });
   const base = "https://prod-api.zephyr4jiracloud.com/v2";
+  const allowedZephyrHosts = new Set([
+    "prod-api.zephyr4jiracloud.com",
+    "prod-play.zephyr4jiracloud.com",
+  ]);
+  const normalizeZephyrUrl = (url: URL): URL => {
+    if (url.protocol !== "https:" || !allowedZephyrHosts.has(url.hostname)) {
+      throw new Error("Zephyr returned an unexpected API URL");
+    }
+    // Some Zephyr responses return Connect-prefixed links even though the
+    // Cloud v2 API is served from /v2.
+    url.pathname = url.pathname.replace(/^\/connect\/v2(?=\/|$)/, "/v2");
+    return url;
+  };
   const allPages = async <E extends keyof ZephyrEndpointRows>(endpoint: E, projectKey: string) => {
     const firstUrl = new URL(`${base}/${endpoint}`);
     firstUrl.search = new URLSearchParams({ projectKey, startAt: "0", maxResults: "100" }).toString();
@@ -689,12 +705,9 @@ async function fetchZephyrExecutions(
     let startAt = 0;
     let total: number | undefined;
     const values: ZephyrEndpointRows[E][] = [];
-    const allowedHosts = new Set(["prod-api.zephyr4jiracloud.com", "prod-play.zephyr4jiracloud.com"]);
     let pageCount = 0;
     while (url && pageCount++ < 1000) {
-      if (url.protocol !== "https:" || !allowedHosts.has(url.hostname)) {
-        throw new Error("Zephyr returned an unexpected pagination URL");
-      }
+      url = normalizeZephyrUrl(url);
       const response = await fetch(url, {
         headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
       });
@@ -731,7 +744,7 @@ async function fetchZephyrExecutions(
       if (page.isLast === true || !rows.length) {
         url = null;
       } else if (page.next) {
-        url = new URL(page.next, url);
+        url = normalizeZephyrUrl(new URL(page.next, url));
       } else if (page.isLast === false || rows.length >= (page.maxResults ?? 100)) {
         const fallback = new URL(firstUrl);
         fallback.searchParams.set("startAt", String(startAt));
@@ -778,7 +791,7 @@ async function fetchZephyrExecutions(
       if (!referenceCache.has(self)) referenceCache.set(self, (async () => {
         try {
           const url = new URL(self);
-          if (url.protocol !== "https:" || !["prod-api.zephyr4jiracloud.com", "prod-play.zephyr4jiracloud.com"].includes(url.hostname)) return fallback;
+          normalizeZephyrUrl(url);
           const response = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
           if (!response.ok) return fallback;
           const body = await response.json();
@@ -808,7 +821,8 @@ async function fetchZephyrExecutions(
       if (!self) return [];
       try {
         const url = new URL(self);
-        if (url.protocol !== "https:" || !["prod-api.zephyr4jiracloud.com", "prod-play.zephyr4jiracloud.com"].includes(url.hostname) || !/^\/(?:connect\/)?v2\/testcases\/[^/]+\/links\/?$/.test(url.pathname)) return [];
+        if (!/^\/(?:connect\/)?v2\/testcases\/[^/]+\/links\/?$/.test(url.pathname)) return [];
+        normalizeZephyrUrl(url);
         return [{ rowKey, url }];
       } catch {
         return [];
