@@ -84,7 +84,10 @@ function sprintOrderKey(name: string, meta?: SprintMeta): number {
   const year = Number(name.match(/(\d{4})/)?.[1] || 0);
   const q = Number(name.match(/Q\s*(\d)/i)?.[1] || 0);
   const pi = Number(name.match(/PI\.?\s*(\d)/i)?.[1] || 0);
-  const iter = Number(name.match(/(?:iteration|sprint)\s*(\d+)/i)?.[1] || 0);
+  const iterMatch = name.match(
+    /(?:iteration|sprint)\s*(\d+)|(?:^|[-_\s])S(\d+)(?=$|[-_\s])/i,
+  );
+  const iter = Number(iterMatch?.[1] || iterMatch?.[2] || 0);
   if (year > 0) return year * 1e6 + (q || pi) * 1e4 + iter;
   if (meta?.startDate) {
     const started = Date.parse(meta.startDate);
@@ -787,14 +790,30 @@ export function computeDashboardData(
   const sprintStats = windowNames.map((sprintName) =>
     buildSprintStat(sprintName, activeItems)
   );
+  // Charts use a stable natural quarter/sprint order (for example, Q3 before
+  // Q4 and Iteration 0 before Iteration 1). Keep sprintStats in its existing
+  // order for cards and metric comparisons.
+  const chartSprintStats = [...sprintStats].sort(
+    (a, b) =>
+      sprintOrderKey(a.fullName, sprintMeta[a.fullName]) -
+        sprintOrderKey(b.fullName, sprintMeta[b.fullName]) ||
+      a.name.localeCompare(b.name, undefined, {
+        numeric: true,
+        sensitivity: "base",
+      }) ||
+      a.fullName.localeCompare(b.fullName, undefined, {
+        numeric: true,
+        sensitivity: "base",
+      }),
+  );
 
   // 5. Delivery and Velocity Datasets
   const delivery: DeliveryChartData = {
-    labels: sprintStats.map((s) => s.name),
-    planned: sprintStats.map((s) => s.committed),
-    committed: sprintStats.map((s) => s.committed),
-    done: sprintStats.map((s) => s.done),
-    carried: sprintStats.map((s) => s.carried),
+    labels: chartSprintStats.map((s) => s.name),
+    planned: chartSprintStats.map((s) => s.committed),
+    committed: chartSprintStats.map((s) => s.committed),
+    done: chartSprintStats.map((s) => s.done),
+    carried: chartSprintStats.map((s) => s.carried),
   };
 
   const completedSeries = sprintStats.map((s) => s.done);
@@ -812,9 +831,9 @@ export function computeDashboardData(
     trendDiff > 0 ? "rising" : trendDiff < 0 ? "falling" : "stable";
 
   const velocity: VelocityChartData = {
-    labels: sprintStats.map((s) => s.name),
-    completed: completedSeries,
-    committed: committedSeries,
+    labels: chartSprintStats.map((s) => s.name),
+    completed: chartSprintStats.map((s) => s.done),
+    committed: chartSprintStats.map((s) => s.committed),
     totalFinished,
     avgLastThree,
     trendStatus,
@@ -1315,26 +1334,27 @@ export function computeDashboardData(
   // 11. Trends Details — cumulative counts are running sums of real sprint data.
   let cumulativeIssues = 0;
   let cumulativeDoneIssues = 0;
-  const totalIssuesSeries = sprintStats.map((s) => {
+  const totalIssuesSeries = chartSprintStats.map((s) => {
     cumulativeIssues += s.issueCount;
     return cumulativeIssues;
   });
-  const completedIssuesSeries = sprintStats.map((s) => {
+  const completedIssuesSeries = chartSprintStats.map((s) => {
     cumulativeDoneIssues += s.doneCount;
     return cumulativeDoneIssues;
   });
+  const chartCompletedSeries = chartSprintStats.map((s) => s.done);
 
   const trends: TrendsData = {
     velocityTrend: {
-      labels: sprintStats.map((s) => s.name),
-      velocity: completedSeries,
-      movingAvg: sprintStats.map((_, idx) => {
-        const slice = completedSeries.slice(0, idx + 1);
+      labels: chartSprintStats.map((s) => s.name),
+      velocity: chartCompletedSeries,
+      movingAvg: chartSprintStats.map((_, idx) => {
+        const slice = chartCompletedSeries.slice(0, idx + 1);
         return Math.round(slice.reduce((a, b) => a + b, 0) / slice.length);
       }),
     },
     cumulativeThroughput: {
-      labels: sprintStats.map((s) => s.name),
+      labels: chartSprintStats.map((s) => s.name),
       totalIssues: totalIssuesSeries,
       completedIssues: completedIssuesSeries,
     },
