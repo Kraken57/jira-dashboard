@@ -65,6 +65,10 @@ export function IssuesTab({ issues, auditItems, filters, jiraDomain }: IssuesTab
     const isFeatureParent = (type: string, projectKey?: string) => /^feature$/i.test(type) ||
       (/^epic$/i.test(type) && !projectsWithFeatures.has(projectKey));
     const isStoryParent = (type: string) => /^story$/i.test(type);
+    const isInEstimateExcludedStatus = (status: string) => {
+      const normalized = status.trim().toLowerCase().replace(/[\s_-]+/g, " ");
+      return normalized === "in progress" || normalized === "pending approval";
+    };
     return [
       {
         title: "Orphan Stories",
@@ -89,9 +93,9 @@ export function IssuesTab({ issues, auditItems, filters, jiraDomain }: IssuesTab
       },
       {
         title: "Orphan Defects",
-        note: "Bugs without a linked Story parent",
-        explanation: "A defect is counted when it has no parent, or its parent is not a Story. Parent type is resolved from the fetched Jira issues.",
-        issues: scopedAuditItems.filter((item) => bugType.test(item.workType) && isOrphanedFrom(item, isStoryParent)),
+        note: "Bugs without any linked parent issue",
+        explanation: "A defect is orphaned only when it has no parent issue. A link to a Story, Feature, Epic, or any other parent means it is not orphaned.",
+        issues: scopedAuditItems.filter((item) => bugType.test(item.workType) && !item.parentKey?.trim()),
         tone: "orange",
       },
       {
@@ -100,6 +104,17 @@ export function IssuesTab({ issues, auditItems, filters, jiraDomain }: IssuesTab
         explanation: "A sub-task is counted when it has no parent, or the fetched parent issue is not a Story.",
         issues: scopedAuditItems.filter((item) => subtaskType.test(item.workType) && isOrphanedFrom(item, isStoryParent)),
         tone: "blue",
+      },
+      {
+        title: "Stories Without Estimates",
+        note: "Stories with 0 story points, excluding In Progress and Pending Approval",
+        explanation: "A story is included when it has no story points (0) and its status is not In Progress or Pending Approval.",
+        issues: scopedAuditItems.filter((item) =>
+          storyType.test(item.workType) &&
+          !(item.storyPoints > 0) &&
+          !isInEstimateExcludedStatus(item.status)
+        ),
+        tone: "teal",
       },
     ];
   }, [auditItems, scopedAuditItems]);
@@ -157,6 +172,7 @@ export function IssuesTab({ issues, auditItems, filters, jiraDomain }: IssuesTab
               violet: "border-violet-200 text-violet-800 hover:border-violet-300",
               orange: "border-orange-200 text-orange-800 hover:border-orange-300",
               blue: "border-blue-200 text-blue-800 hover:border-blue-300",
+              teal: "border-teal-200 text-teal-800 hover:border-teal-300",
             };
             return (
               <button
@@ -400,6 +416,7 @@ export function IssuesTab({ issues, auditItems, filters, jiraDomain }: IssuesTab
                   </div>
                   <div className="mt-3 grid gap-x-5 gap-y-1.5 text-xs text-slate-600 sm:grid-cols-2 lg:grid-cols-3">
                     <p><b>Type:</b> {issue.workType}</p>
+                    <p><b>Story points:</b> {issue.storyPoints}</p>
                     <p><b>Parent:</b> {issue.parentKey || "None"}{issue.parentWorkType ? ` · ${issue.parentWorkType}` : ""}</p>
                     <p><b>Pod:</b> {issue.podName || issue.projectName || issue.projectKey || "Unknown"}</p>
                     <p><b>PI:</b> {issue.quarter === "All" ? "Not tagged" : issue.quarter}</p>
