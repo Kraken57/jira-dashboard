@@ -84,6 +84,8 @@ function MultiSelect({
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const selectedItems = items.filter((item) => value.includes(item.id));
+  const selectableIds = items.filter((item) => item.id !== "all").map((item) => item.id);
+  const allSelected = value.length === 0 || selectableIds.every((id) => value.includes(id));
   const summary = value.length === 0
     ? items.find((item) => item.id === "all")?.name ?? "All"
     : value.length === 1
@@ -117,7 +119,7 @@ function MultiSelect({
           <div className="absolute z-30 mt-1 max-h-72 w-full min-w-[220px] overflow-y-auto rounded border border-jira-border bg-white py-1 shadow-lg">
             {items.map((item) => {
               const isAll = item.id === "all";
-              const checked = isAll ? value.length === 0 : value.includes(item.id);
+              const checked = isAll ? allSelected : allSelected || value.includes(item.id);
               return (
                 <label
                   key={item.id}
@@ -127,10 +129,15 @@ function MultiSelect({
                     type="checkbox"
                     checked={checked}
                     onChange={() => {
-                      if (isAll) onChange([]);
-                      else onChange(checked
-                        ? value.filter((id) => id !== item.id)
-                        : [...value, item.id]);
+                      if (isAll) {
+                        onChange([]);
+                      } else {
+                        const current = allSelected ? selectableIds : value;
+                        const next = checked
+                          ? current.filter((id) => id !== item.id)
+                          : [...current, item.id];
+                        onChange(next.length === selectableIds.length ? [] : next);
+                      }
                     }}
                     className="mt-0.5 accent-jira-blue"
                   />

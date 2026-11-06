@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { TabBar } from "@/components/TabBar";
 import { MetricCard } from "@/components/MetricCard";
@@ -55,7 +55,6 @@ const EXTRA_DEFAULT = { developer: [] as string[], status: "all" };
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState("executive");
   const [baseFilters, setBaseFilters] = useState(BASE_DEFAULT);
-  const sprintDefaultScope = useRef<string | null>(null);
   const [extraFilters, setExtraFilters] = useState<
     Record<string, typeof EXTRA_DEFAULT>
   >(() => Object.fromEntries(TABS.map((t) => [t.id, { ...EXTRA_DEFAULT }])));
@@ -112,18 +111,6 @@ export default function DashboardPage() {
       feed.zephyr
     );
   }, [feed, baseFilters.pod, baseFilters.quarter]);
-
-  useEffect(() => {
-    if (!feed || !dropdownData) return;
-    const scopeKey = JSON.stringify([baseFilters.pod, baseFilters.quarter]);
-    if (sprintDefaultScope.current === scopeKey) return;
-    sprintDefaultScope.current = scopeKey;
-    const latestSprints = dropdownData.sprints
-      .filter((sprint) => sprint.id !== "all")
-      .slice(-2)
-      .map((sprint) => sprint.id);
-    setBaseFilters((previous) => ({ ...previous, sprint: latestSprints }));
-  }, [feed, dropdownData, baseFilters.pod, baseFilters.quarter]);
 
   const dashboardData: DashboardData | null = useMemo(() => {
     if (!feed || !Array.isArray(feed.items)) return null;

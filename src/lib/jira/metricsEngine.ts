@@ -44,7 +44,7 @@ export function resolveMetricConfig(): MetricConfig {
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean),
-    sprintWindow: Math.max(1, Number(process.env.JIRA_SPRINT_WINDOW || 2)),
+    sprintWindow: Math.max(1, Number(process.env.JIRA_SPRINT_WINDOW || 5)),
     nextSprintRevealDays: Number(process.env.JIRA_NEXT_SPRINT_REVEAL_DAYS || 5),
     qaCapacityHoursPerWeek: Math.max(0, Number(process.env.JIRA_QA_CAPACITY_HOURS_PER_WEEK ?? 40)),
     qaTestIssueTypes: (process.env.JIRA_QA_TEST_ISSUE_TYPES || "Test")
@@ -730,10 +730,10 @@ export function computeDashboardData(
     completedStoryPoints: Math.round(completedStoryPoints),
   };
 
-  // 4. Sprint window: only sprints that actually have work in the current
-  //    pod/quarter scope, ordered chronologically, limited to the latest few.
+  // 4. Sprint windows come from the pod/quarter scope, independent of the
+  //    selected sprint, so a selected sprint can still be compared to its prior sprint.
   const sprintCountMap = new Map<string, number>();
-  for (const it of activeItems) {
+  for (const it of scopedItems) {
     for (const s of it.sprints || []) {
       const name = s.trim();
       if (!name) continue;
@@ -939,8 +939,9 @@ export function computeDashboardData(
   // Trend comparison uses the latest plotted sprint vs the one before it, even
   // when the cards aggregate the whole selection. This keeps the delta useful
   // instead of always showing 0 for "All Sprints".
-  const currentCompareName =
-    isAllSprints ? lastSprint?.fullName : selectedSprints[selectedSprints.length - 1];
+  const currentCompareName = isAllSprints
+    ? lastSprint?.fullName
+    : windowNames[windowNames.length - 1];
   let compareIndex = currentCompareName
     ? observedSprints.findIndex((name) => name === currentCompareName)
     : -1;
@@ -1842,7 +1843,7 @@ export function computeDashboardData(
     (a, b) => sprintOrderKey(a, effectiveSprintMeta[a]) - sprintOrderKey(b, effectiveSprintMeta[b]),
   );
   const sprints: SprintOption[] = [
-    { id: "all", name: "All Sprints", sub: `Latest ${windowNames.length} shown by default` },
+    { id: "all", name: "All Sprints", sub: `${scopedSprintNames.length} available` },
     ...scopedSprintNames.map((name) => ({
       id: name,
       name: effectiveSprintMeta[name]?.startDate && effectiveSprintMeta[name]?.endDate

@@ -1114,8 +1114,8 @@ function calculateKPIs(
       doneIssueCount: val.doneCount,
     }));
 
-  // Plot only the latest two sprints by default; users can select more.
-  const sprints = allSprints.slice(-2);
+  // Plot only the latest five sprints so the charts stay readable.
+  const sprints = allSprints.slice(-5);
 
   const completedSeries = sprints.map((s) => s.doneStoryPoints);
   const committedSeries = sprints.map((s) => s.storyPoints);
@@ -1644,7 +1644,7 @@ function resolveFeedConfig() {
     subtaskDoneStatuses: SUBTASK_DONE_STATUSES
       ? Array.from(SUBTASK_DONE_STATUSES)
       : ["Done", "Closed", "Resolved", "Completed", "Released", "Accepted"],
-    sprintWindow: 2,
+    sprintWindow: 5,
     nextSprintRevealDays: 5,
     qaCapacityHoursPerWeek: Math.max(0, Number(process.env.JIRA_QA_CAPACITY_HOURS_PER_WEEK ?? 40)),
     qaTestIssueTypes: (
