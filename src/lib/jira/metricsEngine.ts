@@ -44,7 +44,7 @@ export function resolveMetricConfig(): MetricConfig {
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean),
-    sprintWindow: Math.max(1, Number(process.env.JIRA_SPRINT_WINDOW || 5)),
+    sprintWindow: Math.max(1, Number(process.env.JIRA_SPRINT_WINDOW || 2)),
     nextSprintRevealDays: Number(process.env.JIRA_NEXT_SPRINT_REVEAL_DAYS || 5),
     qaCapacityHoursPerWeek: Math.max(0, Number(process.env.JIRA_QA_CAPACITY_HOURS_PER_WEEK ?? 40)),
     qaTestIssueTypes: (process.env.JIRA_QA_TEST_ISSUE_TYPES || "Test")
@@ -69,6 +69,8 @@ const DEFAULT_METRIC_CONFIG: MetricConfig = resolveMetricConfig();
  * Jira project/board without code changes.
  */
 function sprintDisplayName(name: string): string {
+  const commonName = name.match(/^(Sprint\s+\d+)::/i);
+  if (commonName) return commonName[1];
   // "2026-Q3 Iteration 1"             -> "Iteration 1"
   // "DTR 2026 - Q4 - Iteration 2"     -> "Iteration 2"
   // "CY26 PI.3 Sprint 1"              -> "Sprint 1"
@@ -78,6 +80,87 @@ function sprintDisplayName(name: string): string {
     .replace(/^(?:CY)?\d{2}\s+PI\.?\d+\s*(?:-\s*)?/i, "")
     .trim();
   return stripped || name;
+}
+
+function filterValues(value: string | string[]): string[] {
+  const values = Array.isArray(value) ? value : [value];
+  return values.filter((item) => item && item !== "all");
+}
+
+function matchesSelection(value: string, selection: string | string[]): boolean {
+  const selected = filterValues(selection);
+  return selected.length === 0 || selected.includes(value);
+}
+
+function formatSprintRange(startDate: string, endDate: string): string {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return "";
+  const month = new Intl.DateTimeFormat("en", { month: "short", timeZone: "UTC" });
+  const monthDay = new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC" });
+  const startYear = start.getUTCFullYear();
+  const endYear = end.getUTCFullYear();
+  if (startYear === endYear && start.getUTCMonth() === end.getUTCMonth()) {
+    return `${start.getUTCDate()}–${end.getUTCDate()} ${month.format(end)} ${endYear}`;
+  }
+  return `${monthDay.format(start)}–${monthDay.format(end)}${startYear === endYear ? `, ${endYear}` : `, ${startYear}–${endYear}`}`;
+}
+
+/** Map board-specific sprint names to a shared key when Jira dates match. */
+function commonizeSprints(
+  items: JiraWorkItem[],
+  sprintMeta: Record<string, SprintMeta>,
+): { items: JiraWorkItem[]; meta: Record<string, SprintMeta> } {
+  const groups = new Map<string, string[]>();
+  const ranges = new Map<string, { startDate: string; endDate: string }>();
+  for (const [name, meta] of Object.entries(sprintMeta)) {
+    if (!meta.startDate || !meta.endDate) continue;
+    const start = Date.parse(meta.startDate);
+    const end = Date.parse(meta.endDate);
+    if (Number.isNaN(start) || Number.isNaN(end)) continue;
+    const startDate = new Date(start).toISOString().slice(0, 10);
+    const endDate = new Date(end).toISOString().slice(0, 10);
+    const rangeKey = `${startDate}/${endDate}`;
+    groups.set(rangeKey, [...(groups.get(rangeKey) || []), name]);
+    ranges.set(rangeKey, { startDate, endDate });
+  }
+
+  const orderedRanges = [...groups.keys()].sort((a, b) => a.localeCompare(b));
+  const aliases = new Map<string, string>();
+  const commonMeta: Record<string, SprintMeta> = {};
+  for (const [index, rangeKey] of orderedRanges.entries()) {
+    const names = groups.get(rangeKey) || [];
+    const namedSprintNumber = names
+      .map((name) => Number(name.match(/(?:sprint|iteration|iter)\s*[-#._ ]?(\d+)/i)?.[1]))
+      .find((number) => Number.isFinite(number) && number > 0);
+    const number = namedSprintNumber ?? index + 1;
+    const commonLabel = `Sprint ${number}`;
+    const id = `${commonLabel}::${rangeKey}`;
+    const range = ranges.get(rangeKey)!;
+    const states = names.map((name) => sprintMeta[name]?.state).filter(Boolean);
+    commonMeta[id] = {
+      name: id,
+      startDate: range.startDate,
+      endDate: range.endDate,
+      state: states.includes("active") ? "active" : states.includes("future") ? "future" : "closed",
+    };
+    names.forEach((name) => aliases.set(name, id));
+  }
+
+  for (const [name, meta] of Object.entries(sprintMeta)) {
+    if (!aliases.has(name)) {
+      aliases.set(name, name);
+      commonMeta[name] = meta;
+    }
+  }
+
+  return {
+    items: items.map((item) => ({
+      ...item,
+      sprints: item.sprints?.map((name) => aliases.get(name) || name),
+    })),
+    meta: commonMeta,
+  };
 }
 
 function sprintOrderKey(name: string, meta?: SprintMeta): number {
@@ -553,6 +636,11 @@ export function computeDashboardData(
   zephyr?: ZephyrData
 ): DashboardData {
   const { podId, quarterId, sprintId } = filters;
+  const selectedPods = filterValues(podId);
+  const selectedQuarters = filterValues(quarterId);
+  const selectedSprints = filterValues(sprintId);
+  const commonized = commonizeSprints(items, sprintMeta);
+  const effectiveSprintMeta = commonized.meta;
   const DONE_STATUSES = new Set(config.doneStatuses);
   const SUBTASK_DONE_STATUSES = new Set(config.subtaskDoneStatuses);
   // How many recent sprints to plot; a future sprint is surfaced when the
@@ -566,24 +654,23 @@ export function computeDashboardData(
   // Subtasks are execution breakdowns of a parent item; counting them would
   // double-count story points and clutter the issue lists. They are excluded
   // from every metric, popup, and type filter.
-  const workItems = items.filter((item) => !/^sub-?task$/i.test(item.workType));
+  const workItems = commonized.items.filter((item) => !/^sub-?task$/i.test(item.workType));
 
   // 1. Scoped items by Pod & Quarter
   const scopedItems = workItems.filter((item) => {
-    if (podId !== "all" && item.podKey !== podId) return false;
-    if (quarterId !== "all" && item.quarter !== quarterId) return false;
+    if (!matchesSelection(item.podKey, selectedPods)) return false;
+    if (!matchesSelection(item.quarter, selectedQuarters)) return false;
     return true;
   });
 
-  // Pod-only scope: quarter and sprint dropdowns are built from this so the
-  // lists follow the selected pod without being narrowed by other filters.
+  // Pod-only scope keeps the quarter list available while pod filters change.
   const podScopedItems = workItems.filter(
-    (item) => podId === "all" || item.podKey === podId
+    (item) => matchesSelection(item.podKey, selectedPods)
   );
 
   // 2. Active items filtered by selected sprint
   const activeItems = scopedItems.filter((item) => {
-    if (sprintId !== "all" && !matchesSprint(item.sprints, sprintId)) return false;
+    if (selectedSprints.length && !item.sprints?.some((name) => selectedSprints.includes(name))) return false;
     return true;
   });
 
@@ -591,7 +678,7 @@ export function computeDashboardData(
   // every other metric, but contributors need their real execution items.
   // Sub-tasks often have no sprint/quarter of their own, so inherit those from
   // the parent before applying the tab filters.
-  const itemByKey = new Map(items.map((item) => [item.key, item]));
+  const itemByKey = new Map(commonized.items.map((item) => [item.key, item]));
   const withParentContext = (item: JiraWorkItem): JiraWorkItem => {
     if (!/^sub-?task$/i.test(item.workType) || !item.parentKey) return item;
     const parent = itemByKey.get(item.parentKey);
@@ -606,13 +693,13 @@ export function computeDashboardData(
       team: item.team || parent.team,
     };
   };
-  const developerItems = items
+  const developerItems = commonized.items
     .map(withParentContext)
     .filter((item) => {
       if (!/^(story|sub-?task)$/i.test(item.workType)) return false;
-      if (podId !== "all" && item.podKey !== podId) return false;
-      if (quarterId !== "all" && item.quarter !== quarterId) return false;
-      if (sprintId !== "all" && !matchesSprint(item.sprints, sprintId)) return false;
+      if (!matchesSelection(item.podKey, selectedPods)) return false;
+      if (!matchesSelection(item.quarter, selectedQuarters)) return false;
+      if (selectedSprints.length && !item.sprints?.some((name) => selectedSprints.includes(name))) return false;
       return true;
     });
 
@@ -658,14 +745,14 @@ export function computeDashboardData(
     .filter(([, count]) => count > 0)
     .map(([name]) => name)
     .sort(
-      (a, b) => sprintOrderKey(a, sprintMeta[a]) - sprintOrderKey(b, sprintMeta[b])
+      (a, b) => sprintOrderKey(a, effectiveSprintMeta[a]) - sprintOrderKey(b, effectiveSprintMeta[b])
     );
 
   // "Upcoming" is judged by start date: Jira sometimes reports already-started
   // historical sprints as state=future, which must not hide real work.
   const now = Date.now();
   const sprintStatus = (name: string): "Active" | "Closed" | "Upcoming" | "" => {
-    const meta = sprintMeta[name];
+    const meta = effectiveSprintMeta[name];
     if (meta?.state === "active") return "Active";
     const start = meta?.startDate ? Date.parse(meta.startDate) : NaN;
     const end = meta?.endDate ? Date.parse(meta.endDate) : NaN;
@@ -683,7 +770,7 @@ export function computeDashboardData(
   // Only reveal the nearest upcoming sprint when the active one is nearly over.
   const activeEndDays = observedSprints
     .filter((name) => sprintStatus(name) === "Active")
-    .map((name) => daysUntil(sprintMeta[name]?.endDate))
+    .map((name) => daysUntil(effectiveSprintMeta[name]?.endDate))
     .filter((d): d is number => d !== null)
     .sort((a, b) => a - b)[0];
 
@@ -692,14 +779,14 @@ export function computeDashboardData(
     const upcoming = observedSprints
       .filter(isUpcoming)
       .sort(
-        (a, b) => sprintOrderKey(a, sprintMeta[a]) - sprintOrderKey(b, sprintMeta[b])
+        (a, b) => sprintOrderKey(a, effectiveSprintMeta[a]) - sprintOrderKey(b, effectiveSprintMeta[b])
       );
     revealedFuture = upcoming[0] || null;
   }
 
   const windowNames =
-    sprintId !== "all"
-      ? [sprintId]
+    selectedSprints.length
+      ? observedSprints.filter((name) => selectedSprints.includes(name))
       : observedSprints
           .filter((name) => !isUpcoming(name) || name === revealedFuture)
           .slice(-SPRINT_WINDOW);
@@ -716,7 +803,7 @@ export function computeDashboardData(
     const resolvedAt = Date.parse(item.resolutionDate || "");
     if (!Number.isNaN(resolvedAt)) {
       const sprintDates = attachedSprints.map((name) => {
-        const meta = sprintMeta[name];
+        const meta = effectiveSprintMeta[name];
         const start = meta?.startDate ? Date.parse(meta.startDate) : Number.NaN;
         let end = meta?.endDate ? Date.parse(meta.endDate) : Number.NaN;
         if (meta?.endDate && /^\d{4}-\d{2}-\d{2}$/.test(meta.endDate) && !Number.isNaN(end)) end += DAY_MS - 1;
@@ -769,7 +856,7 @@ export function computeDashboardData(
         doneCount += 1;
       }
       const completionIsLater = completionSprint !== null &&
-        sprintOrderKey(completionSprint, sprintMeta[completionSprint]) > sprintOrderKey(sprintName, sprintMeta[sprintName]);
+        sprintOrderKey(completionSprint, effectiveSprintMeta[completionSprint]) > sprintOrderKey(sprintName, effectiveSprintMeta[sprintName]);
       if (!completedHere && (!isDone || completionIsLater || !completionSprint)) {
         carriedSP += sp;
       }
@@ -795,8 +882,8 @@ export function computeDashboardData(
   // order for cards and metric comparisons.
   const chartSprintStats = [...sprintStats].sort(
     (a, b) =>
-      sprintOrderKey(a.fullName, sprintMeta[a.fullName]) -
-        sprintOrderKey(b.fullName, sprintMeta[b.fullName]) ||
+      sprintOrderKey(a.fullName, effectiveSprintMeta[a.fullName]) -
+        sprintOrderKey(b.fullName, effectiveSprintMeta[b.fullName]) ||
       a.name.localeCompare(b.name, undefined, {
         numeric: true,
         sensitivity: "base",
@@ -846,14 +933,14 @@ export function computeDashboardData(
   // Say-Do   = completed committed SP / committed SP.
   // Spillover= spilled-over committed SP / committed SP.
   // Predictability = completed committed SP / planned SP.
-  const isAllSprints = sprintId === "all";
+  const isAllSprints = selectedSprints.length === 0;
   const lastSprint = sprintStats[sprintStats.length - 1];
 
   // Trend comparison uses the latest plotted sprint vs the one before it, even
   // when the cards aggregate the whole selection. This keeps the delta useful
   // instead of always showing 0 for "All Sprints".
   const currentCompareName =
-    sprintId === "all" ? lastSprint?.fullName : sprintId;
+    isAllSprints ? lastSprint?.fullName : selectedSprints[selectedSprints.length - 1];
   let compareIndex = currentCompareName
     ? observedSprints.findIndex((name) => name === currentCompareName)
     : -1;
@@ -898,7 +985,7 @@ export function computeDashboardData(
   // This stops a large pod from dominating the enterprise average. Every
   // other filter combination keeps the existing calculation.
   const isGlobalAll =
-    podId === "all" && quarterId === "all" && sprintId === "all";
+    selectedPods.length === 0 && selectedQuarters.length === 0 && isAllSprints;
   if (isGlobalAll) {
     // Velocity only counts accepted (done) items with real story points.
     // Zero-SP items (including subtasks) cannot contribute velocity.
@@ -998,7 +1085,7 @@ export function computeDashboardData(
   // Feature children can live outside the selected quarter; gather them from the
   // pod scope so remaining work is not understated.
   const forecastChildSource = workItems.filter(
-    (item) => podId === "all" || item.podKey === podId
+    (item) => matchesSelection(item.podKey, selectedPods)
   );
   // Features often have no quarter/sprint of their own. A feature counts as
   // "planned" in the current scope when it is in scope itself or is an
@@ -1071,7 +1158,7 @@ export function computeDashboardData(
       title: isGlobalAll ? "Avg. Sprint Velocity" : "Total Sprint Velocity",
       value: `${currentVelocity} pts`,
       subtitle:
-        sprintId === "all"
+        isAllSprints
           ? isGlobalAll
             ? `Average SP per sprint across ${velocityPodCount} pods`
             : `SP completed across ${windowNames.length} sprints`
@@ -1227,10 +1314,10 @@ export function computeDashboardData(
   // Planned vs unplanned: SP of work created after the active sprint started
   // counts as unplanned. Falls back to all-planned when no sprint dates known.
   const activeSprintName = windowNames.find(
-    (name) => sprintMeta[name]?.state === "active"
+    (name) => effectiveSprintMeta[name]?.state === "active"
   );
   const activeStart = activeSprintName
-    ? Date.parse(sprintMeta[activeSprintName]?.startDate || "")
+    ? Date.parse(effectiveSprintMeta[activeSprintName]?.startDate || "")
     : NaN;
   let plannedSP = 0;
   let unplannedSP = 0;
@@ -1736,10 +1823,10 @@ export function computeDashboardData(
     zephyr
   );
 
-  // Sprint → team mapping, from the pod-only scope so the dropdown keeps the
-  // pod's full sprint list even when a specific sprint is selected.
+  // Sprint → team mapping is scoped by pod and quarter, but not selected sprint,
+  // so the dropdown retains every available sprint for the current scope.
   const sprintTeams = new Map<string, Set<string>>();
-  podScopedItems.forEach((it) => {
+  scopedItems.forEach((it) => {
     const team = it.team || it.podName;
     (it.sprints || []).forEach((s) => {
       const key = s.trim();
@@ -1749,15 +1836,22 @@ export function computeDashboardData(
     });
   });
 
-  // Sprints filter list — only sprints that exist for the selected pod
-  // (and inside the plot window), so switching pods never shows other pods' sprints.
-  const scopedSprintNames = windowNames.filter((name) => sprintTeams.has(name));
+  // The filter list contains all sprints for the selected pod/quarter, not
+  // just the small recent window used by the default charts.
+  const scopedSprintNames = Array.from(sprintTeams.keys()).sort(
+    (a, b) => sprintOrderKey(a, effectiveSprintMeta[a]) - sprintOrderKey(b, effectiveSprintMeta[b]),
+  );
   const sprints: SprintOption[] = [
-    { id: "all", name: "All Sprints", sub: `Latest ${scopedSprintNames.length} sprints` },
-    ...scopedSprintNames.map((name, i) => ({
+    { id: "all", name: "All Sprints", sub: `Latest ${windowNames.length} shown by default` },
+    ...scopedSprintNames.map((name) => ({
       id: name,
-      name: sprintDisplayName(name),
-      sub: Array.from(sprintTeams.get(name) || []).join(", ") || `Sprint ${i + 1}`,
+      name: effectiveSprintMeta[name]?.startDate && effectiveSprintMeta[name]?.endDate
+        ? `${sprintDisplayName(name)} — ${formatSprintRange(effectiveSprintMeta[name].startDate!, effectiveSprintMeta[name].endDate!)}`
+        : sprintDisplayName(name),
+      sub:
+        (sprintTeams.get(name)?.size || 0) > 1
+          ? `Across ${sprintTeams.get(name)!.size} pods`
+          : Array.from(sprintTeams.get(name) || []).join(", "),
     })),
   ];
 

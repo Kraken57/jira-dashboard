@@ -100,10 +100,12 @@ export async function fetchDashboardData(filters: DashboardFilters): Promise<Das
   }
 
   // 3. Next.js API route (localhost / standalone)
+  const serializeSelection = (value: string | string[]) =>
+    Array.isArray(value) ? value.join(",") : value;
   const params = new URLSearchParams({
-    pod: filters.podId,
-    quarter: filters.quarterId,
-    sprint: filters.sprintId,
+    pod: serializeSelection(filters.podId),
+    quarter: serializeSelection(filters.quarterId),
+    sprint: serializeSelection(filters.sprintId),
   });
 
   const url = `${BASE_URL.replace(/\/+$/, "")}/api/jira?${params.toString()}`;

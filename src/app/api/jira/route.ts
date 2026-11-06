@@ -34,9 +34,13 @@ export async function GET(request: NextRequest) {
     }
 
     // Legacy per-filter compute path (fallback; reads the same disk cache).
-    const podId = searchParams.get("pod") || "all";
-    const quarterId = searchParams.get("quarter") || "all";
-    const sprintId = searchParams.get("sprint") || "all";
+    const parseSelection = (key: string) => {
+      const values = (searchParams.get(key) || "all").split(",").filter(Boolean);
+      return values.length > 1 ? values : values[0] || "all";
+    };
+    const podId = parseSelection("pod");
+    const quarterId = parseSelection("quarter");
+    const sprintId = parseSelection("sprint");
 
     const data = await getDashboardData({
       podId,

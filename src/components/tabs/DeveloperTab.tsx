@@ -7,7 +7,7 @@ import { IssuesModal } from "@/components/IssuesModal";
 interface DeveloperTabProps {
   developers: DeveloperStat[];
   podName: string;
-  developerFilter?: string;
+  developerFilter?: string | string[];
   issues?: IssueRow[];
   jiraDomain?: string;
 }
@@ -20,12 +20,17 @@ export function DeveloperTab({
   jiraDomain,
 }: DeveloperTabProps) {
   const [nameSearch, setNameSearch] = useState("");
+  const selectedDevelopers = Array.isArray(developerFilter)
+    ? developerFilter
+    : developerFilter && developerFilter !== "all"
+      ? [developerFilter]
+      : [];
   // Alphabetical so people can find a developer quickly.
   const developers = [...allDevelopers]
     .sort((a, b) => a.name.localeCompare(b.name))
     .filter(
       (d) =>
-        (!developerFilter || developerFilter === "all" || d.name === developerFilter) &&
+        (selectedDevelopers.length === 0 || selectedDevelopers.includes(d.name)) &&
         d.name.toLowerCase().includes(nameSearch.trim().toLowerCase())
     );
   const totalDevs = developers.length;
@@ -44,7 +49,7 @@ export function DeveloperTab({
     developers.reduce((acc, d) => acc + d.completedEstimateHours, 0) * 10
   ) / 10;
   const overallCompletion = totalAssigned > 0 ? Math.round((totalCompleted / totalAssigned) * 100) : 0;
-  const hasDeveloperFilter = Boolean(nameSearch.trim()) || Boolean(developerFilter && developerFilter !== "all");
+  const hasDeveloperFilter = Boolean(nameSearch.trim()) || selectedDevelopers.length > 0;
   const visibleNames = new Set(developers.map((developer) => developer.name));
   const scopedIssues = hasDeveloperFilter
     ? issues.filter((issue) => visibleNames.has(issue.assignee))

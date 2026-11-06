@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { TabBar } from "@/components/TabBar";
 import { MetricCard } from "@/components/MetricCard";
 import { VelocityGrid } from "@/components/VelocityGrid";
-import { TabFilters, FilterKey, FilterState, FilterOption } from "@/components/TabFilters";
+import { TabFilters, FilterKey, FilterState, FilterOption, FilterValue } from "@/components/TabFilters";
 import { IssuesModal } from "@/components/IssuesModal";
 import {
   DashboardLoadErrorPanel,
@@ -49,12 +49,13 @@ const TAB_FILTERS: Record<string, FilterKey[]> = {
   issues: ["pod", "quarter", "sprint"],
 };
 
-const BASE_DEFAULT = { pod: "all", quarter: "all", sprint: "all" };
-const EXTRA_DEFAULT = { developer: "all", status: "all" };
+const BASE_DEFAULT = { pod: [] as string[], quarter: [] as string[], sprint: [] as string[] };
+const EXTRA_DEFAULT = { developer: [] as string[], status: "all" };
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState("executive");
   const [baseFilters, setBaseFilters] = useState(BASE_DEFAULT);
+  const sprintDefaultScope = useRef<string | null>(null);
   const [extraFilters, setExtraFilters] = useState<
     Record<string, typeof EXTRA_DEFAULT>
   >(() => Object.fromEntries(TABS.map((t) => [t.id, { ...EXTRA_DEFAULT }])));
@@ -103,14 +104,26 @@ export default function DashboardPage() {
       feed.items,
       {
         podId: baseFilters.pod,
-        quarterId: "all",
+        quarterId: baseFilters.quarter,
         sprintId: "all",
       },
       feed.sprintMeta,
       feed.config,
       feed.zephyr
     );
-  }, [feed, baseFilters.pod]);
+  }, [feed, baseFilters.pod, baseFilters.quarter]);
+
+  useEffect(() => {
+    if (!feed || !dropdownData) return;
+    const scopeKey = JSON.stringify([baseFilters.pod, baseFilters.quarter]);
+    if (sprintDefaultScope.current === scopeKey) return;
+    sprintDefaultScope.current = scopeKey;
+    const latestSprints = dropdownData.sprints
+      .filter((sprint) => sprint.id !== "all")
+      .slice(-2)
+      .map((sprint) => sprint.id);
+    setBaseFilters((previous) => ({ ...previous, sprint: latestSprints }));
+  }, [feed, dropdownData, baseFilters.pod, baseFilters.quarter]);
 
   const dashboardData: DashboardData | null = useMemo(() => {
     if (!feed || !Array.isArray(feed.items)) return null;
@@ -271,17 +284,25 @@ export default function DashboardPage() {
     };
   }, [isLoading, feedRequestComplete, loadFailure, feed, dashboardData, dropdownData]);
 
-  const updateFilter = (key: FilterKey, value: string) => {
+  const updateFilter = (key: FilterKey, value: FilterValue) => {
     if (key === "pod" || key === "quarter" || key === "sprint") {
+      const selected = Array.isArray(value) ? value : value === "all" ? [] : [value];
       setBaseFilters((prev) => ({
         ...prev,
-        [key]: value,
-        ...(key === "pod" || key === "quarter" ? { sprint: "all" } : {}),
+        [key]: selected,
+        ...(key === "pod" || key === "quarter" ? { sprint: [] } : {}),
       }));
-    } else {
+    } else if (key === "developer") {
+      const selected = Array.isArray(value) ? value : value === "all" ? [] : [value];
       setExtraFilters((prev) => ({
         ...prev,
-        [activeTab]: { ...prev[activeTab], [key]: value },
+        [activeTab]: { ...prev[activeTab], developer: selected },
+      }));
+    } else {
+      if (Array.isArray(value)) return;
+      setExtraFilters((prev) => ({
+        ...prev,
+        [activeTab]: { ...prev[activeTab], status: value },
       }));
     }
   };
@@ -298,11 +319,15 @@ export default function DashboardPage() {
   const quarters = dropdownData?.quarters || [];
   const sprints = dropdownData?.sprints || []
   const metrics = dashboardData?.metrics || [];
-  const selectedPodName = pods.find((p) => p.id === baseFilters.pod)?.name || "All Pods";
-  const selectedQuarterName =
-    quarters.find((q) => q.id === baseFilters.quarter)?.name || "All Quarters";
-  const selectedSprintName =
-    sprints.find((s) => s.id === baseFilters.sprint)?.name || "All Sprints";
+  const selectedPodName = baseFilters.pod.length
+    ? baseFilters.pod.map((id) => pods.find((pod) => pod.id === id)?.name || id).join(", ")
+    : "All Pods";
+  const selectedQuarterName = baseFilters.quarter.length
+    ? baseFilters.quarter.map((id) => quarters.find((quarter) => quarter.id === id)?.name || id).join(", ")
+    : "All Quarters";
+  const selectedSprintName = baseFilters.sprint.length
+    ? baseFilters.sprint.map((id) => sprints.find((sprint) => sprint.id === id)?.name || id).join(", ")
+    : "All Sprints";
   const scopeLabel =
     [
       selectedPodName,
@@ -322,8 +347,9 @@ export default function DashboardPage() {
       case "Sprint Carry Over":
         issues = all.filter((i) => {
           if (!i.isDone) return true;
-          if (baseFilters.sprint === "all" || !i.completionSprint) return false;
-          const selectedStart = feed?.sprintMeta?.[baseFilters.sprint]?.startDate;
+          if (baseFilters.sprint.length === 0 || !i.completionSprint) return false;
+          const selectedSprint = baseFilters.sprint[baseFilters.sprint.length - 1];
+          const selectedStart = feed?.sprintMeta?.[selectedSprint]?.startDate;
           const completionStart = feed?.sprintMeta?.[i.completionSprint]?.startDate;
           const selectedAt = selectedStart ? Date.parse(selectedStart) : Number.NaN;
           const completionAt = completionStart ? Date.parse(completionStart) : Number.NaN;
@@ -331,7 +357,7 @@ export default function DashboardPage() {
             return completionAt > selectedAt;
           }
           const attached = i.sprint.split(", ");
-          return attached.indexOf(i.completionSprint) > attached.indexOf(baseFilters.sprint);
+          return attached.indexOf(i.completionSprint) > attached.indexOf(selectedSprint);
         });
         label = "Not accepted / spilled-over committed work";
         break;
@@ -342,7 +368,7 @@ export default function DashboardPage() {
         break;
       case "Say/Do Ratio":
         issues = all.filter((i) =>
-          i.isDone && (baseFilters.sprint === "all" || i.completionSprint === baseFilters.sprint)
+          i.isDone && (baseFilters.sprint.length === 0 || baseFilters.sprint.includes(i.completionSprint || ""))
         );
         label = "Accepted / completed committed work";
         break;
@@ -511,6 +537,7 @@ export default function DashboardPage() {
               issues={dashboardData.issueList}
               auditItems={feed?.items ?? []}
               filters={{ podId: baseFilters.pod, quarterId: baseFilters.quarter, sprintId: baseFilters.sprint }}
+              sprintMeta={feed?.sprintMeta}
               jiraDomain={dashboardData.jiraBaseUrl}
             />
           )}

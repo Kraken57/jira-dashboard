@@ -356,9 +356,9 @@ export interface DashboardData {
 }
 
 export interface DashboardFilters {
-  podId: string;
-  quarterId: string;
-  sprintId: string;
+  podId: string | string[];
+  quarterId: string | string[];
+  sprintId: string | string[];
 }
 
 export interface JiraWorkItem {

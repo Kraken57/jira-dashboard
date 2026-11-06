@@ -12,12 +12,13 @@ export type FilterKey =
   | "status";
 
 export type FilterState = {
-  pod: string;
-  quarter: string;
-  sprint: string;
-  developer: string;
+  pod: string[];
+  quarter: string[];
+  sprint: string[];
+  developer: string[];
   status: string;
 };
+export type FilterValue = string | string[];
 
 export interface FilterOption {
   id: string;
@@ -69,12 +70,90 @@ function Select({
   );
 }
 
+function MultiSelect({
+  label,
+  items,
+  value,
+  onChange,
+}: {
+  label: string;
+  items: FilterOption[];
+  value: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const selectedItems = items.filter((item) => value.includes(item.id));
+  const summary = value.length === 0
+    ? items.find((item) => item.id === "all")?.name ?? "All"
+    : value.length === 1
+      ? selectedItems[0]?.name ?? "1 selected"
+      : `${selectedItems[0]?.name ?? value[0]} +${value.length - 1}`;
+
+  useEffect(() => {
+    const handler = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  return (
+    <div className="flex min-w-0 flex-1 flex-col gap-1" ref={ref}>
+      <label className="text-xs font-medium uppercase tracking-wider text-jira-text-muted">
+        {label}
+      </label>
+      <div className="relative">
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen((current) => !current)}
+          className="flex w-full items-center justify-between rounded border border-jira-border bg-white px-3 py-2 text-left text-sm font-medium text-jira-text transition-colors hover:bg-jira-bg/50 focus:outline-none focus:ring-1 focus:ring-jira-blue"
+        >
+          <span className="truncate">{summary}</span>
+          <span className="ml-2 text-xs text-jira-text-muted">{open ? "▲" : "▼"}</span>
+        </button>
+        {open && (
+          <div className="absolute z-30 mt-1 max-h-72 w-full min-w-[220px] overflow-y-auto rounded border border-jira-border bg-white py-1 shadow-lg">
+            {items.map((item) => {
+              const isAll = item.id === "all";
+              const checked = isAll ? value.length === 0 : value.includes(item.id);
+              return (
+                <label
+                  key={item.id}
+                  className="flex cursor-pointer items-start gap-2.5 px-3 py-2 text-sm text-jira-text hover:bg-jira-bg/60"
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => {
+                      if (isAll) onChange([]);
+                      else onChange(checked
+                        ? value.filter((id) => id !== item.id)
+                        : [...value, item.id]);
+                    }}
+                    className="mt-0.5 accent-jira-blue"
+                  />
+                  <span className="flex min-w-0 flex-1 items-center justify-between gap-2">
+                    <span className="truncate">{item.name}</span>
+                    {item.sub && <span className="shrink-0 text-xs text-jira-text-muted">{item.sub}</span>}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 interface TabFiltersProps {
   keys: FilterKey[];
   title?: string;
   value: FilterState;
   options: Partial<Record<FilterKey, FilterOption[]>>;
-  onChange: (key: FilterKey, value: string) => void;
+  onChange: (key: FilterKey, value: FilterValue) => void;
   onReset?: () => void;
   snapshot?: ReactNode;
 }
@@ -114,12 +193,21 @@ export function TabFilters({
       <div className="flex flex-wrap gap-4">
         {keys.map((key) => (
           <div key={key} className="flex-1 min-w-[160px]">
-            <Select
-              label={LABELS[key]}
-              items={options[key] || []}
-              value={value[key]}
-              onChange={(id) => onChange(key, id)}
-            />
+            {key === "pod" || key === "quarter" || key === "sprint" || key === "developer" ? (
+              <MultiSelect
+                label={LABELS[key]}
+                items={options[key] || []}
+                value={value[key] as string[]}
+                onChange={(ids) => onChange(key, ids)}
+              />
+            ) : (
+              <Select
+                label={LABELS[key]}
+                items={options[key] || []}
+                value={value[key] as string}
+                onChange={(id) => onChange(key, id)}
+              />
+            )}
           </div>
         ))}
       </div>

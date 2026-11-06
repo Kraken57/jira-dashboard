@@ -797,7 +797,7 @@ Notes:
 - Observed sprints are those with at least one item in the current scope.
 - Ordering uses a numeric key derived from year/quarter/PI/iteration in the name; if that
   fails, the sprint start date; if that fails, the iteration number.
-- Only the latest `JIRA_SPRINT_WINDOW` sprints are plotted (default 5).
+- Only the latest `JIRA_SPRINT_WINDOW` sprints are plotted (default 2).
 - Upcoming sprints are hidden unless the active sprint ends within
   `JIRA_NEXT_SPRINT_REVEAL_DAYS` (default 5).
 - Sprint state is judged by **dates first**, then Jira state. This avoids a real bug where
@@ -1401,7 +1401,7 @@ does not exist.
   dates, with the last-listed sprint as fallback; All-Sprints totals remain de-duplicated.
 - **The trend chart’s “moving average” is an expanding average**, unlike the trailing
   3-sprint average in the Executive velocity chart.
-- **The trend charts are capped** by `JIRA_SPRINT_WINDOW` (default 5).
+- **The trend charts are capped** by `JIRA_SPRINT_WINDOW` (default 2).
 
 ### 17.2 Forge parity
 
@@ -1448,7 +1448,7 @@ If full Forge parity is required, port the logic from `metricsEngine.ts` into
 | **SP** | Story Points |
 | **PI** | Program Increment; mapped to a quarter (`CY26 PI.3`) |
 | **Pod** | Team/service grouping. Custom field value, or Jira project as fallback |
-| **Sprint window** | The latest N sprints shown in charts (default 5) |
+| **Sprint window** | The latest N sprints shown in charts (default 2) |
 | **Done** | Status present in `JIRA_DONE_STATUSES` (exact, case-sensitive) |
 | **Carry over / spillover** | Committed SP not completed in the sprint |
 | **Say/Do** | Done SP ÷ committed SP |
@@ -1477,7 +1477,7 @@ If full Forge parity is required, port the logic from `metricsEngine.ts` into
 | `JIRA_DONE_STATUSES` | no | `Done,Accepted,Released,Closed,Resolved` | Done status names |
 | `JIRA_SUBTASK_DONE_STATUSES` | no | `Done,Closed,Resolved,Completed,Released,Accepted` | Done status names for sub-tasks |
 | `JIRA_CACHE_TTL_MS` | no | `300000` | Local raw-data cache TTL |
-| `JIRA_SPRINT_WINDOW` | no | `5` | Number of sprints plotted |
+| `JIRA_SPRINT_WINDOW` | no | `2` | Number of sprints plotted |
 | `JIRA_NEXT_SPRINT_REVEAL_DAYS` | no | `5` | When to reveal an upcoming sprint |
 | `JIRA_DISCOVERY_ISSUE_TYPE` | no | `Story` | Sample issue type for discovery scripts |
 | `NEXT_PUBLIC_API_BASE_URL` | no | empty | Prefix for `/api/jira` calls |

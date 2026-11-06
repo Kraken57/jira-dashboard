@@ -2,18 +2,19 @@
 
 import { useMemo, useState } from "react";
 import { DetailModal } from "@/components/DetailModal";
-import { DashboardFilters, IssueRow, JiraWorkItem } from "@/lib/jira/types";
+import { DashboardFilters, IssueRow, JiraWorkItem, SprintMeta } from "@/lib/jira/types";
 
 interface IssuesTabProps {
   issues: IssueRow[];
   auditItems: JiraWorkItem[];
   filters: DashboardFilters;
+  sprintMeta?: Record<string, SprintMeta>;
   jiraDomain?: string;
 }
 
 const PAGE_SIZE = 25;
 
-export function IssuesTab({ issues, auditItems, filters, jiraDomain }: IssuesTabProps) {
+export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDomain }: IssuesTabProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedType, setSelectedType] = useState("all");
   const [selectedStatus, setSelectedStatus] = useState("all");
@@ -22,10 +23,18 @@ export function IssuesTab({ issues, auditItems, filters, jiraDomain }: IssuesTab
 
   const scopedAuditItems = useMemo(() => {
     const allByKey = new Map(auditItems.map((item) => [item.key, item]));
-    const sprintMatches = (sprints: string[]) => filters.sprintId === "all" || sprints.some((sprint) => {
-      const sprintName = sprint.trim().toLowerCase();
-      const selected = filters.sprintId.trim().toLowerCase();
-      return sprintName === selected || sprintName.includes(selected) || selected.includes(sprintName);
+    const selectedPods = Array.isArray(filters.podId) ? filters.podId : filters.podId === "all" ? [] : [filters.podId];
+    const selectedQuarters = Array.isArray(filters.quarterId) ? filters.quarterId : filters.quarterId === "all" ? [] : [filters.quarterId];
+    const selectedSprints = Array.isArray(filters.sprintId) ? filters.sprintId : filters.sprintId === "all" ? [] : [filters.sprintId];
+    const sprintMatches = (sprints: string[]) => selectedSprints.length === 0 || sprints.some((name) => {
+      if (selectedSprints.includes(name)) return true;
+      const meta = sprintMeta[name];
+      if (!meta?.startDate || !meta.endDate) return false;
+      const start = Date.parse(meta.startDate);
+      const end = Date.parse(meta.endDate);
+      if (Number.isNaN(start) || Number.isNaN(end)) return false;
+      const range = `${new Date(start).toISOString().slice(0, 10)}/${new Date(end).toISOString().slice(0, 10)}`;
+      return selectedSprints.some((selected) => selected.endsWith(`::${range}`));
     });
     return auditItems.map((item) => {
       if (!/^sub-?task$/i.test(item.workType) || !item.parentKey) return item;
@@ -37,11 +46,11 @@ export function IssuesTab({ issues, auditItems, filters, jiraDomain }: IssuesTab
         sprints: item.sprints.length ? item.sprints : parent.sprints,
       };
     }).filter((item) =>
-      (filters.podId === "all" || item.podKey === filters.podId) &&
-      (filters.quarterId === "all" || item.quarter === filters.quarterId) &&
+      (selectedPods.length === 0 || selectedPods.includes(item.podKey)) &&
+      (selectedQuarters.length === 0 || selectedQuarters.includes(item.quarter)) &&
       sprintMatches(item.sprints)
     );
-  }, [auditItems, filters]);
+  }, [auditItems, filters, sprintMeta]);
 
   const auditCards = useMemo(() => {
     const projectsWithFeatures = new Set(auditItems.filter((item) => /^feature$/i.test(item.workType)).map((item) => item.projectKey));
