@@ -8,6 +8,7 @@ interface DetailModalProps {
   onClose: () => void;
   children: ReactNode;
   wide?: boolean;
+  bodyClassName?: string;
 }
 
 export function DetailModal({
@@ -16,6 +17,7 @@ export function DetailModal({
   onClose,
   children,
   wide,
+  bodyClassName,
 }: DetailModalProps) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -41,7 +43,7 @@ export function DetailModal({
         } max-h-[85vh] flex flex-col`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between px-5 py-4 border-b border-jira-border">
+        <div className="flex shrink-0 items-start justify-between px-5 py-4 border-b border-jira-border">
           <div className="min-w-0">
             <h3 className="text-sm font-bold text-jira-text uppercase tracking-wider">
               {title}
@@ -59,7 +61,7 @@ export function DetailModal({
             ✕
           </button>
         </div>
-        <div className="overflow-y-auto">{children}</div>
+        <div className={bodyClassName ?? "min-h-0 overflow-y-auto"}>{children}</div>
       </div>
     </div>
   );
