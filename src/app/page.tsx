@@ -49,8 +49,12 @@ const TAB_FILTERS: Record<string, FilterKey[]> = {
   issues: ["pod", "quarter", "sprint"],
 };
 
-const BASE_DEFAULT = { pod: [] as string[], quarter: [] as string[], sprint: [] as string[] };
-const EXTRA_DEFAULT = { developer: [] as string[], status: "all" };
+const BASE_DEFAULT = {
+  pod: ["all"],
+  quarter: ["all"],
+  sprint: ["all"],
+};
+const EXTRA_DEFAULT = { developer: ["all"], status: "all" };
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState("executive");
@@ -273,14 +277,14 @@ export default function DashboardPage() {
 
   const updateFilter = (key: FilterKey, value: FilterValue) => {
     if (key === "pod" || key === "quarter" || key === "sprint") {
-      const selected = Array.isArray(value) ? value : value === "all" ? [] : [value];
+      const selected = Array.isArray(value) ? value : [value];
       setBaseFilters((prev) => ({
         ...prev,
         [key]: selected,
-        ...(key === "pod" || key === "quarter" ? { sprint: [] } : {}),
+        ...(key === "pod" || key === "quarter" ? { sprint: ["all"] } : {}),
       }));
     } else if (key === "developer") {
-      const selected = Array.isArray(value) ? value : value === "all" ? [] : [value];
+      const selected = Array.isArray(value) ? value : [value];
       setExtraFilters((prev) => ({
         ...prev,
         [activeTab]: { ...prev[activeTab], developer: selected },
@@ -306,15 +310,21 @@ export default function DashboardPage() {
   const quarters = dropdownData?.quarters || [];
   const sprints = dropdownData?.sprints || []
   const metrics = dashboardData?.metrics || [];
-  const selectedPodName = baseFilters.pod.length
-    ? baseFilters.pod.map((id) => pods.find((pod) => pod.id === id)?.name || id).join(", ")
-    : "All Pods";
-  const selectedQuarterName = baseFilters.quarter.length
-    ? baseFilters.quarter.map((id) => quarters.find((quarter) => quarter.id === id)?.name || id).join(", ")
-    : "All Quarters";
-  const selectedSprintName = baseFilters.sprint.length
-    ? baseFilters.sprint.map((id) => sprints.find((sprint) => sprint.id === id)?.name || id).join(", ")
-    : "All Sprints";
+  const selectedPodName = baseFilters.pod.includes("all")
+    ? "All Pods"
+    : baseFilters.pod.length
+      ? baseFilters.pod.map((id) => pods.find((pod) => pod.id === id)?.name || id).join(", ")
+      : "No Pods";
+  const selectedQuarterName = baseFilters.quarter.includes("all")
+    ? "All Quarters"
+    : baseFilters.quarter.length
+      ? baseFilters.quarter.map((id) => quarters.find((quarter) => quarter.id === id)?.name || id).join(", ")
+      : "No Quarters";
+  const selectedSprintName = baseFilters.sprint.includes("all")
+    ? "All Sprints"
+    : baseFilters.sprint.length
+      ? baseFilters.sprint.map((id) => sprints.find((sprint) => sprint.id === id)?.name || id).join(", ")
+      : "No Sprints";
   const scopeLabel =
     [
       selectedPodName,
@@ -334,8 +344,9 @@ export default function DashboardPage() {
       case "Sprint Carry Over":
         issues = all.filter((i) => {
           if (!i.isDone) return true;
-          if (baseFilters.sprint.length === 0 || !i.completionSprint) return false;
-          const selectedSprint = baseFilters.sprint[baseFilters.sprint.length - 1];
+          if (baseFilters.sprint.includes("all") || baseFilters.sprint.length === 0 || !i.completionSprint) return false;
+          const selectedSprint = baseFilters.sprint.filter((sprint) => sprint !== "all").at(-1);
+          if (!selectedSprint) return false;
           const selectedStart = feed?.sprintMeta?.[selectedSprint]?.startDate;
           const completionStart = feed?.sprintMeta?.[i.completionSprint]?.startDate;
           const selectedAt = selectedStart ? Date.parse(selectedStart) : Number.NaN;
@@ -355,7 +366,7 @@ export default function DashboardPage() {
         break;
       case "Say/Do Ratio":
         issues = all.filter((i) =>
-          i.isDone && (baseFilters.sprint.length === 0 || baseFilters.sprint.includes(i.completionSprint || ""))
+          i.isDone && (baseFilters.sprint.includes("all") || baseFilters.sprint.includes(i.completionSprint || ""))
         );
         label = "Accepted / completed committed work";
         break;

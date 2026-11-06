@@ -85,10 +85,13 @@ function MultiSelect({
   const ref = useRef<HTMLDivElement>(null);
   const selectedItems = items.filter((item) => value.includes(item.id));
   const selectableIds = items.filter((item) => item.id !== "all").map((item) => item.id);
-  const allSelected = value.length === 0 || selectableIds.every((id) => value.includes(id));
-  const summary = value.length === 0
+  const allSelected = value.includes("all")
+    || (selectableIds.length > 0 && selectableIds.every((id) => value.includes(id)));
+  const summary = allSelected
     ? items.find((item) => item.id === "all")?.name ?? "All"
-    : value.length === 1
+    : value.length === 0
+      ? "None selected"
+      : value.length === 1
       ? selectedItems[0]?.name ?? "1 selected"
       : `${selectedItems[0]?.name ?? value[0]} +${value.length - 1}`;
 
@@ -116,38 +119,51 @@ function MultiSelect({
           <span className="ml-2 text-xs text-jira-text-muted">{open ? "▲" : "▼"}</span>
         </button>
         {open && (
-          <div className="absolute z-30 mt-1 max-h-72 w-full min-w-[220px] overflow-y-auto rounded border border-jira-border bg-white py-1 shadow-lg">
-            {items.map((item) => {
-              const isAll = item.id === "all";
-              const checked = isAll ? allSelected : allSelected || value.includes(item.id);
-              return (
-                <label
-                  key={item.id}
-                  className="flex cursor-pointer items-start gap-2.5 px-3 py-2 text-sm text-jira-text hover:bg-jira-bg/60"
-                >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => {
-                      if (isAll) {
-                        onChange([]);
-                      } else {
-                        const current = allSelected ? selectableIds : value;
-                        const next = checked
-                          ? current.filter((id) => id !== item.id)
-                          : [...current, item.id];
-                        onChange(next.length === selectableIds.length ? [] : next);
-                      }
-                    }}
-                    className="mt-0.5 accent-jira-blue"
-                  />
-                  <span className="flex min-w-0 flex-1 items-center justify-between gap-2">
-                    <span className="truncate">{item.name}</span>
-                    {item.sub && <span className="shrink-0 text-xs text-jira-text-muted">{item.sub}</span>}
-                  </span>
-                </label>
-              );
-            })}
+          <div className="absolute z-30 mt-1 w-full min-w-[220px] overflow-hidden rounded border border-jira-border bg-white shadow-lg">
+            <div className="flex items-center justify-between border-b border-jira-border px-3 py-2">
+              <span className="text-xs font-semibold text-jira-text-muted">Select one or more</span>
+              <button
+                type="button"
+                onClick={() => onChange([])}
+                className="text-xs font-semibold text-jira-blue hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-jira-blue"
+              >
+                Deselect all
+              </button>
+            </div>
+            <div className="max-h-64 overflow-y-auto py-1">
+              {items.map((item) => {
+                const isAll = item.id === "all";
+                const checked = isAll ? allSelected : allSelected || value.includes(item.id);
+                return (
+                  <label
+                    key={item.id}
+                    className="flex cursor-pointer items-start gap-2.5 px-3 py-2 text-sm text-jira-text hover:bg-jira-bg/60"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => {
+                        if (isAll) {
+                          onChange(allSelected ? [] : ["all"]);
+                        } else if (allSelected) {
+                          onChange([item.id]);
+                        } else {
+                          const next = checked
+                            ? value.filter((id) => id !== item.id && id !== "all")
+                            : [...value.filter((id) => id !== "all"), item.id];
+                          onChange(selectableIds.every((id) => next.includes(id)) ? ["all"] : next);
+                        }
+                      }}
+                      className="mt-0.5 accent-jira-blue"
+                    />
+                    <span className="flex min-w-0 flex-1 items-center justify-between gap-2">
+                      <span className="truncate">{item.name}</span>
+                      {item.sub && <span className="shrink-0 text-xs text-jira-text-muted">{item.sub}</span>}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>

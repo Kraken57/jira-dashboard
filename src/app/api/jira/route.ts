@@ -35,7 +35,10 @@ export async function GET(request: NextRequest) {
 
     // Legacy per-filter compute path (fallback; reads the same disk cache).
     const parseSelection = (key: string) => {
-      const values = (searchParams.get(key) || "all").split(",").filter(Boolean);
+      const raw = searchParams.get(key);
+      if (raw === null) return "all";
+      if (raw === "") return [];
+      const values = raw.split(",").filter(Boolean);
       return values.length > 1 ? values : values[0] || "all";
     };
     const podId = parseSelection("pod");

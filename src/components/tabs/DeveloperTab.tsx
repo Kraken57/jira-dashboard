@@ -20,17 +20,19 @@ export function DeveloperTab({
   jiraDomain,
 }: DeveloperTabProps) {
   const [nameSearch, setNameSearch] = useState("");
-  const selectedDevelopers = Array.isArray(developerFilter)
+  const developerValues = Array.isArray(developerFilter)
     ? developerFilter
-    : developerFilter && developerFilter !== "all"
+    : developerFilter
       ? [developerFilter]
-      : [];
+      : ["all"];
+  const allDevelopersSelected = developerValues.includes("all");
+  const selectedDevelopers = developerValues.filter((name) => name !== "all");
   // Alphabetical so people can find a developer quickly.
   const developers = [...allDevelopers]
     .sort((a, b) => a.name.localeCompare(b.name))
     .filter(
       (d) =>
-        (selectedDevelopers.length === 0 || selectedDevelopers.includes(d.name)) &&
+        (allDevelopersSelected || selectedDevelopers.includes(d.name)) &&
         d.name.toLowerCase().includes(nameSearch.trim().toLowerCase())
     );
   const totalDevs = developers.length;
@@ -49,7 +51,7 @@ export function DeveloperTab({
     developers.reduce((acc, d) => acc + d.completedEstimateHours, 0) * 10
   ) / 10;
   const overallCompletion = totalAssigned > 0 ? Math.round((totalCompleted / totalAssigned) * 100) : 0;
-  const hasDeveloperFilter = Boolean(nameSearch.trim()) || selectedDevelopers.length > 0;
+  const hasDeveloperFilter = Boolean(nameSearch.trim()) || !allDevelopersSelected;
   const visibleNames = new Set(developers.map((developer) => developer.name));
   const scopedIssues = hasDeveloperFilter
     ? issues.filter((issue) => visibleNames.has(issue.assignee))

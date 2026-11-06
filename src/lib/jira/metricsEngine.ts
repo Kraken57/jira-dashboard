@@ -87,9 +87,12 @@ function filterValues(value: string | string[]): string[] {
   return values.filter((item) => item && item !== "all");
 }
 
+function isAllSelection(value: string | string[]): boolean {
+  return Array.isArray(value) ? value.includes("all") : value === "all";
+}
+
 function matchesSelection(value: string, selection: string | string[]): boolean {
-  const selected = filterValues(selection);
-  return selected.length === 0 || selected.includes(value);
+  return isAllSelection(selection) || filterValues(selection).includes(value);
 }
 
 function formatSprintRange(startDate: string, endDate: string): string {
@@ -106,64 +109,174 @@ function formatSprintRange(startDate: string, endDate: string): string {
   return `${monthDay.format(start)}–${monthDay.format(end)}${startYear === endYear ? `, ${endYear}` : `, ${startYear}–${endYear}`}`;
 }
 
-/** Map board-specific sprint names to a shared key when Jira dates match. */
+function quarterFromSprintName(name: string): string | undefined {
+  const yearQuarter = name.match(/(\d{4})\s*-?\s*Q\s*(\d)/i);
+  if (yearQuarter) return `CY${yearQuarter[1].slice(2)} PI.${Number(yearQuarter[2])}`;
+  const increment = name.match(/CY(\d{2})\s*PI\.?\s*(\d)/i);
+  return increment ? `CY${increment[1]} PI.${Number(increment[2])}` : undefined;
+}
+
+function sprintOrdinal(name: string): number | undefined {
+  const match = name.match(/(?:sprint|iteration|iter)\s*[-#._ ]?(\d+)/i)
+    || name.match(/(?:^|[-_\s])S(\d+)(?=$|[-_\s])/i);
+  const ordinal = Number(match?.[1]);
+  return Number.isFinite(ordinal) && ordinal > 0 ? ordinal : undefined;
+}
+
+function normalizedSprintRange(meta?: SprintMeta): { key: string; startDate: string; endDate: string } | undefined {
+  if (!meta?.startDate || !meta.endDate) return undefined;
+  const start = Date.parse(meta.startDate);
+  const end = Date.parse(meta.endDate);
+  if (Number.isNaN(start) || Number.isNaN(end)) return undefined;
+  const startDate = new Date(start).toISOString().slice(0, 10);
+  const endDate = new Date(end).toISOString().slice(0, 10);
+  return { key: `${startDate}/${endDate}`, startDate, endDate };
+}
+
+/** Unify board-specific names by shared Jira dates, quarter, and sprint ordinal. */
 function commonizeSprints(
   items: JiraWorkItem[],
   sprintMeta: Record<string, SprintMeta>,
 ): { items: JiraWorkItem[]; meta: Record<string, SprintMeta> } {
-  const groups = new Map<string, string[]>();
-  const ranges = new Map<string, { startDate: string; endDate: string }>();
-  for (const [name, meta] of Object.entries(sprintMeta)) {
-    if (!meta.startDate || !meta.endDate) continue;
-    const start = Date.parse(meta.startDate);
-    const end = Date.parse(meta.endDate);
-    if (Number.isNaN(start) || Number.isNaN(end)) continue;
-    const startDate = new Date(start).toISOString().slice(0, 10);
-    const endDate = new Date(end).toISOString().slice(0, 10);
-    const rangeKey = `${startDate}/${endDate}`;
-    groups.set(rangeKey, [...(groups.get(rangeKey) || []), name]);
-    ranges.set(rangeKey, { startDate, endDate });
+  const quarterCountsBySprint = new Map<string, Map<string, number>>();
+  for (const item of items) {
+    if (!item.quarter || item.quarter === "All") continue;
+    for (const name of item.sprints || []) {
+      const counts = quarterCountsBySprint.get(name) || new Map<string, number>();
+      counts.set(item.quarter, (counts.get(item.quarter) || 0) + 1);
+      quarterCountsBySprint.set(name, counts);
+    }
+  }
+  const allNames = new Set([
+    ...Object.keys(sprintMeta),
+    ...items.flatMap((item) => item.sprints || []),
+  ]);
+  const details = new Map<string, {
+    quarter?: string;
+    ordinal?: number;
+    range?: { key: string; startDate: string; endDate: string };
+  }>();
+  for (const name of allNames) {
+    const range = normalizedSprintRange(sprintMeta[name]);
+    const namedQuarter = quarterFromSprintName(name);
+    const quarterCounts = quarterCountsBySprint.get(name);
+    const associatedQuarter = quarterCounts
+      ? [...quarterCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]
+      : undefined;
+    details.set(name, {
+      quarter: namedQuarter || associatedQuarter,
+      ordinal: sprintOrdinal(name),
+      range,
+    });
   }
 
-  const orderedRanges = [...groups.keys()].sort((a, b) => a.localeCompare(b));
+  const parent = new Map([...allNames].map((name) => [name, name]));
+  const find = (name: string): string => {
+    const root = parent.get(name) || name;
+    if (root === name) return name;
+    const resolved = find(root);
+    parent.set(name, resolved);
+    return resolved;
+  };
+  const union = (left: string, right: string) => {
+    const leftRoot = find(left);
+    const rightRoot = find(right);
+    if (leftRoot !== rightRoot) parent.set(rightRoot, leftRoot);
+  };
+  const firstByRange = new Map<string, string>();
+  const firstByQuarterOrdinal = new Map<string, string>();
+  for (const [name, info] of details) {
+    if (info.range) {
+      const first = firstByRange.get(info.range.key);
+      if (first) union(first, name);
+      else firstByRange.set(info.range.key, name);
+    }
+    if (info.quarter && info.ordinal) {
+      const key = `${info.quarter}:sprint:${info.ordinal}`;
+      const first = firstByQuarterOrdinal.get(key);
+      if (first) union(first, name);
+      else firstByQuarterOrdinal.set(key, name);
+    }
+  }
+
+  const groups = new Map<string, string[]>();
+  for (const name of allNames) {
+    const root = find(name);
+    groups.set(root, [...(groups.get(root) || []), name]);
+  }
+  const groupRanges = new Map<string, Map<string, { key: string; startDate: string; endDate: string; count: number }>>();
+  for (const [root, names] of groups) {
+    const ranges = new Map<string, { key: string; startDate: string; endDate: string; count: number }>();
+    for (const name of names) {
+      const range = details.get(name)?.range;
+      if (!range) continue;
+      const current = ranges.get(range.key);
+      ranges.set(range.key, { ...range, count: (current?.count || 0) + 1 });
+    }
+    groupRanges.set(root, ranges);
+  }
+  const groupOrder = [...groups.keys()].sort((a, b) => {
+    const aRange = [...(groupRanges.get(a)?.values() || [])].sort((x, y) => y.count - x.count)[0];
+    const bRange = [...(groupRanges.get(b)?.values() || [])].sort((x, y) => y.count - x.count)[0];
+    const aDetails = (groups.get(a) || []).map((name) => details.get(name));
+    const bDetails = (groups.get(b) || []).map((name) => details.get(name));
+    const aQuarter = aDetails.find((detail) => detail?.quarter)?.quarter || "";
+    const bQuarter = bDetails.find((detail) => detail?.quarter)?.quarter || "";
+    const quarterOrder = aQuarter.localeCompare(bQuarter, undefined, { numeric: true });
+    if (quarterOrder) return quarterOrder;
+    if (aRange?.startDate && bRange?.startDate) {
+      return aRange.startDate.localeCompare(bRange.startDate);
+    }
+    if (aRange?.startDate) return -1;
+    if (bRange?.startDate) return 1;
+    const aOrdinal = Math.min(...aDetails.map((detail) => detail?.ordinal ?? Infinity));
+    const bOrdinal = Math.min(...bDetails.map((detail) => detail?.ordinal ?? Infinity));
+    return aOrdinal - bOrdinal || a.localeCompare(b, undefined, { numeric: true });
+  });
   const aliases = new Map<string, string>();
   const commonMeta: Record<string, SprintMeta> = {};
-  for (const [index, rangeKey] of orderedRanges.entries()) {
-    const names = groups.get(rangeKey) || [];
-    const namedSprintNumber = names
-      .map((name) => Number(name.match(/(?:sprint|iteration|iter)\s*[-#._ ]?(\d+)/i)?.[1]))
-      .find((number) => Number.isFinite(number) && number > 0);
-    const number = namedSprintNumber ?? index + 1;
+  const sprintNumberByQuarter = new Map<string, number>();
+  for (const groupKey of groupOrder) {
+    const names = groups.get(groupKey) || [];
+    const byRange = [...(groupRanges.get(groupKey)?.entries() || [])]
+      .sort((a, b) => b[1].count - a[1].count || a[0].localeCompare(b[0]));
+    const range = byRange[0]?.[1];
+    const quarterCounts = new Map<string, number>();
+    names.forEach((name) => {
+      const quarter = details.get(name)?.quarter;
+      if (quarter) quarterCounts.set(quarter, (quarterCounts.get(quarter) || 0) + 1);
+    });
+    const quarter = names.map((name) => details.get(name)?.quarter).find(Boolean);
+    const commonQuarter = [...quarterCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] || quarter || "All";
+    const number = (sprintNumberByQuarter.get(commonQuarter) || 0) + 1;
+    sprintNumberByQuarter.set(commonQuarter, number);
     const commonLabel = `Sprint ${number}`;
-    const id = `${commonLabel}::${rangeKey}`;
-    const range = ranges.get(rangeKey)!;
+    const id = `${commonLabel}::${range?.key || quarter || groupKey}`;
     const states = names.map((name) => sprintMeta[name]?.state).filter(Boolean);
     commonMeta[id] = {
       name: id,
-      startDate: range.startDate,
-      endDate: range.endDate,
-      state: states.includes("active") ? "active" : states.includes("future") ? "future" : "closed",
+      ...(range ? { startDate: range.startDate, endDate: range.endDate } : {}),
+      ...(states.length
+        ? { state: states.includes("active") ? "active" : states.includes("future") ? "future" : "closed" }
+        : {}),
     };
     names.forEach((name) => aliases.set(name, id));
-  }
-
-  for (const [name, meta] of Object.entries(sprintMeta)) {
-    if (!aliases.has(name)) {
-      aliases.set(name, name);
-      commonMeta[name] = meta;
-    }
   }
 
   return {
     items: items.map((item) => ({
       ...item,
-      sprints: item.sprints?.map((name) => aliases.get(name) || name),
+      sprints: [...new Set((item.sprints || []).map((name) => aliases.get(name) || name))],
     })),
     meta: commonMeta,
   };
 }
 
 function sprintOrderKey(name: string, meta?: SprintMeta): number {
+  if (meta?.startDate) {
+    const started = Date.parse(meta.startDate);
+    if (!Number.isNaN(started)) return started;
+  }
   const year = Number(name.match(/(\d{4})/)?.[1] || 0);
   const q = Number(name.match(/Q\s*(\d)/i)?.[1] || 0);
   const pi = Number(name.match(/PI\.?\s*(\d)/i)?.[1] || 0);
@@ -172,10 +285,6 @@ function sprintOrderKey(name: string, meta?: SprintMeta): number {
   );
   const iter = Number(iterMatch?.[1] || iterMatch?.[2] || 0);
   if (year > 0) return year * 1e6 + (q || pi) * 1e4 + iter;
-  if (meta?.startDate) {
-    const started = Date.parse(meta.startDate);
-    if (!Number.isNaN(started)) return started;
-  }
   return iter;
 }
 
@@ -365,7 +474,7 @@ function derivePods(items: JiraWorkItem[]): PodOption[] {
     { id: "all", key: "ALL", name: "All Pods", sub: `${map.size} pods` },
   ];
   for (const [key, val] of Array.from(map.entries()).sort()) {
-    pods.push({ id: key, key, name: val.name, sub: `${val.count} issues` });
+    pods.push({ id: key, key, name: val.name, sub: `${val.count} work items` });
   }
   return pods;
 }
@@ -388,7 +497,7 @@ function deriveQuarters(items: JiraWorkItem[]): QuarterOption[] {
   for (const q of Array.from(counts.keys()).sort(
     (a, b) => quarterSortKey(a) - quarterSortKey(b)
   )) {
-    quarters.push({ id: q, name: q, sub: `${counts.get(q)} issues` });
+    quarters.push({ id: q, name: q, sub: `${counts.get(q)} work items` });
   }
   return quarters;
 }
@@ -636,9 +745,8 @@ export function computeDashboardData(
   zephyr?: ZephyrData
 ): DashboardData {
   const { podId, quarterId, sprintId } = filters;
-  const selectedPods = filterValues(podId);
-  const selectedQuarters = filterValues(quarterId);
   const selectedSprints = filterValues(sprintId);
+  const allSprintsSelected = isAllSelection(sprintId);
   const commonized = commonizeSprints(items, sprintMeta);
   const effectiveSprintMeta = commonized.meta;
   const DONE_STATUSES = new Set(config.doneStatuses);
@@ -658,19 +766,19 @@ export function computeDashboardData(
 
   // 1. Scoped items by Pod & Quarter
   const scopedItems = workItems.filter((item) => {
-    if (!matchesSelection(item.podKey, selectedPods)) return false;
-    if (!matchesSelection(item.quarter, selectedQuarters)) return false;
+    if (!matchesSelection(item.podKey, podId)) return false;
+    if (!matchesSelection(item.quarter, quarterId)) return false;
     return true;
   });
 
   // Pod-only scope keeps the quarter list available while pod filters change.
   const podScopedItems = workItems.filter(
-    (item) => matchesSelection(item.podKey, selectedPods)
+    (item) => matchesSelection(item.podKey, podId)
   );
 
   // 2. Active items filtered by selected sprint
   const activeItems = scopedItems.filter((item) => {
-    if (selectedSprints.length && !item.sprints?.some((name) => selectedSprints.includes(name))) return false;
+    if (!allSprintsSelected && !item.sprints?.some((name) => selectedSprints.includes(name))) return false;
     return true;
   });
 
@@ -697,9 +805,9 @@ export function computeDashboardData(
     .map(withParentContext)
     .filter((item) => {
       if (!/^(story|sub-?task)$/i.test(item.workType)) return false;
-      if (!matchesSelection(item.podKey, selectedPods)) return false;
-      if (!matchesSelection(item.quarter, selectedQuarters)) return false;
-      if (selectedSprints.length && !item.sprints?.some((name) => selectedSprints.includes(name))) return false;
+      if (!matchesSelection(item.podKey, podId)) return false;
+      if (!matchesSelection(item.quarter, quarterId)) return false;
+      if (!allSprintsSelected && !item.sprints?.some((name) => selectedSprints.includes(name))) return false;
       return true;
     });
 
@@ -785,7 +893,7 @@ export function computeDashboardData(
   }
 
   const windowNames =
-    selectedSprints.length
+    !allSprintsSelected
       ? observedSprints.filter((name) => selectedSprints.includes(name))
       : observedSprints
           .filter((name) => !isUpcoming(name) || name === revealedFuture)
@@ -933,7 +1041,7 @@ export function computeDashboardData(
   // Say-Do   = completed committed SP / committed SP.
   // Spillover= spilled-over committed SP / committed SP.
   // Predictability = completed committed SP / planned SP.
-  const isAllSprints = selectedSprints.length === 0;
+  const isAllSprints = allSprintsSelected;
   const lastSprint = sprintStats[sprintStats.length - 1];
 
   // Trend comparison uses the latest plotted sprint vs the one before it, even
@@ -986,7 +1094,7 @@ export function computeDashboardData(
   // This stops a large pod from dominating the enterprise average. Every
   // other filter combination keeps the existing calculation.
   const isGlobalAll =
-    selectedPods.length === 0 && selectedQuarters.length === 0 && isAllSprints;
+    isAllSelection(podId) && isAllSelection(quarterId) && isAllSprints;
   if (isGlobalAll) {
     // Velocity only counts accepted (done) items with real story points.
     // Zero-SP items (including subtasks) cannot contribute velocity.
@@ -1086,7 +1194,7 @@ export function computeDashboardData(
   // Feature children can live outside the selected quarter; gather them from the
   // pod scope so remaining work is not understated.
   const forecastChildSource = workItems.filter(
-    (item) => matchesSelection(item.podKey, selectedPods)
+    (item) => matchesSelection(item.podKey, podId)
   );
   // Features often have no quarter/sprint of their own. A feature counts as
   // "planned" in the current scope when it is in scope itself or is an
@@ -1828,12 +1936,11 @@ export function computeDashboardData(
   // so the dropdown retains every available sprint for the current scope.
   const sprintTeams = new Map<string, Set<string>>();
   scopedItems.forEach((it) => {
-    const team = it.team || it.podName;
     (it.sprints || []).forEach((s) => {
       const key = s.trim();
       if (!key) return;
       if (!sprintTeams.has(key)) sprintTeams.set(key, new Set());
-      sprintTeams.get(key)!.add(team);
+      sprintTeams.get(key)!.add(it.podKey);
     });
   });
 
@@ -1849,10 +1956,9 @@ export function computeDashboardData(
       name: effectiveSprintMeta[name]?.startDate && effectiveSprintMeta[name]?.endDate
         ? `${sprintDisplayName(name)} — ${formatSprintRange(effectiveSprintMeta[name].startDate!, effectiveSprintMeta[name].endDate!)}`
         : sprintDisplayName(name),
-      sub:
-        (sprintTeams.get(name)?.size || 0) > 1
-          ? `Across ${sprintTeams.get(name)!.size} pods`
-          : Array.from(sprintTeams.get(name) || []).join(", "),
+      sub: (sprintTeams.get(name)?.size || 0) > 1
+        ? `Across ${sprintTeams.get(name)!.size} pods`
+        : "1 pod",
     })),
   ];
 

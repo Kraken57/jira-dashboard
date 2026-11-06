@@ -23,10 +23,15 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
 
   const scopedAuditItems = useMemo(() => {
     const allByKey = new Map(auditItems.map((item) => [item.key, item]));
-    const selectedPods = Array.isArray(filters.podId) ? filters.podId : filters.podId === "all" ? [] : [filters.podId];
-    const selectedQuarters = Array.isArray(filters.quarterId) ? filters.quarterId : filters.quarterId === "all" ? [] : [filters.quarterId];
-    const selectedSprints = Array.isArray(filters.sprintId) ? filters.sprintId : filters.sprintId === "all" ? [] : [filters.sprintId];
-    const sprintMatches = (sprints: string[]) => selectedSprints.length === 0 || sprints.some((name) => {
+    const podValues = Array.isArray(filters.podId) ? filters.podId : [filters.podId];
+    const quarterValues = Array.isArray(filters.quarterId) ? filters.quarterId : [filters.quarterId];
+    const selectedSprints = Array.isArray(filters.sprintId) ? filters.sprintId : [filters.sprintId];
+    const allPods = podValues.includes("all");
+    const allQuarters = quarterValues.includes("all");
+    const allSprints = selectedSprints.includes("all");
+    const selectedPods = podValues.filter((id) => id !== "all");
+    const selectedQuarters = quarterValues.filter((id) => id !== "all");
+    const sprintMatches = (sprints: string[]) => allSprints || (selectedSprints.length > 0 && sprints.some((name) => {
       if (selectedSprints.includes(name)) return true;
       const meta = sprintMeta[name];
       if (!meta?.startDate || !meta.endDate) return false;
@@ -35,7 +40,7 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
       if (Number.isNaN(start) || Number.isNaN(end)) return false;
       const range = `${new Date(start).toISOString().slice(0, 10)}/${new Date(end).toISOString().slice(0, 10)}`;
       return selectedSprints.some((selected) => selected.endsWith(`::${range}`));
-    });
+    }));
     return auditItems.map((item) => {
       if (!/^sub-?task$/i.test(item.workType) || !item.parentKey) return item;
       const parent = allByKey.get(item.parentKey);
@@ -46,8 +51,8 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
         sprints: item.sprints.length ? item.sprints : parent.sprints,
       };
     }).filter((item) =>
-      (selectedPods.length === 0 || selectedPods.includes(item.podKey)) &&
-      (selectedQuarters.length === 0 || selectedQuarters.includes(item.quarter)) &&
+      (allPods || selectedPods.includes(item.podKey)) &&
+      (allQuarters || selectedQuarters.includes(item.quarter)) &&
       sprintMatches(item.sprints)
     );
   }, [auditItems, filters, sprintMeta]);
