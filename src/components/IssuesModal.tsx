@@ -420,7 +420,7 @@ export function IssuesModal({
             aria-label="Sort work items"
             className="text-xs border border-jira-border rounded-md px-2 py-1.5 bg-white focus:outline-none focus:border-jira-blue"
           >
-            <option value="default">Default order</option>
+            <option value="default">Sort order</option>
             <option value="sp-desc">SP high → low</option>
             <option value="sp-asc">SP low → high</option>
             {hasHours && <option value="hrs-desc">Hours high → low</option>}

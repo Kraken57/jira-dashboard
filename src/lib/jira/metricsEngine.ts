@@ -752,6 +752,13 @@ export function computeDashboardData(
   const allSprintsSelected = isAllSelection(sprintId);
   const commonized = commonizeSprints(items, sprintMeta);
   const effectiveSprintMeta = commonized.meta;
+  // An issue can retain sprint history from several quarters. Filter each
+  // sprint's own quarter as well as the issue's current quarter.
+  const matchesSprintQuarter = (name: string) => {
+    if (isAllSelection(quarterId)) return true;
+    const quarter = name.split("::")[2];
+    return Boolean(quarter && matchesSelection(quarter, quarterId));
+  };
   const DONE_STATUSES = new Set(config.doneStatuses);
   const SUBTASK_DONE_STATUSES = new Set(config.subtaskDoneStatuses);
   // How many recent sprints to plot; a future sprint is surfaced when the
@@ -847,7 +854,7 @@ export function computeDashboardData(
   for (const it of scopedItems) {
     for (const s of it.sprints || []) {
       const name = s.trim();
-      if (!name) continue;
+      if (!name || !matchesSprintQuarter(name)) continue;
       sprintCountMap.set(name, (sprintCountMap.get(name) || 0) + 1);
     }
   }
@@ -1941,7 +1948,7 @@ export function computeDashboardData(
   scopedItems.forEach((it) => {
     (it.sprints || []).forEach((s) => {
       const key = s.trim();
-      if (!key) return;
+      if (!key || !matchesSprintQuarter(key)) return;
       if (!sprintTeams.has(key)) sprintTeams.set(key, new Set());
       sprintTeams.get(key)!.add(it.podKey);
     });
