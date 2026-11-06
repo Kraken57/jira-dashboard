@@ -7,6 +7,7 @@ import { MetricCard } from "@/components/MetricCard";
 import { VelocityGrid } from "@/components/VelocityGrid";
 import { TabFilters, FilterKey, FilterState, FilterOption, FilterValue } from "@/components/TabFilters";
 import { IssuesModal } from "@/components/IssuesModal";
+import { FeatureDetailsModal } from "@/components/FeatureDetailsModal";
 import {
   DashboardLoadErrorPanel,
   DashboardLoadingOverlay,
@@ -360,6 +361,7 @@ export default function DashboardPage() {
         label = "Not accepted / spilled-over committed work";
         break;
       case "Avg. Sprint Velocity":
+      case "Velocity":
       case "Total Sprint Velocity":
         issues = all.filter((i) => i.isDone);
         label = "Completed work items";
@@ -370,11 +372,11 @@ export default function DashboardPage() {
         );
         label = "Accepted / completed committed work";
         break;
-      case "Future Predictability":
+      case "Feature Predictability":
         // The card computes over the scope-aware feature pool (features often
         // lack sprint/quarter of their own), so the popup must read the same
         // pool, not issueList — otherwise it shows "No work items".
-        issues = (dashboardData.podFeatureList ?? all).filter((i) => i.reason);
+        issues = dashboardData.podFeatureList ?? all;
         label = "Planned and past-due features vs due-date forecast";
         break;
     }
@@ -497,7 +499,7 @@ export default function DashboardPage() {
           )}
 
           {activeTab === "pod" && dashboardData && (
-            <PodTab data={dashboardData} podName={selectedPodName} />
+            <PodTab data={dashboardData} podName={selectedPodName} items={feed?.items ?? []} doneStatuses={feed?.config?.doneStatuses ?? []} />
           )}
 
           {activeTab === "developer" && dashboardData && (
@@ -547,7 +549,9 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {issueModal && dashboardData && (
+        {issueModal?.title === "Feature Predictability" && dashboardData ? (
+          <FeatureDetailsModal features={issueModal.issues} items={feed?.items ?? []} doneStatuses={feed?.config?.doneStatuses ?? []} jiraDomain={dashboardData.jiraBaseUrl} onClose={() => setIssueModal(null)} />
+        ) : issueModal && dashboardData && (
           <IssuesModal
             title={issueModal.title}
             subtitle={issueModal.subtitle}

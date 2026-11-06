@@ -383,4 +383,6 @@ export interface JiraWorkItem {
   createdDate?: string;
   dueDate?: string;
   originalEstimateSeconds?: number;
+  timeSpentSeconds?: number;
+  startDate?: string;
 }

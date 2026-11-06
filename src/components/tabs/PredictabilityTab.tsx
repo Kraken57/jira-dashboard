@@ -113,7 +113,7 @@ export function PredictabilityTab({ data }: PredictabilityTabProps) {
               <>
                 <p>
                   <span className="font-semibold text-jira-text">What this shows: </span>
-                  The same forecast as the Executive Summary Future Predictability card.
+                  The same forecast as the Executive Summary Feature Predictability card.
                   It compares remaining child story points with weekday capacity until
                   each feature’s due date.
                 </p>

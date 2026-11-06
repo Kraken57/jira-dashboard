@@ -230,6 +230,8 @@ const GENERIC: Omit<MetricInsight, "recent" | "trend"> = {
 };
 
 export function getMetricDefinition(title: string): Omit<MetricInsight, "recent" | "trend"> {
+  if (title === "Velocity") return DEFINITIONS["Total Sprint Velocity"];
+  if (title === "Feature Predictability") return DEFINITIONS["Future Predictability"];
   if (DEFINITIONS[title]) return DEFINITIONS[title];
 
   if (/ Priority$/.test(title)) {

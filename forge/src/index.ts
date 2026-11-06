@@ -320,6 +320,9 @@ function mapIssueToWorkItem(
     resolutionDate: fields.resolutiondate ? String(fields.resolutiondate) : undefined,
     dueDate: fields.duedate ? String(fields.duedate) : undefined,
     originalEstimateSeconds: Number(fields.timeoriginalestimate) || 0,
+    timeSpentSeconds: Number(fields.timespent) || 0,
+    startDate: process.env.JIRA_START_DATE_FIELD && fields[process.env.JIRA_START_DATE_FIELD]
+      ? String(fields[process.env.JIRA_START_DATE_FIELD]) : undefined,
     updatedDate: String(fields.updated || ""),
   };
 }
@@ -1627,8 +1630,8 @@ function calculateKPIs(
  * is fresh enough, refreshed on demand otherwise. Values are zlib-deflated
  * and chunked because KVS caps individual values.
  */
-const FEED_META_KEY = "raw-feed-v5-meta";
-const FEED_PART_KEY = "raw-feed-v5-part-";
+const FEED_META_KEY = "raw-feed-v6-meta";
+const FEED_PART_KEY = "raw-feed-v6-part-";
 // Legacy @forge/api storage caps a single persisted value at ~128 KB raw.
 // 90 KB compressed -> ~120 KB base64, under the cap; a 930-item feed still
 // needs a single part. Raise to ~175 KB after the @forge/kvs flip (240 KiB).
@@ -1700,6 +1703,8 @@ async function fetchAndStoreFeed(): Promise<FeedEnvelope> {
     "resolutiondate",
     "duedate",
     "timeoriginalestimate",
+    "timespent",
+    ...(process.env.JIRA_START_DATE_FIELD ? [process.env.JIRA_START_DATE_FIELD] : []),
     config.storyPointsField,
     config.sprintField,
     config.podField,
@@ -1827,6 +1832,8 @@ resolver.define("getDashboardData", async (req) => {
       "resolutiondate",
       "duedate",
       "timeoriginalestimate",
+      "timespent",
+      ...(process.env.JIRA_START_DATE_FIELD ? [process.env.JIRA_START_DATE_FIELD] : []),
       config.storyPointsField,
       config.sprintField,
       config.podField,

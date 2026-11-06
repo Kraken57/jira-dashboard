@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { Pie } from "react-chartjs-2";
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from "chart.js";
-import { DashboardData, IssueRow } from "@/lib/jira/types";
+import { DashboardData, IssueRow, JiraWorkItem } from "@/lib/jira/types";
+import { FeatureDetailsModal } from "@/components/FeatureDetailsModal";
 import { IssuesModal } from "@/components/IssuesModal";
 
 ChartJS.register(ArcElement, Tooltip, Legend);
@@ -26,9 +27,11 @@ const PIE_COLORS = [
 interface PodTabProps {
   data: DashboardData;
   podName: string;
+  items: JiraWorkItem[];
+  doneStatuses: string[];
 }
 
-export function PodTab({ data, podName }: PodTabProps) {
+export function PodTab({ data, podName, items, doneStatuses }: PodTabProps) {
   const { summary, sprintAnalysis } = data;
   const issues = data.issueList;
 
@@ -42,7 +45,21 @@ export function PodTab({ data, podName }: PodTabProps) {
     ? featureSource.filter(isFeatureType)
     : featureSource.filter(isEpicType);
   const stories = issues.filter((i) => /^story$/i.test(i.workType));
-  const completedFeatures = features.filter((i) => i.isDone);
+  const completedFeatures = features.filter((feature) => {
+    const byKey = new Map(items.map((item) => [item.key, item]));
+    const stories = items.filter((item) => {
+      if (!/^story$/i.test(item.workType)) return false;
+      let parent = item.parentKey;
+      const seen = new Set<string>();
+      while (parent && !seen.has(parent)) {
+        if (parent === feature.key) return true;
+        seen.add(parent);
+        parent = byKey.get(parent)?.parentKey;
+      }
+      return false;
+    });
+    return stories.length > 0 && stories.every((story) => doneStatuses.includes(story.status));
+  });
   const completedStories = stories.filter((i) => i.isDone);
   const openStories = stories.filter((i) => !i.isDone);
   const storySP = stories.reduce((sum, i) => sum + (i.storyPoints || 0), 0);
@@ -314,7 +331,9 @@ export function PodTab({ data, podName }: PodTabProps) {
         </div>
       </div>
 
-      {modal && (
+      {modal?.title === "Total Features" ? (
+        <FeatureDetailsModal features={modal.issues} items={items} doneStatuses={doneStatuses} jiraDomain={data.jiraBaseUrl} onClose={() => setModal(null)} />
+      ) : modal && (
         <IssuesModal
           title={modal.title}
           subtitle={modal.subtitle}

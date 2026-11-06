@@ -1274,7 +1274,7 @@ export function computeDashboardData(
       drilldownTab: "diagnosis",
     },
     {
-      title: isGlobalAll ? "Avg. Sprint Velocity" : "Total Sprint Velocity",
+      title: "Velocity",
       value: `${currentVelocity} pts`,
       subtitle:
         isAllSprints
@@ -1291,7 +1291,7 @@ export function computeDashboardData(
       drilldownTab: "executive",
     },
     {
-      title: "Future Predictability",
+      title: "Feature Predictability",
       value:
         futurePredictability.forecastableCount > 0
           ? `${futurePredictability.score}%`
@@ -1885,6 +1885,8 @@ export function computeDashboardData(
       "Total story points completed in the selected Pod, Quarter, and Sprint scope.",
     formula: "Sum of story points on done items",
   };
+  metricInsights["Velocity"] = metricInsights[isGlobalAll ? "Avg. Sprint Velocity" : "Total Sprint Velocity"];
+  metricInsights["Feature Predictability"] = metricInsights["Future Predictability"];
 
   // 13. Issue Explorer List
   const toIssueRow = (it: JiraWorkItem): IssueRow => ({
