@@ -70,7 +70,10 @@ const DEFAULT_METRIC_CONFIG: MetricConfig = resolveMetricConfig();
  */
 function sprintDisplayName(name: string): string {
   const commonName = name.match(/^(Sprint\s+\d+)::/i);
-  if (commonName) return commonName[1];
+  if (commonName) {
+    const quarter = name.split("::")[2];
+    return quarter && quarter !== "All" ? `${quarter} · ${commonName[1]}` : commonName[1];
+  }
   // "2026-Q3 Iteration 1"             -> "Iteration 1"
   // "DTR 2026 - Q4 - Iteration 2"     -> "Iteration 2"
   // "CY26 PI.3 Sprint 1"              -> "Sprint 1"
@@ -251,7 +254,7 @@ function commonizeSprints(
     const number = (sprintNumberByQuarter.get(commonQuarter) || 0) + 1;
     sprintNumberByQuarter.set(commonQuarter, number);
     const commonLabel = `Sprint ${number}`;
-    const id = `${commonLabel}::${range?.key || quarter || groupKey}`;
+    const id = `${commonLabel}::${range?.key || quarter || groupKey}::${commonQuarter}`;
     const states = names.map((name) => sprintMeta[name]?.state).filter(Boolean);
     commonMeta[id] = {
       name: id,
@@ -1956,9 +1959,6 @@ export function computeDashboardData(
       name: effectiveSprintMeta[name]?.startDate && effectiveSprintMeta[name]?.endDate
         ? `${sprintDisplayName(name)} — ${formatSprintRange(effectiveSprintMeta[name].startDate!, effectiveSprintMeta[name].endDate!)}`
         : sprintDisplayName(name),
-      sub: (sprintTeams.get(name)?.size || 0) > 1
-        ? `Across ${sprintTeams.get(name)!.size} pods`
-        : "1 pod",
     })),
   ];
 

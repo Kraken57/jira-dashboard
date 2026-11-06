@@ -144,7 +144,7 @@ function MultiSelect({
                       checked={checked}
                       onChange={() => {
                         if (isAll) {
-                          onChange(allSelected ? [] : ["all"]);
+                          onChange(["all"]);
                         } else if (allSelected) {
                           onChange([item.id]);
                         } else {
