@@ -409,41 +409,45 @@ export default function DashboardPage() {
         )}
 
         {dashboardData && (
-          <section
-            aria-label="Dashboard snapshot"
-            className="grid grid-cols-1 overflow-hidden rounded-xl border border-jira-border bg-white shadow-sm sm:grid-cols-3"
-          >
-            <div className="flex items-center justify-between gap-3 border-b border-jira-border px-4 py-3 sm:border-b-0 sm:border-r sm:px-5">
-              <span className="text-xs font-medium text-jira-text-muted">Work Items</span>
-              <span className="text-sm font-bold tabular-nums text-jira-text">
-                {dashboardData.summary.totalIssues.toLocaleString()}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-3 border-b border-jira-border px-4 py-3 sm:border-b-0 sm:border-r sm:px-5">
-              <span className="text-xs font-medium text-jira-text-muted">SP Tracked</span>
-              <span className="text-sm font-bold tabular-nums text-jira-text">
-                {dashboardData.summary.totalStoryPoints.toLocaleString()}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-5">
-              <span className="text-xs font-medium text-jira-text-muted">Snapshot</span>
-              <span className="flex items-center gap-2 text-xs font-semibold text-jira-text">
-                {refreshing ? (
-                  <>
-                    <span className="h-2 w-2 animate-pulse rounded-full bg-jira-blue" />
-                    Updating…
-                  </>
-                ) : feed ? (
-                  <>
-                    <span className="h-2 w-2 rounded-full bg-jira-green" />
-                    {feedAgeMin}m old{feed.source === "jira-live" ? " · Fresh" : ""}
-                  </>
-                ) : (
-                  "—"
-                )}
-              </span>
-            </div>
-          </section>
+          <div className="flex justify-end">
+            <section
+              aria-label="Dashboard snapshot"
+              className="flex w-fit max-w-full flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-jira-border bg-white px-4 py-2.5 shadow-sm sm:gap-x-6 sm:px-5"
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="text-xs font-medium text-jira-text-muted">Work Items</span>
+                <span className="text-sm font-bold tabular-nums text-jira-text">
+                  {dashboardData.summary.totalIssues.toLocaleString()}
+                </span>
+              </div>
+              <span aria-hidden="true" className="hidden h-5 w-px bg-jira-border sm:block" />
+              <div className="flex items-center gap-2.5">
+                <span className="text-xs font-medium text-jira-text-muted">SP Tracked</span>
+                <span className="text-sm font-bold tabular-nums text-jira-text">
+                  {dashboardData.summary.totalStoryPoints.toLocaleString()}
+                </span>
+              </div>
+              <span aria-hidden="true" className="hidden h-5 w-px bg-jira-border sm:block" />
+              <div className="flex items-center gap-2.5">
+                <span className="text-xs font-medium text-jira-text-muted">Snapshot</span>
+                <span className="flex items-center gap-2 text-xs font-semibold text-jira-text">
+                  {refreshing ? (
+                    <>
+                      <span className="h-2 w-2 animate-pulse rounded-full bg-jira-blue" />
+                      Updating…
+                    </>
+                  ) : feed ? (
+                    <>
+                      <span className="h-2 w-2 rounded-full bg-jira-green" />
+                      {feedAgeMin}m old{feed.source === "jira-live" ? " · Fresh" : ""}
+                    </>
+                  ) : (
+                    "—"
+                  )}
+                </span>
+              </div>
+            </section>
+          </div>
         )}
 
         {/* Per-tab filters (Pod/Quarter/Sprint carry over between tabs) */}
