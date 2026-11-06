@@ -30,7 +30,7 @@ export function FeatureDetailsModal({ features, items, doneStatuses, jiraDomain,
               <td className="whitespace-nowrap tabular-nums" title={detail?.startFromStories ? "Earliest child story start date; feature start date is not set" : "Feature start date"}>{detail?.startDate?.slice(0, 10) || "Not set"}</td><td className="whitespace-nowrap tabular-nums">{feature.dueDate?.slice(0, 10) || "Not set"}</td>
               <td className="tabular-nums">{detail?.storyPoints ?? 0}</td><td className="tabular-nums">{hours}</td><td className="tabular-nums" title="Completed stories / total stories">{completed}/{stories.length}</td>
               <td className={`font-semibold ${status === "Past Due Date" ? "text-red-600" : status === "Delivered" ? "text-green-700" : "text-slate-600"}`}>{status}</td>
-              <td title={!detail?.eligible ? "Excluded because stories, due date, or completion dates are missing" : undefined}>{!detail?.eligible ? "Excluded" : detail.predictable ? "On track" : "Missed timeline"}</td>
+              <td title={!feature.dueDate ? "No due date — counted as predictable" : undefined}>{!detail ? "Unavailable" : detail.predictable ? "Predictable" : status === "No stories" ? "No story data" : "Not predictable"}</td>
             </tr>;
           })}</tbody>
         </table>

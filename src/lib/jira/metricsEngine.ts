@@ -1070,7 +1070,9 @@ export function computeDashboardData(
     );
   }
   const compareNames =
-    compareIndex >= 0
+    !isAllSprints && windowNames.length > 1
+      ? windowNames.slice(-2)
+      : compareIndex >= 0
       ? observedSprints.slice(Math.max(0, compareIndex - 2), compareIndex + 1)
       : [];
   const compareStats = compareNames.map((name) =>
@@ -1078,17 +1080,17 @@ export function computeDashboardData(
   );
   const currentCompare = compareStats[compareStats.length - 1];
   const prevCompare = compareStats[compareStats.length - 2];
-  const hasComparison = Boolean(currentCompare && prevCompare);
+  const hasComparison = !isAllSelection(podId) && filterValues(podId).length === 1 && Boolean(currentCompare && prevCompare);
 
   const scopeCommittedSP = isAllSprints
     ? summary.totalStoryPoints
-    : lastSprint?.committed ?? 0;
+    : windowNames.length > 1 ? summary.totalStoryPoints : lastSprint?.committed ?? 0;
   const scopeDoneSP = isAllSprints
     ? summary.completedStoryPoints
-    : lastSprint?.done ?? 0;
+    : windowNames.length > 1 ? sprintStats.reduce((sum, sprint) => sum + sprint.done, 0) : lastSprint?.done ?? 0;
   const scopeCarriedSP = isAllSprints
     ? Math.max(summary.totalStoryPoints - summary.completedStoryPoints, 0)
-    : lastSprint?.carried ?? 0;
+    : windowNames.length > 1 ? Math.max(scopeCommittedSP - scopeDoneSP, 0) : lastSprint?.carried ?? 0;
 
   const sayDoRatio = scopeCommittedSP > 0
     ? Math.round((scopeDoneSP / scopeCommittedSP) * 100)
@@ -1243,13 +1245,13 @@ export function computeDashboardData(
   };
   const futureTrendText =
     futurePredictability.forecastableCount > 0
-      ? `${futurePredictability.onTimeCount} of ${futurePredictability.forecastableCount}`
+      ? `${futurePredictability.onTimeCount} of ${futurePredictability.forecastableCount} features predictable`
       : futurePredictability.plannedCount > 0
       ? "No eligible features"
       : "No eligible features";
 
   const trendLabelFor = () =>
-    !prevCompare || !currentCompare
+    !hasComparison || !prevCompare || !currentCompare
       ? ""
       : `${currentCompare.name} vs ${prevCompare.name}`;
 
@@ -1303,7 +1305,7 @@ export function computeDashboardData(
           : "N/A",
       subtitle:
         futurePredictability.forecastableCount > 0
-          ? "On-time delivered + in-progress within due date ÷ eligible features"
+          ? "Predictable features ÷ all features in the selected scope"
           : futurePredictability.plannedCount > 0
           ? "No features with sufficient story and date data"
           : "No eligible features",
@@ -1893,9 +1895,9 @@ export function computeDashboardData(
   metricInsights["Velocity"] = metricInsights[isGlobalAll ? "Avg. Sprint Velocity" : "Total Sprint Velocity"];
   metricInsights["Feature Predictability"] = {
     what: "Features delivered on time or still in progress within their due date.",
-    formula: "(On-time delivered + unfinished within due date) ÷ eligible features × 100",
+    formula: "(On-time delivered + unfinished within due date + features without a due date) ÷ all selected features × 100",
     calculation: `${predictableCount} / ${eligibleFeatures.length} = ${futurePredictability.score}%`,
-    takeaways: ["Overdue unfinished and late delivered features count as failures.", "Features without stories, due dates, or required completion dates are excluded."],
+    takeaways: ["Overdue unfinished and late delivered features count as failures.", "Features without a due date count as predictable. Every feature in the popup contributes to the total.", "Features with a due date but no child stories or missing delivery dates cannot be confirmed predictable."],
   };
 
   // 13. Issue Explorer List

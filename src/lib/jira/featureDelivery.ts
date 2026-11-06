@@ -19,8 +19,11 @@ export function featureDelivery(feature: JiraWorkItem, items: JiraWorkItem[], do
   const overdue = Number.isFinite(due) && now > due;
   const completionDates = stories.map((item) => Date.parse(item.resolutionDate || ""));
   const completionKnown = delivered && completionDates.every(Number.isFinite);
-  const eligible = stories.length > 0 && Number.isFinite(due) && (!delivered || completionKnown);
-  const predictable = eligible && (delivered ? Math.max(...completionDates) <= due : !overdue);
+  // Every feature in the selected scope contributes to the denominator.
+  // A missing due date counts as predictable under the dashboard's policy.
+  const eligible = true;
+  const predictable = !Number.isFinite(due) || (stories.length > 0 &&
+    (delivered ? completionKnown && Math.max(...completionDates) <= due : !overdue));
   const loggedItems = items.filter((item) => /^story$|^sub-?task$/i.test(item.workType) && belongsTo(item, feature.key));
   return {
     stories, completed, eligible, predictable,
