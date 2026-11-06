@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { Dropdown } from "./Dropdown";
 
 export type FilterKey =
@@ -75,6 +76,7 @@ interface TabFiltersProps {
   options: Partial<Record<FilterKey, FilterOption[]>>;
   onChange: (key: FilterKey, value: string) => void;
   onReset?: () => void;
+  snapshot?: ReactNode;
 }
 
 export function TabFilters({
@@ -84,23 +86,29 @@ export function TabFilters({
   options,
   onChange,
   onReset,
+  snapshot,
 }: TabFiltersProps) {
   if (keys.length === 0) return null;
 
   return (
     <div className="bg-white border border-jira-border rounded-lg p-4 shadow-sm">
-      <div className="flex items-center justify-between mb-3">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <h2 className="text-xs font-bold text-jira-text-muted uppercase tracking-wider">
           Filters{title ? ` · ${title}` : ""}
         </h2>
-        {onReset && (
-          <button
-            type="button"
-            onClick={onReset}
-            className="text-xs font-semibold text-jira-blue hover:underline"
-          >
-            Reset
-          </button>
+        {(snapshot || onReset) && (
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+            {snapshot}
+            {onReset && (
+              <button
+                type="button"
+                onClick={onReset}
+                className="inline-flex min-h-8 items-center gap-1.5 rounded-md border border-jira-border bg-white px-3 text-xs font-semibold text-jira-text-muted transition hover:border-jira-blue/30 hover:bg-jira-blue-bg hover:text-jira-blue focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-jira-blue focus-visible:ring-offset-2"
+              >
+                Reset filters
+              </button>
+            )}
+          </div>
         )}
       </div>
       <div className="flex flex-wrap gap-4">

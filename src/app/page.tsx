@@ -408,48 +408,6 @@ export default function DashboardPage() {
           />
         )}
 
-        {dashboardData && (
-          <div className="flex justify-end">
-            <section
-              aria-label="Dashboard snapshot"
-              className="flex w-fit max-w-full flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-jira-border bg-white px-4 py-2.5 shadow-sm sm:gap-x-6 sm:px-5"
-            >
-              <div className="flex items-center gap-2.5">
-                <span className="text-xs font-medium text-jira-text-muted">Work Items</span>
-                <span className="text-sm font-bold tabular-nums text-jira-text">
-                  {dashboardData.summary.totalIssues.toLocaleString()}
-                </span>
-              </div>
-              <span aria-hidden="true" className="hidden h-5 w-px bg-jira-border sm:block" />
-              <div className="flex items-center gap-2.5">
-                <span className="text-xs font-medium text-jira-text-muted">SP Tracked</span>
-                <span className="text-sm font-bold tabular-nums text-jira-text">
-                  {dashboardData.summary.totalStoryPoints.toLocaleString()}
-                </span>
-              </div>
-              <span aria-hidden="true" className="hidden h-5 w-px bg-jira-border sm:block" />
-              <div className="flex items-center gap-2.5">
-                <span className="text-xs font-medium text-jira-text-muted">Snapshot</span>
-                <span className="flex items-center gap-2 text-xs font-semibold text-jira-text">
-                  {refreshing ? (
-                    <>
-                      <span className="h-2 w-2 animate-pulse rounded-full bg-jira-blue" />
-                      Updating…
-                    </>
-                  ) : feed ? (
-                    <>
-                      <span className="h-2 w-2 rounded-full bg-jira-green" />
-                      {feedAgeMin}m old{feed.source === "jira-live" ? " · Fresh" : ""}
-                    </>
-                  ) : (
-                    "—"
-                  )}
-                </span>
-              </div>
-            </section>
-          </div>
-        )}
-
         {/* Per-tab filters (Pod/Quarter/Sprint carry over between tabs) */}
         <TabFilters
           keys={filterKeys}
@@ -458,6 +416,27 @@ export default function DashboardPage() {
           options={filterOptions}
           onChange={updateFilter}
           onReset={resetFilters}
+          snapshot={dashboardData && (
+            <div
+              role="group"
+              aria-label="Dashboard snapshot"
+              className="inline-flex max-w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-jira-blue/20 bg-jira-blue-bg/70 px-3 py-1.5 text-xs text-jira-blue sm:gap-x-4"
+            >
+              <span className="whitespace-nowrap">
+                <span className="font-medium">Work Items</span>{" "}
+                <strong className="tabular-nums">{dashboardData.summary.totalIssues.toLocaleString()}</strong>
+              </span>
+              <span className="whitespace-nowrap">
+                <span className="font-medium">SP Tracked</span>{" "}
+                <strong className="tabular-nums">{dashboardData.summary.totalStoryPoints.toLocaleString()}</strong>
+              </span>
+              <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                <span className={`h-1.5 w-1.5 rounded-full ${refreshing ? "animate-pulse bg-jira-blue" : "bg-jira-green"}`} />
+                <span className="font-medium">{refreshing ? "Updating" : "Snapshot"}</span>
+                {!refreshing && feed && <strong>{feedAgeMin}m{feed.source === "jira-live" ? " · Fresh" : ""}</strong>}
+              </span>
+            </div>
+          )}
         />
 
         {/* Loading Indicator Overlay */}
