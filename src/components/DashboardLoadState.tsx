@@ -45,7 +45,6 @@ export function DashboardLoadingOverlay({
             <span className="h-7 w-7 animate-spin rounded-full border-[3px] border-jira-blue/20 border-t-jira-blue motion-reduce:animate-none" />
           </span>
           <div>
-            <p className="text-xs font-bold uppercase text-jira-blue">Enterprise Sprint Performance</p>
             <h1 className="mt-1 text-lg font-bold text-jira-text">Loading dashboard</h1>
           </div>
         </div>

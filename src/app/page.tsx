@@ -380,9 +380,13 @@ export default function DashboardPage() {
     ],
   };
 
+  const dashboardNavigation = (
+    <TabBar tabs={TABS} active={activeTab} onChange={setActiveTab} />
+  );
+
   if (loadFailure && !feed) {
     return (
-      <DashboardLayout>
+      <DashboardLayout navigation={dashboardNavigation}>
         <DashboardLoadErrorPanel
           failure={loadFailure}
           onRetry={() => setReloadKey((key) => key + 1)}
@@ -392,40 +396,11 @@ export default function DashboardPage() {
   }
 
   return (
-    <DashboardLayout>
+    <DashboardLayout navigation={dashboardNavigation}>
       {isLoading && (
         <DashboardLoadingOverlay stage={loadingStage} timedOut={loadingTimedOut} />
       )}
       <div className="dashboard-workspace space-y-6">
-        {/* Page heading with live dataset summary */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
-          <div>
-            <h1 className="text-xl font-bold text-jira-text tracking-tight">
-              Enterprise Sprint Performance
-            </h1>
-            <p className="text-sm text-jira-text-muted mt-0.5">
-              Track sprint health, delivery metrics, and team velocity across all pods in Jira.
-            </p>
-          </div>
-          {dashboardData && (
-            <div className="flex items-center gap-2 self-start md:self-auto text-xs bg-jira-blue-bg/60 text-jira-blue font-semibold px-3 py-1.5 rounded-full border border-jira-blue/20">
-              <span className="w-2 h-2 rounded-full bg-jira-blue animate-pulse" />
-              <span>
-                {dashboardData.summary.totalIssues} work items • {dashboardData.summary.totalStoryPoints} SP tracked
-              </span>
-              <span className="text-jira-text-muted">
-                {refreshing
-                  ? "• snapshot updating…"
-                  : feed
-                  ? `• snapshot ${feedAgeMin}m old${
-                      feed.source === "jira-live" ? " (fresh)" : ""
-                    }`
-                  : ""}
-              </span>
-            </div>
-          )}
-        </div>
-
         {loadFailure && (
           <DashboardLoadErrorPanel
             failure={loadFailure}
@@ -433,8 +408,43 @@ export default function DashboardPage() {
           />
         )}
 
-        {/* Tab Navigation */}
-        <TabBar tabs={TABS} active={activeTab} onChange={setActiveTab} />
+        {dashboardData && (
+          <section
+            aria-label="Dashboard snapshot"
+            className="grid grid-cols-1 overflow-hidden rounded-xl border border-jira-border bg-white shadow-sm sm:grid-cols-3"
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-jira-border px-4 py-3 sm:border-b-0 sm:border-r sm:px-5">
+              <span className="text-xs font-medium text-jira-text-muted">Work Items</span>
+              <span className="text-sm font-bold tabular-nums text-jira-text">
+                {dashboardData.summary.totalIssues.toLocaleString()}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3 border-b border-jira-border px-4 py-3 sm:border-b-0 sm:border-r sm:px-5">
+              <span className="text-xs font-medium text-jira-text-muted">SP Tracked</span>
+              <span className="text-sm font-bold tabular-nums text-jira-text">
+                {dashboardData.summary.totalStoryPoints.toLocaleString()}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-5">
+              <span className="text-xs font-medium text-jira-text-muted">Snapshot</span>
+              <span className="flex items-center gap-2 text-xs font-semibold text-jira-text">
+                {refreshing ? (
+                  <>
+                    <span className="h-2 w-2 animate-pulse rounded-full bg-jira-blue" />
+                    Updating…
+                  </>
+                ) : feed ? (
+                  <>
+                    <span className="h-2 w-2 rounded-full bg-jira-green" />
+                    {feedAgeMin}m old{feed.source === "jira-live" ? " · Fresh" : ""}
+                  </>
+                ) : (
+                  "—"
+                )}
+              </span>
+            </div>
+          </section>
+        )}
 
         {/* Per-tab filters (Pod/Quarter/Sprint carry over between tabs) */}
         <TabFilters
