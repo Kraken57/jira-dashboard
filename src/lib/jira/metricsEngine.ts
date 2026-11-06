@@ -1,3 +1,4 @@
+import { featureDelivery } from "./featureDelivery";
 import {
   ContributorSlippage,
   DashboardData,
@@ -1231,17 +1232,21 @@ export function computeDashboardData(
     (it) => featureTypeRe.test(it.workType) &&
       (activeKeys.has(it.key) || featureKeys.has(it.key))
   );
-  const futurePredictability = computeFuturePredictability(
-    devFeaturePool,
-    (s) => DONE_STATUSES.has(s),
-    forecastChildSource
-  );
+  const featureDetails = devFeaturePool.map((feature) => featureDelivery(feature, commonized.items, config.doneStatuses));
+  const eligibleFeatures = featureDetails.filter((feature) => feature.eligible);
+  const predictableCount = eligibleFeatures.filter((feature) => feature.predictable).length;
+  const futurePredictability = {
+    ...computeFuturePredictability(devFeaturePool, (s) => DONE_STATUSES.has(s), forecastChildSource),
+    forecastableCount: eligibleFeatures.length,
+    onTimeCount: predictableCount,
+    score: eligibleFeatures.length ? Math.round(predictableCount / eligibleFeatures.length * 100) : 0,
+  };
   const futureTrendText =
     futurePredictability.forecastableCount > 0
       ? `${futurePredictability.onTimeCount} of ${futurePredictability.forecastableCount}`
       : futurePredictability.plannedCount > 0
-      ? "No estimated features"
-      : "No planned features";
+      ? "No eligible features"
+      : "No eligible features";
 
   const trendLabelFor = () =>
     !prevCompare || !currentCompare
@@ -1298,14 +1303,14 @@ export function computeDashboardData(
           : "N/A",
       subtitle:
         futurePredictability.forecastableCount > 0
-          ? "Forecast on-time estimated features ÷ estimated features (future due dates)"
+          ? "On-time delivered + in-progress within due date ÷ eligible features"
           : futurePredictability.plannedCount > 0
-          ? "No estimated remaining work on planned features"
-          : "No late-stage features with future due dates",
+          ? "No features with sufficient story and date data"
+          : "No eligible features",
       trend: 0,
       trendLabel:
         futurePredictability.forecastableCount > 0
-          ? "features on time"
+          ? "features predictable"
           : "for forecast",
       trendUnit: "pp",
       trendText: futureTrendText,
@@ -1818,7 +1823,7 @@ export function computeDashboardData(
           ? `${futurePredictability.onTimeCount} of ${futurePredictability.forecastableCount} estimated features forecast on time = ${futurePredictability.score}% (${futurePredictability.dailyRate} SP/working day over ${futurePredictability.rateWorkingDays} working days).`
           : futurePredictability.plannedCount > 0
           ? `${futurePredictability.plannedCount} planned feature(s) have no remaining SP estimate. Add story points to child stories to make them forecastable.`
-          : `No planned features with a future due date in the current scope (${futurePredictability.pastDueCount} past-due features are listed as Past Due in the popup).`,
+          : `No eligible features with a future due date in the current scope (${futurePredictability.pastDueCount} past-due features are listed as Past Due in the popup).`,
       howToCompare:
         "Open the popup and filter the Reason column: 'On Forecast' features are safe at the current pace, 'At Risk' features need more capacity or a scope change. Compare with the 85% target.",
       target: {
@@ -1886,7 +1891,12 @@ export function computeDashboardData(
     formula: "Sum of story points on done items",
   };
   metricInsights["Velocity"] = metricInsights[isGlobalAll ? "Avg. Sprint Velocity" : "Total Sprint Velocity"];
-  metricInsights["Feature Predictability"] = metricInsights["Future Predictability"];
+  metricInsights["Feature Predictability"] = {
+    what: "Features delivered on time or still in progress within their due date.",
+    formula: "(On-time delivered + unfinished within due date) ÷ eligible features × 100",
+    calculation: `${predictableCount} / ${eligibleFeatures.length} = ${futurePredictability.score}%`,
+    takeaways: ["Overdue unfinished and late delivered features count as failures.", "Features without stories, due dates, or required completion dates are excluded."],
+  };
 
   // 13. Issue Explorer List
   const toIssueRow = (it: JiraWorkItem): IssueRow => ({

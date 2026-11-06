@@ -1,5 +1,6 @@
 "use client";
 
+import { featureDelivery } from "@/lib/jira/featureDelivery";
 import { DetailModal } from "./DetailModal";
 import { IssueRow, JiraWorkItem } from "@/lib/jira/types";
 
@@ -11,36 +12,24 @@ export function FeatureDetailsModal({ features, items, doneStatuses, jiraDomain,
   onClose: () => void;
 }) {
   const byKey = new Map(items.map((item) => [item.key, item]));
-  const belongsTo = (item: JiraWorkItem, key: string) => {
-    let parent = item.parentKey;
-    const seen = new Set<string>([item.key]);
-    while (parent && !seen.has(parent)) {
-      if (parent === key) return true;
-      seen.add(parent);
-      parent = byKey.get(parent)?.parentKey;
-    }
-    return false;
-  };
   return (
-    <DetailModal title="Feature Predictability" subtitle="Delivery status based on child stories. The card percentage currently uses the existing forecast formula." onClose={onClose} wide>
+    <DetailModal title="Feature Predictability" subtitle="On-time delivered features and unfinished features within their due date count as predictable. Features without stories, due dates, or required completion dates are excluded." onClose={onClose} wide>
       <div className="overflow-x-auto p-4">
-        <table className="w-full text-left text-sm">
-          <thead><tr>{["Feature", "Start date", "Due date", "Story points", "Hours logged", "Completed / total stories", "Delivery status"].map((label) => <th key={label} className="p-3 border-b font-semibold">{label}</th>)}</tr></thead>
+        <table className="w-full whitespace-nowrap text-left text-sm">
+          <thead><tr>{["Feature", "Start date", "Due date", "Story points", "Hours logged", "Completed / total stories", "Delivery status", "Predictability"].map((label) => <th key={label} className="p-3 border-b font-semibold">{label}</th>)}</tr></thead>
           <tbody>{features.map((feature) => {
             const source = byKey.get(feature.key);
-            const stories = items.filter((item) => /^story$/i.test(item.workType) && belongsTo(item, feature.key));
-            const completed = stories.filter((item) => doneStatuses.includes(item.status)).length;
-            const storyKeys = new Set(stories.map((item) => item.key));
-            const loggedItems = items.filter((item) => storyKeys.has(item.key) || (/^sub-?task$/i.test(item.workType) && [...storyKeys].some((key) => belongsTo(item, key))));
-            const hours = loggedItems.length && loggedItems.every((item) => item.timeSpentSeconds !== undefined)
-              ? Math.round(loggedItems.reduce((sum, item) => sum + (item.timeSpentSeconds || 0), 0) / 360) / 10 : "N/A";
-            const overdue = Boolean(feature.dueDate && Date.now() > Date.parse(`${feature.dueDate.slice(0, 10)}T23:59:59.999`));
-            const status = !stories.length ? "No stories" : completed === stories.length ? "Delivered" : overdue ? "Past Due Date" : "In Progress";
+            const detail = source ? featureDelivery(source, items, doneStatuses) : null;
+            const stories = detail?.stories ?? [];
+            const completed = detail?.completed ?? 0;
+            const hours = detail?.hours ?? 0;
+            const status = detail?.status ?? "No stories";
             return <tr key={feature.key} className="border-b">
-              <td className="p-3"><a className="text-jira-blue" href={jiraDomain ? `${jiraDomain}/browse/${feature.key}` : undefined} target="_blank" rel="noreferrer">{feature.key}</a><div className="text-xs text-jira-text-muted">{feature.summary}</div></td>
-              <td className="p-3">{source?.startDate?.slice(0, 10) || "N/A"}</td><td className="p-3">{feature.dueDate || "N/A"}</td>
+              <td className="p-3"><a className="text-jira-blue" href={jiraDomain ? `${jiraDomain}/browse/${feature.key}` : undefined} target="_blank" rel="noreferrer">{feature.key}</a><span className="ml-2 text-xs text-jira-text-muted">{feature.summary}</span></td>
+              <td className="p-3" title={detail?.startFromStories ? "Earliest child story start date; feature start date is not set" : "Feature start date"}>{detail?.startDate?.slice(0, 10) || "Not set"}</td><td className="p-3">{feature.dueDate || "N/A"}</td>
               <td className="p-3">{stories.reduce((sum, item) => sum + (item.storyPoints || 0), 0)}</td><td className="p-3">{hours}</td><td className="p-3">{completed}/{stories.length}</td>
               <td className={`p-3 font-semibold ${status === "Past Due Date" ? "text-red-600" : status === "Delivered" ? "text-green-700" : "text-slate-600"}`}>{status}</td>
+              <td className="p-3">{!detail?.eligible ? "Excluded — missing stories or dates" : detail.predictable ? "On time / within due date" : "Missed timeline"}</td>
             </tr>;
           })}</tbody>
         </table>

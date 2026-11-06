@@ -88,7 +88,7 @@ async function fetchAllLiveJiraIssues(jqlOverride?: string, queryLabel = "dashbo
         "duedate",
         "timeoriginalestimate",
         "timespent",
-        ...(process.env.JIRA_START_DATE_FIELD ? [process.env.JIRA_START_DATE_FIELD] : []),
+        process.env.JIRA_START_DATE_FIELD || "customfield_10015",
         spField,
         sprintField,
         podField,
@@ -245,8 +245,8 @@ async function fetchAllLiveJiraIssues(jqlOverride?: string, queryLabel = "dashbo
       dueDate: fields.duedate ? String(fields.duedate) : undefined,
       originalEstimateSeconds: Number(fields.timeoriginalestimate) || 0,
       timeSpentSeconds: Number(fields.timespent) || 0,
-      startDate: process.env.JIRA_START_DATE_FIELD && fields[process.env.JIRA_START_DATE_FIELD]
-        ? String(fields[process.env.JIRA_START_DATE_FIELD]) : undefined,
+      startDate: fields[process.env.JIRA_START_DATE_FIELD || "customfield_10015"]
+        ? String(fields[process.env.JIRA_START_DATE_FIELD || "customfield_10015"]) : undefined,
       updatedDate: String(fields.updated || ""),
     };
   });
@@ -301,7 +301,7 @@ function getFeedQueryFingerprint(): string {
     .update(`${JIRA_CONFIG.host}\n${JIRA_CONFIG.email}\n${JIRA_CONFIG.apiToken}`)
     .digest("hex");
   return createHash("sha256")
-    .update(`feature-details-v8\n${process.env.JIRA_START_DATE_FIELD || ""}\n${mainJql}\n${defectJql}\n${uatDefectJql}\n${leakageDefectJql}\n${authFingerprint}`)
+    .update(`feature-details-v9\n${process.env.JIRA_START_DATE_FIELD || ""}\n${mainJql}\n${defectJql}\n${uatDefectJql}\n${leakageDefectJql}\n${authFingerprint}`)
     .digest("hex");
 }
 
