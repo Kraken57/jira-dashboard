@@ -30,6 +30,7 @@ export function featureDelivery(feature: JiraWorkItem, items: JiraWorkItem[], do
     stories, completed, eligible, predictable,
     status: !stories.length ? "No stories" : delivered ? "Delivered" : overdue ? "Past Due Date" : "In Progress",
     storyPoints: stories.reduce((sum, item) => sum + (item.storyPoints || 0), 0),
+    completedStoryPoints: stories.filter((item) => doneStatuses.includes(item.status)).reduce((sum, item) => sum + (item.storyPoints || 0), 0),
     hours: Math.round(loggedItems.reduce((sum, item) => sum + (item.timeSpentSeconds || 0), 0) / 360) / 10,
   };
 }

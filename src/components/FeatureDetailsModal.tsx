@@ -57,7 +57,9 @@ export function FeatureDetailsModal({ features, items, doneStatuses, jiraDomain,
               <td className="truncate" title={feature.summary}>{feature.summary || "—"}</td>
               <td className="whitespace-nowrap tabular-nums">{feature.dueDate?.slice(0, 10) || "No due date"}</td>
               <td className="tabular-nums">{detail?.storyPoints ?? 0}</td><td className="tabular-nums">{hours}</td>
-              <td className={`font-semibold ${status === "Past Due Date" ? "text-red-600" : status === "Delivered" ? "text-green-700" : "text-slate-600"}`}>{status}</td>
+              <td className={`font-semibold ${status === "Past Due Date" ? "text-red-600" : status === "Delivered" ? "text-green-700" : "text-slate-600"}`}>
+                {status} <span className="font-normal tabular-nums">({detail?.completedStoryPoints ?? 0}/{detail?.storyPoints ?? 0} SP)</span>
+              </td>
             </tr>;
           })}</tbody>
         </table>
