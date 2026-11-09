@@ -139,6 +139,10 @@ export interface DeveloperStat {
   team: string;
   assignedIssues: number;
   completedIssues: number;
+  assignedTasks?: number;
+  completedTasks?: number;
+  loggedHours?: number;
+  unestimatedIssues?: number;
   assignedStories: number;
   assignedSubtasks: number;
   completedStories: number;
@@ -384,5 +388,6 @@ export interface JiraWorkItem {
   dueDate?: string;
   originalEstimateSeconds?: number;
   timeSpentSeconds?: number;
+  hasOriginalEstimate?: boolean;
   startDate?: string;
 }

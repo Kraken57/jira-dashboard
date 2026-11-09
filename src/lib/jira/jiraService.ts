@@ -87,6 +87,7 @@ async function fetchAllLiveJiraIssues(jqlOverride?: string, queryLabel = "dashbo
         "resolutiondate",
         "duedate",
         "timeoriginalestimate",
+        "timetracking",
         "timespent",
         spField,
         sprintField,
@@ -242,8 +243,9 @@ async function fetchAllLiveJiraIssues(jqlOverride?: string, queryLabel = "dashbo
         ? String(fields.resolutiondate)
         : undefined,
       dueDate: fields.duedate ? String(fields.duedate) : undefined,
-      originalEstimateSeconds: Number(fields.timeoriginalestimate) || 0,
+      originalEstimateSeconds: Number(fields.timeoriginalestimate ?? (fields.timetracking as { originalEstimateSeconds?: number } | undefined)?.originalEstimateSeconds) || 0,
       timeSpentSeconds: Number(fields.timespent) || 0,
+      hasOriginalEstimate: fields.timeoriginalestimate != null || (fields.timetracking as { originalEstimateSeconds?: number } | undefined)?.originalEstimateSeconds != null,
       updatedDate: String(fields.updated || ""),
     };
   });
@@ -298,7 +300,7 @@ function getFeedQueryFingerprint(): string {
     .update(`${JIRA_CONFIG.host}\n${JIRA_CONFIG.email}\n${JIRA_CONFIG.apiToken}`)
     .digest("hex");
   return createHash("sha256")
-    .update(`feature-details-v10\n${mainJql}\n${defectJql}\n${uatDefectJql}\n${leakageDefectJql}\n${authFingerprint}`)
+    .update(`capacity-v11\n${mainJql}\n${defectJql}\n${uatDefectJql}\n${leakageDefectJql}\n${authFingerprint}`)
     .digest("hex");
 }
 

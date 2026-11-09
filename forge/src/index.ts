@@ -319,8 +319,9 @@ function mapIssueToWorkItem(
     createdDate: String(fields.created || ""),
     resolutionDate: fields.resolutiondate ? String(fields.resolutiondate) : undefined,
     dueDate: fields.duedate ? String(fields.duedate) : undefined,
-    originalEstimateSeconds: Number(fields.timeoriginalestimate) || 0,
+    originalEstimateSeconds: Number(fields.timeoriginalestimate ?? (fields.timetracking as { originalEstimateSeconds?: number } | undefined)?.originalEstimateSeconds) || 0,
     timeSpentSeconds: Number(fields.timespent) || 0,
+      hasOriginalEstimate: fields.timeoriginalestimate != null || (fields.timetracking as { originalEstimateSeconds?: number } | undefined)?.originalEstimateSeconds != null,
     updatedDate: String(fields.updated || ""),
   };
 }
@@ -338,7 +339,7 @@ function inheritParentContext(items: any[]): any[] {
     return {
       ...i,
       sprints: i.sprints && i.sprints.length > 0 ? i.sprints : parent.sprints,
-      quarter: i.quarter && i.quarter !== "All" ? i.quarter : parent.quarter,
+      quarter: !i.sprints?.length || !i.quarter || i.quarter === "All" ? parent.quarter : i.quarter,
       podName: i.podName && i.podName !== i.team ? i.podName : parent.podName,
       team: i.team || parent.team,
     };
@@ -1335,7 +1336,7 @@ function calculateKPIs(
   const estimateHours = (seconds: any) =>
     Math.round(((Number(seconds) || 0) / 3600) * 10) / 10;
   const devItems = developerSource.filter((i: any) =>
-    /^(story|sub-?task)$/i.test(i.workType)
+    /^(story|task|sub-?task)$/i.test(i.workType)
   );
   const devMap = new Map<string, any>();
   for (const it of devItems) {
@@ -1360,20 +1361,24 @@ function calculateKPIs(
     stat.totalSP += it.storyPoints || 0;
     stat.originalEstimateSeconds += it.originalEstimateSeconds || 0;
     if (isSubtask) stat.subtasks += 1;
-    else stat.stories += 1;
+    else if (/^story$/i.test(it.workType)) stat.stories += 1;
     if (done) {
       stat.done += 1;
       stat.deliveredSP += it.storyPoints || 0;
       stat.completedEstimateSeconds += it.originalEstimateSeconds || 0;
       if (isSubtask) stat.completedSubtasks += 1;
-      else stat.completedStories += 1;
+      else if (/^story$/i.test(it.workType)) stat.completedStories += 1;
     }
     devMap.set(name, stat);
   }
   const developers = Array.from(devMap.values())
     .map((stat) => ({
       name: stat.name,
-      team: stat.team,
+      team: [...new Set(devItems.filter((item: any) => (item.assignee || "Unassigned") === stat.name).map((item: any) => item.podName || item.team))].join(", "),
+      assignedTasks: devItems.filter((item: any) => (item.assignee || "Unassigned") === stat.name && /^task$/i.test(item.workType)).length,
+      completedTasks: devItems.filter((item: any) => (item.assignee || "Unassigned") === stat.name && /^task$/i.test(item.workType) && isDoneStatus(item.status)).length,
+      loggedHours: estimateHours(devItems.filter((item: any) => (item.assignee || "Unassigned") === stat.name).reduce((sum: number, item: any) => sum + (item.timeSpentSeconds || 0), 0)),
+      unestimatedIssues: devItems.filter((item: any) => (item.assignee || "Unassigned") === stat.name && !(item.hasOriginalEstimate ?? ((item.originalEstimateSeconds || 0) > 0))).length,
       assignedIssues: stat.assigned,
       completedIssues: stat.done,
       assignedStories: stat.stories,
@@ -1628,8 +1633,8 @@ function calculateKPIs(
  * is fresh enough, refreshed on demand otherwise. Values are zlib-deflated
  * and chunked because KVS caps individual values.
  */
-const FEED_META_KEY = "raw-feed-v7-meta";
-const FEED_PART_KEY = "raw-feed-v7-part-";
+const FEED_META_KEY = "raw-feed-v9-meta";
+const FEED_PART_KEY = "raw-feed-v9-part-";
 // Legacy @forge/api storage caps a single persisted value at ~128 KB raw.
 // 90 KB compressed -> ~120 KB base64, under the cap; a 930-item feed still
 // needs a single part. Raise to ~175 KB after the @forge/kvs flip (240 KiB).
@@ -1701,6 +1706,7 @@ async function fetchAndStoreFeed(): Promise<FeedEnvelope> {
     "resolutiondate",
     "duedate",
     "timeoriginalestimate",
+        "timetracking",
     "timespent",
     config.storyPointsField,
     config.sprintField,
@@ -1829,6 +1835,7 @@ resolver.define("getDashboardData", async (req) => {
       "resolutiondate",
       "duedate",
       "timeoriginalestimate",
+        "timetracking",
       "timespent",
       config.storyPointsField,
       config.sprintField,

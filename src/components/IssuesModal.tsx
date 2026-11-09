@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { DetailModal } from "./DetailModal";
 import { IssueRow, MetricInsight } from "@/lib/jira/types";
 import { getMetricDefinition } from "@/lib/jira/metricDefinitions";
 
 interface IssuesModalProps {
+  overview?: ReactNode;
   title: string;
   subtitle?: string;
   issues: IssueRow[];
@@ -43,6 +44,7 @@ export function IssuesModal({
   onClose,
   emptyText,
   insight,
+  overview,
 }: IssuesModalProps) {
   const [search, setSearch] = useState("");
   const [state, setState] = useState<StateFilter>("all");
@@ -161,6 +163,7 @@ export function IssuesModal({
 
   return (
     <DetailModal title={title} subtitle={subtitle} onClose={onClose} wide>
+      {overview}
       <div className="px-5 py-4 border-b border-jira-border bg-jira-bg/40 space-y-4">
         <div className="grid gap-3 md:grid-cols-4">
           <div className="md:col-span-2 bg-white border border-jira-border rounded-lg p-3">

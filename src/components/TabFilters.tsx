@@ -83,6 +83,8 @@ function MultiSelect({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const [search, setSearch] = useState("");
+  const visibleItems = items.filter((item) => item.id === "all" || item.name.toLowerCase().includes(search.trim().toLowerCase()));
   const selectedItems = items.filter((item) => value.includes(item.id));
   const selectableIds = items.filter((item) => item.id !== "all").map((item) => item.id);
   const allSelected = value.includes("all")
@@ -130,8 +132,10 @@ function MultiSelect({
                 Deselect all
               </button>
             </div>
+            <div className="border-b border-jira-border p-2"><input aria-label={`Search ${label}`} placeholder={`Search ${label.toLowerCase()}`} value={search} onChange={(event) => setSearch(event.target.value)} className="w-full rounded border border-jira-border px-2 py-1.5 text-sm" /></div>
             <div className="max-h-64 overflow-y-auto py-1">
-              {items.map((item) => {
+              {visibleItems.length === 1 && search && <p className="px-3 py-2 text-xs text-jira-text-muted">No matching options</p>}
+              {visibleItems.map((item) => {
                 const isAll = item.id === "all";
                 const checked = isAll ? allSelected : allSelected || value.includes(item.id);
                 return (

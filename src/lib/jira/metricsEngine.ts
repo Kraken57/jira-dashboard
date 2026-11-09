@@ -804,7 +804,7 @@ export function computeDashboardData(
       ...item,
       sprints: item.sprints && item.sprints.length > 0 ? item.sprints : parent.sprints,
       quarter:
-        item.quarter && item.quarter !== "All" ? item.quarter : parent.quarter,
+        !item.sprints?.length || !item.quarter || item.quarter === "All" ? parent.quarter : item.quarter,
       podName:
         item.podName && item.podName !== item.team ? item.podName : parent.podName,
       team: item.team || parent.team,
@@ -813,7 +813,7 @@ export function computeDashboardData(
   const developerItems = commonized.items
     .map(withParentContext)
     .filter((item) => {
-      if (!/^(story|sub-?task)$/i.test(item.workType)) return false;
+      if (!/^(story|task|sub-?task)$/i.test(item.workType)) return false;
       if (!matchesSelection(item.podKey, podId)) return false;
       if (!matchesSelection(item.quarter, quarterId)) return false;
       if (!allSprintsSelected && !item.sprints?.some((name) => selectedSprints.includes(name))) return false;
@@ -1370,14 +1370,14 @@ export function computeDashboardData(
     existing.totalSP += it.storyPoints || 0;
     existing.originalEstimateSeconds += it.originalEstimateSeconds || 0;
     if (isSubtask) existing.subtasks += 1;
-    else existing.stories += 1;
+    else if (/^story$/i.test(it.workType)) existing.stories += 1;
 
     if (isDone) {
       existing.done += 1;
       existing.deliveredSP += it.storyPoints || 0;
       existing.completedEstimateSeconds += it.originalEstimateSeconds || 0;
       if (isSubtask) existing.completedSubtasks += 1;
-      else existing.completedStories += 1;
+      else if (/^story$/i.test(it.workType)) existing.completedStories += 1;
     }
     devMap.set(devName, existing);
   });
@@ -1385,7 +1385,11 @@ export function computeDashboardData(
   const developers: DeveloperStat[] = Array.from(devMap.entries())
     .map(([name, stat]) => ({
       name,
-      team: stat.team,
+      team: [...new Set(developerItems.filter((item) => (item.assignee || "Unassigned") === name).map((item) => item.podName || item.team))].join(", "),
+      assignedTasks: developerItems.filter((item) => (item.assignee || "Unassigned") === name && /^task$/i.test(item.workType)).length,
+      completedTasks: developerItems.filter((item) => (item.assignee || "Unassigned") === name && /^task$/i.test(item.workType) && DONE_STATUSES.has(item.status)).length,
+      loggedHours: estimateHours(developerItems.filter((item) => (item.assignee || "Unassigned") === name).reduce((sum, item) => sum + (item.timeSpentSeconds || 0), 0)),
+      unestimatedIssues: developerItems.filter((item) => (item.assignee || "Unassigned") === name && !(item.hasOriginalEstimate ?? ((item.originalEstimateSeconds || 0) > 0))).length,
       assignedIssues: stat.assigned,
       completedIssues: stat.done,
       assignedStories: stat.stories,
@@ -1632,7 +1636,11 @@ export function computeDashboardData(
       });
       return {
         name,
-        team: stat.team,
+        team: [...new Set(developerItems.filter((item) => (item.assignee || "Unassigned") === name).map((item) => item.podName || item.team))].join(", "),
+      assignedTasks: developerItems.filter((item) => (item.assignee || "Unassigned") === name && /^task$/i.test(item.workType)).length,
+      completedTasks: developerItems.filter((item) => (item.assignee || "Unassigned") === name && /^task$/i.test(item.workType) && DONE_STATUSES.has(item.status)).length,
+      loggedHours: estimateHours(developerItems.filter((item) => (item.assignee || "Unassigned") === name).reduce((sum, item) => sum + (item.timeSpentSeconds || 0), 0)),
+      unestimatedIssues: developerItems.filter((item) => (item.assignee || "Unassigned") === name && !(item.hasOriginalEstimate ?? ((item.originalEstimateSeconds || 0) > 0))).length,
         incompleteSP: Math.round(stat.incompleteSP),
         completedSP: Math.round(stat.completedSP),
         totalAssignedSP: Math.round(stat.incompleteSP + stat.completedSP),
