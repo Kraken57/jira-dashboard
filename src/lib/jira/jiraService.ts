@@ -39,6 +39,29 @@ export function quarterFromSprint(sprintName: string): string {
  * from the Sprint field, so the dashboard can order sprints and reason about
  * the active/future ones without extra board API calls.
  */
+let ahaFieldLookup: Promise<string | undefined> | undefined;
+async function resolveAhaUrlField(): Promise<string | undefined> {
+  if (process.env.JIRA_AHA_URL_FIELD?.trim()) return process.env.JIRA_AHA_URL_FIELD.trim();
+  if (!ahaFieldLookup) ahaFieldLookup = (async () => {
+    try {
+      const auth = Buffer.from(`${JIRA_CONFIG.email}:${JIRA_CONFIG.apiToken}`).toString("base64");
+      const response = await fetch(`${JIRA_CONFIG.host.replace(/\/+$/, "")}/rest/api/3/field`, { headers: { Authorization: `Basic ${auth}`, Accept: "application/json" }, cache: "no-store" });
+      if (!response.ok) throw new Error(`Field lookup returned ${response.status}`);
+      const fields = await response.json() as { id: string; name: string }[];
+      const matches = fields.filter((field) => field.name.toLowerCase().replace(/[^a-z0-9]/g, "") === "ahaurl");
+      if (matches.length !== 1) throw new Error(`Expected one Aha URL field, found ${matches.length}`);
+      console.info("[AUDIT_FIELD] Planning-link field resolved", { fieldId: matches[0].id });
+      return matches[0].id;
+    } catch (error) {
+      console.warn("[AUDIT_FIELD] Planning-link field unavailable", { message: error instanceof Error ? error.message : "Field lookup failed" });
+      return undefined;
+    }
+  })();
+  const result = await ahaFieldLookup;
+  if (!result) ahaFieldLookup = undefined;
+  return result;
+}
+
 async function fetchAllLiveJiraIssues(jqlOverride?: string, queryLabel = "dashboard"): Promise<{
   items: JiraWorkItem[];
   sprintMeta: Record<string, SprintMeta>;
@@ -47,6 +70,7 @@ async function fetchAllLiveJiraIssues(jqlOverride?: string, queryLabel = "dashbo
   const authHeader = Buffer.from(`${email}:${apiToken}`).toString("base64");
   const url = `${host.replace(/\/+$/, "")}/rest/api/3/search/jql`;
 
+  const ahaUrlField = await resolveAhaUrlField();
   const spField = process.env.JIRA_STORY_POINTS_FIELD || "customfield_10031";
   const sprintField = process.env.JIRA_SPRINT_FIELD || "customfield_10020";
   const podField = process.env.JIRA_POD_FIELD || "customfield_10050";
@@ -80,7 +104,7 @@ async function fetchAllLiveJiraIssues(jqlOverride?: string, queryLabel = "dashbo
         "project",
         "parent",
         "customfield_10014",
-        process.env.JIRA_AHA_URL_FIELD || "customfield_10280",
+        ...(ahaUrlField ? [ahaUrlField] : []),
         "assignee",
         "reporter",
         "priority",
@@ -238,8 +262,8 @@ async function fetchAllLiveJiraIssues(jqlOverride?: string, queryLabel = "dashbo
       reporter: reporterObj?.displayName || "Unassigned",
       parentKey: parentObj?.key || epicLink || "",
       parentWorkType: parentObj?.fields?.issuetype?.name || "",
-      ahaUrl: Object.prototype.hasOwnProperty.call(fields, process.env.JIRA_AHA_URL_FIELD || "customfield_10280")
-        ? String(fields[process.env.JIRA_AHA_URL_FIELD || "customfield_10280"] ?? "").trim() : undefined,
+      ahaUrl: ahaUrlField && Object.prototype.hasOwnProperty.call(fields, ahaUrlField)
+        ? String(fields[ahaUrlField!] ?? "").trim() : undefined,
       parentId: parentObj?.id || "",
       createdDate: String(fields.created || ""),
       resolutionDate: fields.resolutiondate
@@ -303,7 +327,7 @@ function getFeedQueryFingerprint(): string {
     .update(`${JIRA_CONFIG.host}\n${JIRA_CONFIG.email}\n${JIRA_CONFIG.apiToken}`)
     .digest("hex");
   return createHash("sha256")
-    .update(`audit-aha-v12\n${process.env.JIRA_AHA_URL_FIELD || "customfield_10280"}\n${mainJql}\n${defectJql}\n${uatDefectJql}\n${leakageDefectJql}\n${authFingerprint}`)
+    .update(`audit-aha-auto-v13\n${process.env.JIRA_AHA_URL_FIELD || "customfield_10280"}\n${mainJql}\n${defectJql}\n${uatDefectJql}\n${leakageDefectJql}\n${authFingerprint}`)
     .digest("hex");
 }
 

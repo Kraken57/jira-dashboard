@@ -103,8 +103,8 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
     };
     return [
       {
-        title: "Features without Aha URL",
-        note: "Features with an empty Aha! URL field",
+        title: "Features without planning link",
+        note: "Features missing their planning-system reference",
         explanation: "Jira Feature issues whose Aha! URL is empty/null in the selected pod, PI and sprint scope. This checks the Aha URL field, not whether a feature has child stories. Features whose field was not returned are excluded because its value is unknown.",
         issues: scopedAuditItems.filter((item) => /^feature$/i.test(item.workType) && item.ahaUrl === ""),
         tone: "violet",
@@ -204,17 +204,13 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-200 px-5 py-4 sm:px-6">
           <h2 className="text-lg font-bold text-slate-900">Audit issue checks</h2>
-          <p className="mt-1 text-xs text-slate-500">Find missing parent links and planning fields in the current Pod, PI, and Sprint scope. Select a card to inspect matching Jira issues.</p>
+          <p className="mt-1 text-xs text-slate-500">Find missing parent links and planning fields in the current Pod, PI, and Sprint scope. Select a card to inspect matching Jira issues. Counts cover the work loaded by the dashboard’s Jira query.</p>
         </div>
         {scopedAuditItems.some((item) => /^feature$/i.test(item.workType) && item.ahaUrl === undefined) && (
           <p className="border-b border-amber-200 bg-amber-50 px-5 py-3 text-xs text-amber-900">Aha URL data is unavailable for some features. Refresh the dashboard, or ask your administrator to check the Aha field mapping. Unknown values are not counted as empty.</p>
         )}
-        <div className="space-y-5 bg-slate-50/70 p-4 sm:p-5">
-          {["Features", "Stories", "Subtasks", "Defects"].map((group) => (
-            <section key={group}>
-              <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-600">{group}</h3>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {auditCards.filter((card) => group === "Features" ? card.title.startsWith("Feature") : group === "Stories" ? /Stor/.test(card.title) : group === "Subtasks" ? /Subtask/.test(card.title) : /Defect/.test(card.title)).map((card) => {
+        <div className="grid grid-cols-1 gap-3 bg-slate-50/70 p-4 sm:grid-cols-2 xl:grid-cols-3 sm:p-5">
+          {auditCards.map((card) => {
             const colors: Record<string, string> = {
               amber: "border-amber-200 text-amber-800 hover:border-amber-300",
               rose: "border-rose-200 text-rose-800 hover:border-rose-300",
@@ -231,14 +227,11 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
                 className={`rounded-xl border bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${colors[card.tone]}`}
               >
                 <p className="text-[10px] font-bold uppercase tracking-wide">{card.title}</p>
-                <p className="mt-1 text-3xl font-bold tracking-tight text-slate-900">{card.issues.length}</p>
+                <p className="mt-1 text-3xl font-bold tracking-tight text-slate-900">{card.title === "Features without planning link" && scopedAuditItems.some((item) => /^feature$/i.test(item.workType) && item.ahaUrl === undefined) ? (scopedAuditItems.every((item) => !/^feature$/i.test(item.workType) || item.ahaUrl === undefined) ? "Unavailable" : `${card.issues.length}+`) : card.issues.length}</p>
                 <p className="mt-1 text-[11px] text-slate-500">{card.note}</p>
               </button>
             );
           })}
-              </div>
-            </section>
-          ))}
         </div>
       </section>
 
