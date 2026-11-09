@@ -209,8 +209,8 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
         {scopedAuditItems.some((item) => /^feature$/i.test(item.workType) && item.ahaUrl === undefined) && (
           <p className="border-b border-amber-200 bg-amber-50 px-5 py-3 text-xs text-amber-900">Aha URL data is unavailable for some features. Refresh the dashboard, or ask your administrator to check the Aha field mapping. Unknown values are not counted as empty.</p>
         )}
-        <div className="grid grid-cols-1 gap-3 bg-slate-50/70 p-4 sm:grid-cols-2 xl:grid-cols-3 sm:p-5">
-          {auditCards.map((card) => {
+        <div className="grid grid-cols-1 gap-3 bg-slate-50/70 p-4 sm:grid-cols-2 sm:p-5 lg:grid-cols-12">
+          {auditCards.map((card, index) => {
             const colors: Record<string, string> = {
               amber: "border-amber-200 text-amber-800 hover:border-amber-300",
               rose: "border-rose-200 text-rose-800 hover:border-rose-300",
@@ -224,7 +224,7 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
                 key={card.title}
                 type="button"
                 onClick={() => setAuditModal({ title: card.title, explanation: card.explanation, issues: card.issues })}
-                className={`rounded-xl border bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${colors[card.tone]}`}
+                className={`rounded-xl border bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${index < 4 ? "lg:col-span-3" : "lg:col-span-4"} ${index === auditCards.length - 1 ? "sm:col-span-2 lg:col-span-4" : ""} ${colors[card.tone]}`}
               >
                 <p className="text-[10px] font-bold uppercase tracking-wide">{card.title}</p>
                 <p className="mt-1 text-3xl font-bold tracking-tight text-slate-900">{card.title === "Features without planning link" && scopedAuditItems.some((item) => /^feature$/i.test(item.workType) && item.ahaUrl === undefined) ? (scopedAuditItems.every((item) => !/^feature$/i.test(item.workType) || item.ahaUrl === undefined) ? "Unavailable" : `${card.issues.length}+`) : card.issues.length}</p>
