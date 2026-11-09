@@ -103,7 +103,7 @@ function formatSprintRange(startDate: string, endDate: string): string {
   const start = new Date(startDate);
   const end = new Date(endDate);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return "";
-  const monthDay = new Intl.DateTimeFormat("en", { month: "long", day: "numeric", timeZone: "UTC" });
+  const monthDay = new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC" });
   const startYear = start.getUTCFullYear();
   const endYear = end.getUTCFullYear();
   return `${monthDay.format(start)}–${monthDay.format(end)}${startYear === endYear ? `, ${endYear}` : `, ${startYear}–${endYear}`}`;
