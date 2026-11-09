@@ -103,13 +103,9 @@ function formatSprintRange(startDate: string, endDate: string): string {
   const start = new Date(startDate);
   const end = new Date(endDate);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return "";
-  const month = new Intl.DateTimeFormat("en", { month: "short", timeZone: "UTC" });
-  const monthDay = new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC" });
+  const monthDay = new Intl.DateTimeFormat("en", { month: "long", day: "numeric", timeZone: "UTC" });
   const startYear = start.getUTCFullYear();
   const endYear = end.getUTCFullYear();
-  if (startYear === endYear && start.getUTCMonth() === end.getUTCMonth()) {
-    return `${start.getUTCDate()}–${end.getUTCDate()} ${month.format(end)} ${endYear}`;
-  }
   return `${monthDay.format(start)}–${monthDay.format(end)}${startYear === endYear ? `, ${endYear}` : `, ${startYear}–${endYear}`}`;
 }
 
