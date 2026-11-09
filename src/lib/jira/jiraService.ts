@@ -80,6 +80,7 @@ async function fetchAllLiveJiraIssues(jqlOverride?: string, queryLabel = "dashbo
         "project",
         "parent",
         "customfield_10014",
+        process.env.JIRA_AHA_URL_FIELD || "customfield_10280",
         "assignee",
         "reporter",
         "priority",
@@ -237,6 +238,8 @@ async function fetchAllLiveJiraIssues(jqlOverride?: string, queryLabel = "dashbo
       reporter: reporterObj?.displayName || "Unassigned",
       parentKey: parentObj?.key || epicLink || "",
       parentWorkType: parentObj?.fields?.issuetype?.name || "",
+      ahaUrl: Object.prototype.hasOwnProperty.call(fields, process.env.JIRA_AHA_URL_FIELD || "customfield_10280")
+        ? String(fields[process.env.JIRA_AHA_URL_FIELD || "customfield_10280"] ?? "").trim() : undefined,
       parentId: parentObj?.id || "",
       createdDate: String(fields.created || ""),
       resolutionDate: fields.resolutiondate
@@ -300,7 +303,7 @@ function getFeedQueryFingerprint(): string {
     .update(`${JIRA_CONFIG.host}\n${JIRA_CONFIG.email}\n${JIRA_CONFIG.apiToken}`)
     .digest("hex");
   return createHash("sha256")
-    .update(`capacity-v11\n${mainJql}\n${defectJql}\n${uatDefectJql}\n${leakageDefectJql}\n${authFingerprint}`)
+    .update(`audit-aha-v12\n${process.env.JIRA_AHA_URL_FIELD || "customfield_10280"}\n${mainJql}\n${defectJql}\n${uatDefectJql}\n${leakageDefectJql}\n${authFingerprint}`)
     .digest("hex");
 }
 

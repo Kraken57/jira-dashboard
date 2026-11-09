@@ -383,6 +383,8 @@ export interface JiraWorkItem {
   priority?: string;
   parentKey?: string;
   parentWorkType?: string;
+  /** Empty string means Jira returned an empty field; undefined means not returned. */
+  ahaUrl?: string;
   resolutionDate?: string;
   createdDate?: string;
   dueDate?: string;

@@ -13,6 +13,7 @@ interface IssuesTabProps {
 }
 
 const PAGE_SIZE = 25;
+const workTypeOrder = (type: string) => /^feature$|^epic$/i.test(type) ? 0 : /^story$/i.test(type) ? 1 : /^sub-?task$/i.test(type) ? 2 : 3;
 
 export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDomain }: IssuesTabProps) {
   const [searchTerm, setSearchTerm] = useState("");
@@ -22,7 +23,8 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
   const [auditModal, setAuditModal] = useState<{ title: string; explanation: string; issues: JiraWorkItem[] } | null>(null);
 
   const scopedAuditItems = useMemo(() => {
-    const allByKey = new Map(auditItems.map((item) => [item.key, item]));
+    const eligibleItems = [...new Map(auditItems.filter((item) => !/^cancel{1,2}ed$/i.test(item.status.trim())).map((item) => [item.key, item])).values()];
+    const allByKey = new Map(eligibleItems.map((item) => [item.key, item]));
     const podValues = Array.isArray(filters.podId) ? filters.podId : [filters.podId];
     const quarterValues = Array.isArray(filters.quarterId) ? filters.quarterId : [filters.quarterId];
     const selectedSprints = Array.isArray(filters.sprintId) ? filters.sprintId : [filters.sprintId];
@@ -39,9 +41,9 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
       const end = Date.parse(meta.endDate);
       if (Number.isNaN(start) || Number.isNaN(end)) return false;
       const range = `${new Date(start).toISOString().slice(0, 10)}/${new Date(end).toISOString().slice(0, 10)}`;
-      return selectedSprints.some((selected) => selected.endsWith(`::${range}`));
+      return selectedSprints.some((selected) => selected.split("::")[1] === range);
     }));
-    return auditItems.map((item) => {
+    const contextualItems = eligibleItems.map((item) => {
       if (!/^sub-?task$/i.test(item.workType) || !item.parentKey) return item;
       const parent = allByKey.get(item.parentKey);
       if (!parent) return item;
@@ -50,11 +52,27 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
         quarter: item.quarter && item.quarter !== "All" ? item.quarter : parent.quarter,
         sprints: item.sprints.length ? item.sprints : parent.sprints,
       };
-    }).filter((item) =>
+    });
+    const directlyScoped = contextualItems.filter((item) =>
       (allPods || selectedPods.includes(item.podKey)) &&
       (allQuarters || selectedQuarters.includes(item.quarter)) &&
       sprintMatches(item.sprints)
     );
+    // Features often have no sprint/PI themselves. Include those reached
+    // through child work in scope, while respecting the selected pod(s).
+    const includedKeys = new Set(directlyScoped.map((item) => item.key));
+    for (const item of directlyScoped) {
+      let parentKey = item.parentKey;
+      const seen = new Set<string>([item.key]);
+      while (parentKey && !seen.has(parentKey)) {
+        seen.add(parentKey);
+        const parent = allByKey.get(parentKey);
+        if (!parent) break;
+        if (/^feature$|^epic$/i.test(parent.workType) && (allPods || selectedPods.includes(parent.podKey))) includedKeys.add(parent.key);
+        parentKey = parent.parentKey;
+      }
+    }
+    return contextualItems.filter((item) => includedKeys.has(item.key));
   }, [auditItems, filters, sprintMeta]);
 
   const auditCards = useMemo(() => {
@@ -81,9 +99,16 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
     const isStoryParent = (type: string) => /^story$/i.test(type);
     const isInEstimateExcludedStatus = (status: string) => {
       const normalized = status.trim().toLowerCase().replace(/[\s_-]+/g, " ");
-      return normalized === "in progress" || normalized === "pending approval";
+      return normalized === "pending approval";
     };
     return [
+      {
+        title: "Features without Aha URL",
+        note: "Features with an empty Aha! URL field",
+        explanation: "Jira Feature issues whose Aha! URL is empty/null in the selected pod, PI and sprint scope. This checks the Aha URL field, not whether a feature has child stories. Features whose field was not returned are excluded because its value is unknown.",
+        issues: scopedAuditItems.filter((item) => /^feature$/i.test(item.workType) && item.ahaUrl === ""),
+        tone: "violet",
+      },
       {
         title: "Orphan Stories",
         note: "Stories without a linked Feature parent",
@@ -121,8 +146,8 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
       },
       {
         title: "Stories Without Estimates",
-        note: "Stories with 0 story points, excluding In Progress and Pending Approval",
-        explanation: "A story is included when it has no story points (0) and its status is not In Progress or Pending Approval.",
+        note: "Stories with 0 story points, excluding Pending Approval",
+        explanation: "A story is included when it has no story points (0) and its status is not Pending Approval.",
         issues: scopedAuditItems.filter((item) =>
           storyType.test(item.workType) &&
           !(item.storyPoints > 0) &&
@@ -130,7 +155,10 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
         ),
         tone: "teal",
       },
-    ];
+    ].sort((a, b) => {
+      const rank = (title: string) => title.startsWith("Feature") ? 0 : /Stor/.test(title) ? 1 : /Subtask/.test(title) ? 2 : 3;
+      return rank(a.title) - rank(b.title);
+    });
   }, [auditItems, scopedAuditItems]);
 
   // Available unique types and statuses
@@ -139,7 +167,7 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
     issues.forEach((it) => {
       if (it.workType) set.add(it.workType);
     });
-    return Array.from(set).sort();
+    return Array.from(set).sort((a, b) => workTypeOrder(a) - workTypeOrder(b) || a.localeCompare(b));
   }, [issues]);
 
   const availableStatuses = useMemo(() => {
@@ -163,7 +191,7 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
         if (!matchesKey && !matchesSummary && !matchesAssignee) return false;
       }
       return true;
-    });
+    }).sort((a, b) => workTypeOrder(a.workType) - workTypeOrder(b.workType) || a.key.localeCompare(b.key, undefined, { numeric: true }));
   }, [issues, selectedType, selectedStatus, searchTerm]);
 
   // Reset page when filters change
@@ -178,8 +206,15 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
           <h2 className="text-lg font-bold text-slate-900">Audit issue checks</h2>
           <p className="mt-1 text-xs text-slate-500">Find missing parent links and planning fields in the current Pod, PI, and Sprint scope. Select a card to inspect matching Jira issues.</p>
         </div>
-        <div className="grid grid-cols-1 gap-3 bg-slate-50/70 p-4 sm:grid-cols-2 xl:grid-cols-3 sm:p-5">
-          {auditCards.map((card) => {
+        {scopedAuditItems.some((item) => /^feature$/i.test(item.workType) && item.ahaUrl === undefined) && (
+          <p className="border-b border-amber-200 bg-amber-50 px-5 py-3 text-xs text-amber-900">Aha URL data is unavailable for some features. Refresh the dashboard, or ask your administrator to check the Aha field mapping. Unknown values are not counted as empty.</p>
+        )}
+        <div className="space-y-5 bg-slate-50/70 p-4 sm:p-5">
+          {["Features", "Stories", "Subtasks", "Defects"].map((group) => (
+            <section key={group}>
+              <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-600">{group}</h3>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {auditCards.filter((card) => group === "Features" ? card.title.startsWith("Feature") : group === "Stories" ? /Stor/.test(card.title) : group === "Subtasks" ? /Subtask/.test(card.title) : /Defect/.test(card.title)).map((card) => {
             const colors: Record<string, string> = {
               amber: "border-amber-200 text-amber-800 hover:border-amber-300",
               rose: "border-rose-200 text-rose-800 hover:border-rose-300",
@@ -201,6 +236,9 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
               </button>
             );
           })}
+              </div>
+            </section>
+          ))}
         </div>
       </section>
 
@@ -436,6 +474,7 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
                     <p><b>PI:</b> {issue.quarter === "All" ? "Not tagged" : issue.quarter}</p>
                     <p><b>Sprint:</b> {issue.sprints.join(", ") || "Backlog"}</p>
                     <p><b>Due date:</b> {issue.dueDate || "None"}</p>
+                    <p><b>Aha URL:</b> {issue.ahaUrl === undefined ? "Not returned" : issue.ahaUrl || "Empty"}</p>
                     <p><b>Assignee:</b> {issue.assignee || "Unassigned"}</p>
                   </div>
                 </article>

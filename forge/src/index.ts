@@ -315,6 +315,8 @@ function mapIssueToWorkItem(
     reporter: reporterObj?.displayName || "Unassigned",
     parentKey: parentObj?.key || epicLink || "",
     parentWorkType: parentObj?.fields?.issuetype?.name || "",
+      ahaUrl: Object.prototype.hasOwnProperty.call(fields, process.env.JIRA_AHA_URL_FIELD || "customfield_10280")
+        ? String(fields[process.env.JIRA_AHA_URL_FIELD || "customfield_10280"] ?? "").trim() : undefined,
     parentId: parentObj?.id || "",
     createdDate: String(fields.created || ""),
     resolutionDate: fields.resolutiondate ? String(fields.resolutiondate) : undefined,
@@ -1633,8 +1635,8 @@ function calculateKPIs(
  * is fresh enough, refreshed on demand otherwise. Values are zlib-deflated
  * and chunked because KVS caps individual values.
  */
-const FEED_META_KEY = "raw-feed-v9-meta";
-const FEED_PART_KEY = "raw-feed-v9-part-";
+const FEED_META_KEY = "raw-feed-v10-meta";
+const FEED_PART_KEY = "raw-feed-v10-part-";
 // Legacy @forge/api storage caps a single persisted value at ~128 KB raw.
 // 90 KB compressed -> ~120 KB base64, under the cap; a 930-item feed still
 // needs a single part. Raise to ~175 KB after the @forge/kvs flip (240 KiB).
@@ -1699,6 +1701,7 @@ async function fetchAndStoreFeed(): Promise<FeedEnvelope> {
     "project",
     "parent",
     "customfield_10014",
+        process.env.JIRA_AHA_URL_FIELD || "customfield_10280",
     "assignee",
     "reporter",
     "priority",
@@ -1829,6 +1832,7 @@ resolver.define("getDashboardData", async (req) => {
       "project",
       "parent",
       "customfield_10014",
+        process.env.JIRA_AHA_URL_FIELD || "customfield_10280",
       "assignee",
       "priority",
       "created",

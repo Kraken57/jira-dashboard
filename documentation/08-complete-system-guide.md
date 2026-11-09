@@ -1502,3 +1502,8 @@ If full Forge parity is required, port the logic from `metricsEngine.ts` into
 | `cd forge && node node_modules/typescript/bin/tsc --noEmit` | Typecheck the Forge backend |
 | `forge deploy` | Deploy the Forge app |
 | `forge install` | Install the Forge app into a Jira site |
+
+
+### Audit checks and Aha URL
+
+Audit cards are grouped Features, Stories, Subtasks, then Defects. Stories Without Estimates counts zero-point stories except Pending Approval. The Features without Aha URL check uses an empty/null Jira field, not absence of child stories. `JIRA_AHA_URL_FIELD` defaults to `customfield_10280` (the Aha! URL field discovered on this site); configure the same ID locally and in Forge. Unknown/not-returned field values are not treated as empty. Equivalent Jira JQL for this field is `issuetype = Feature AND cf[10280] IS EMPTY`, additionally scoped by project/pod. Counts only cover the fetched raw feed; restrictive base JQL or Jira access can limit coverage. Audit items are deduplicated by key, exclude canceled work, and use the current shared pod/quarter/sprint scope.
