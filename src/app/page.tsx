@@ -513,7 +513,7 @@ export default function DashboardPage() {
               zephyr={dashboardData.zephyr}
               zephyrLoading={zephyrLoading}
               issues={dashboardData.issueList}
-              qualityItems={feed?.items}
+              qualityItems={feed?.items?.filter((item) => !/^cancel{1,2}ed$/i.test(item.status.trim()))}
               doneStatuses={feed?.config?.doneStatuses}
               qaDefects={feed?.qaDefects ?? []}
               qaUatDefects={feed?.qaUatDefects}

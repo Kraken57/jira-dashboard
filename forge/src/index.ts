@@ -1837,7 +1837,7 @@ resolver.define("getDashboardData", async (req) => {
 
     const allItems = inheritParentContext(
       issues.map((issue) => mapIssueToWorkItem(issue, config))
-    );
+    ).filter((item) => !/^cancel{1,2}ed$/i.test(item.status.trim()));
 
     // Apply pod/quarter scope first. Future Predictability uses this broader
     // scope because a feature can span multiple sprints.

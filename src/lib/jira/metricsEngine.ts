@@ -744,10 +744,12 @@ export function computeDashboardData(
   config: MetricConfig = DEFAULT_METRIC_CONFIG,
   zephyr?: ZephyrData
 ): DashboardData {
+  // Canceled work is not part of delivery, capacity, feature, or contributor totals.
+  const eligibleItems = items.filter((item) => !/^cancel{1,2}ed$/i.test(item.status.trim()));
   const { podId, quarterId, sprintId } = filters;
   const selectedSprints = filterValues(sprintId);
   const allSprintsSelected = isAllSelection(sprintId);
-  const commonized = commonizeSprints(items, sprintMeta);
+  const commonized = commonizeSprints(eligibleItems, sprintMeta);
   const effectiveSprintMeta = commonized.meta;
   // An issue can retain sprint history from several quarters. Filter each
   // sprint's own quarter as well as the issue's current quarter.
