@@ -22,14 +22,13 @@ export function featureDelivery(feature: JiraWorkItem, items: JiraWorkItem[], do
   // Every feature in the selected scope contributes to the denominator.
   // A missing due date counts as predictable under the dashboard's policy.
   const eligible = true;
-  const predictable = !Number.isFinite(due) || (stories.length > 0 &&
-    (delivered ? completionKnown && Math.max(...completionDates) <= due : !overdue));
+  const predictable = !Number.isFinite(due) || (delivered
+    ? !completionKnown || Math.max(...completionDates) <= due
+    : !overdue);
   const loggedItems = items.filter((item) => /^story$|^sub-?task$/i.test(item.workType) && belongsTo(item, feature.key));
   return {
     stories, completed, eligible, predictable,
     status: !stories.length ? "No stories" : delivered ? "Delivered" : overdue ? "Past Due Date" : "In Progress",
-    startDate: feature.startDate || stories.map((item) => item.startDate).filter((date): date is string => Boolean(date)).sort()[0],
-    startFromStories: !feature.startDate,
     storyPoints: stories.reduce((sum, item) => sum + (item.storyPoints || 0), 0),
     hours: Math.round(loggedItems.reduce((sum, item) => sum + (item.timeSpentSeconds || 0), 0) / 360) / 10,
   };

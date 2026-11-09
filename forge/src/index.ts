@@ -321,8 +321,6 @@ function mapIssueToWorkItem(
     dueDate: fields.duedate ? String(fields.duedate) : undefined,
     originalEstimateSeconds: Number(fields.timeoriginalestimate) || 0,
     timeSpentSeconds: Number(fields.timespent) || 0,
-    startDate: fields[process.env.JIRA_START_DATE_FIELD || "customfield_10015"]
-      ? String(fields[process.env.JIRA_START_DATE_FIELD || "customfield_10015"]) : undefined,
     updatedDate: String(fields.updated || ""),
   };
 }
@@ -1704,7 +1702,6 @@ async function fetchAndStoreFeed(): Promise<FeedEnvelope> {
     "duedate",
     "timeoriginalestimate",
     "timespent",
-    process.env.JIRA_START_DATE_FIELD || "customfield_10015",
     config.storyPointsField,
     config.sprintField,
     config.podField,
@@ -1833,7 +1830,6 @@ resolver.define("getDashboardData", async (req) => {
       "duedate",
       "timeoriginalestimate",
       "timespent",
-      process.env.JIRA_START_DATE_FIELD || "customfield_10015",
       config.storyPointsField,
       config.sprintField,
       config.podField,
