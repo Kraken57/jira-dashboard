@@ -103,14 +103,14 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
     };
     return [
       {
-        title: "Orphan Feature",
+        title: "Features without Aha link",
         note: "Features missing their planning-system reference",
         explanation: "Jira Feature issues whose Aha! URL is empty/null in the selected pod, PI and sprint scope. This checks the Aha URL field, not whether a feature has child stories. Features whose field was not returned are excluded because its value is unknown.",
         issues: scopedAuditItems.filter((item) => /^feature$/i.test(item.workType) && item.ahaUrl === ""),
         tone: "violet",
       },
       {
-        title: "Orphan Stories",
+        title: "Stories without Feature links",
         note: "Stories without a linked Feature parent",
         explanation: "A story is counted when it has no parent, or its known parent is not a Feature (Epic is used for projects with no Feature issue type).",
         issues: scopedAuditItems.filter((item) => storyType.test(item.workType) && isOrphanedFrom(item, isFeatureParent)),
@@ -131,14 +131,14 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
         tone: "violet",
       },
       {
-        title: "Orphan Defects",
+        title: "Defects without parent links",
         note: "Bugs without any linked parent issue",
         explanation: "A defect is orphaned only when it has no parent issue. A link to a Story, Feature, Epic, or any other parent means it is not orphaned.",
         issues: scopedAuditItems.filter((item) => bugType.test(item.workType) && !item.parentKey?.trim()),
         tone: "orange",
       },
       {
-        title: "Orphan Subtasks",
+        title: "Subtasks without Story links",
         note: "Sub-tasks missing a linked Story parent",
         explanation: "A sub-task is counted when it has no parent, or the fetched parent issue is not a Story.",
         issues: scopedAuditItems.filter((item) => subtaskType.test(item.workType) && isOrphanedFrom(item, isStoryParent)),
@@ -155,10 +155,7 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
         ),
         tone: "teal",
       },
-    ].sort((a, b) => {
-      const rank = (title: string) => title.startsWith("Feature") || title === "Orphan Feature" ? 0 : /Stor/.test(title) ? 1 : /Subtask/.test(title) ? 2 : 3;
-      return rank(a.title) - rank(b.title);
-    });
+    ];
   }, [auditItems, scopedAuditItems]);
 
   // Available unique types and statuses
@@ -209,8 +206,16 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
         {scopedAuditItems.some((item) => /^feature$/i.test(item.workType) && item.ahaUrl === undefined) && (
           <p className="border-b border-amber-200 bg-amber-50 px-5 py-3 text-xs text-amber-900">Aha URL data is unavailable for some features. Refresh the dashboard, or ask your administrator to check the Aha field mapping. Unknown values are not counted as empty.</p>
         )}
-        <div className="grid grid-cols-1 gap-3 bg-slate-50/70 p-4 sm:grid-cols-2 sm:p-5 lg:grid-cols-4">
-          {auditCards.map((card) => {
+        <div className="space-y-6 bg-slate-50/70 p-4 sm:p-5">
+          {[
+            { title: "Feature related issues", cards: auditCards.filter((card) => card.title.startsWith("Features without")) },
+            { title: "Story related issues", cards: auditCards.filter((card) => card.title.startsWith("Stories without")) },
+            { title: "Subtask related issues", cards: auditCards.filter((card) => card.title.startsWith("Subtasks without") || card.title.startsWith("Defects without")) },
+          ].map((group) => (
+            <section key={group.title}>
+              <h3 className="mb-3 text-sm font-semibold text-slate-700">{group.title}</h3>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {group.cards.map((card) => {
             const colors: Record<string, string> = {
               amber: "border-amber-200 text-amber-800 hover:border-amber-300",
               rose: "border-rose-200 text-rose-800 hover:border-rose-300",
@@ -227,11 +232,14 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
                 className={`rounded-xl border bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${colors[card.tone]}`}
               >
                 <p className="text-[10px] font-bold uppercase tracking-wide">{card.title}</p>
-                <p className="mt-1 text-3xl font-bold tracking-tight text-slate-900">{card.title === "Orphan Feature" && scopedAuditItems.some((item) => /^feature$/i.test(item.workType) && item.ahaUrl === undefined) ? (scopedAuditItems.every((item) => !/^feature$/i.test(item.workType) || item.ahaUrl === undefined) ? "Unavailable" : `${card.issues.length}+`) : card.issues.length}</p>
+                <p className="mt-1 text-3xl font-bold tracking-tight text-slate-900">{card.title === "Features without Aha link" && scopedAuditItems.some((item) => /^feature$/i.test(item.workType) && item.ahaUrl === undefined) ? (scopedAuditItems.every((item) => !/^feature$/i.test(item.workType) || item.ahaUrl === undefined) ? "Unavailable" : `${card.issues.length}+`) : card.issues.length}</p>
                 <p className="mt-1 text-[11px] text-slate-500">{card.note}</p>
               </button>
             );
           })}
+              </div>
+            </section>
+          ))}
         </div>
       </section>
 
