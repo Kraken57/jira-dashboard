@@ -103,7 +103,7 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
     };
     return [
       {
-        title: "Features without planning link",
+        title: "Orphan Feature",
         note: "Features missing their planning-system reference",
         explanation: "Jira Feature issues whose Aha! URL is empty/null in the selected pod, PI and sprint scope. This checks the Aha URL field, not whether a feature has child stories. Features whose field was not returned are excluded because its value is unknown.",
         issues: scopedAuditItems.filter((item) => /^feature$/i.test(item.workType) && item.ahaUrl === ""),
@@ -156,7 +156,7 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
         tone: "teal",
       },
     ].sort((a, b) => {
-      const rank = (title: string) => title.startsWith("Feature") ? 0 : /Stor/.test(title) ? 1 : /Subtask/.test(title) ? 2 : 3;
+      const rank = (title: string) => title.startsWith("Feature") || title === "Orphan Feature" ? 0 : /Stor/.test(title) ? 1 : /Subtask/.test(title) ? 2 : 3;
       return rank(a.title) - rank(b.title);
     });
   }, [auditItems, scopedAuditItems]);
@@ -227,7 +227,7 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
                 className={`rounded-xl border bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${colors[card.tone]}`}
               >
                 <p className="text-[10px] font-bold uppercase tracking-wide">{card.title}</p>
-                <p className="mt-1 text-3xl font-bold tracking-tight text-slate-900">{card.title === "Features without planning link" && scopedAuditItems.some((item) => /^feature$/i.test(item.workType) && item.ahaUrl === undefined) ? (scopedAuditItems.every((item) => !/^feature$/i.test(item.workType) || item.ahaUrl === undefined) ? "Unavailable" : `${card.issues.length}+`) : card.issues.length}</p>
+                <p className="mt-1 text-3xl font-bold tracking-tight text-slate-900">{card.title === "Orphan Feature" && scopedAuditItems.some((item) => /^feature$/i.test(item.workType) && item.ahaUrl === undefined) ? (scopedAuditItems.every((item) => !/^feature$/i.test(item.workType) || item.ahaUrl === undefined) ? "Unavailable" : `${card.issues.length}+`) : card.issues.length}</p>
                 <p className="mt-1 text-[11px] text-slate-500">{card.note}</p>
               </button>
             );
