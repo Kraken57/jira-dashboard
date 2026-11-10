@@ -271,22 +271,45 @@ export function IssuesModal({
             <p className="text-[11px] uppercase tracking-wider font-bold text-jira-text-muted mb-1.5">
               Recent sprints
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              {detail.recent.map((row) => (
-                <div
-                  key={row.label}
-                  className="bg-white border border-jira-border rounded-lg px-3 py-2"
-                >
-                  <p className="text-[11px] font-semibold text-jira-text-muted truncate">
-                    {row.label}
-                  </p>
-                  <p className="text-sm font-bold text-jira-text">{row.value}</p>
-                  {row.detail && (
-                    <p className="text-[11px] text-jira-text-light">{row.detail}</p>
-                  )}
-                </div>
-              ))}
-            </div>
+            {title === "Velocity" ? (
+              <div className="overflow-hidden rounded-lg border border-jira-border bg-white">
+                <table className="w-full table-fixed text-left text-xs">
+                  <thead className="bg-jira-bg text-[10px] uppercase tracking-wide text-jira-text-muted">
+                    <tr>
+                      <th className="w-2/5 px-3 py-2 font-semibold">Sprint</th>
+                      <th className="w-1/4 px-3 py-2 font-semibold">Story points</th>
+                      <th className="px-3 py-2 font-semibold">Completed work</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-jira-border">
+                    {detail.recent.map((row) => (
+                      <tr key={row.label}>
+                        <td className="break-words px-3 py-2 font-medium text-jira-text">{row.label}</td>
+                        <td className="px-3 py-2 font-bold text-jira-text">{row.value}</td>
+                        <td className="break-words px-3 py-2 text-jira-text-muted">{row.detail || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                {detail.recent.map((row) => (
+                  <div
+                    key={row.label}
+                    className="rounded-lg border border-jira-border bg-white px-3 py-2"
+                  >
+                    <p className="truncate text-[11px] font-semibold text-jira-text-muted">
+                      {row.label}
+                    </p>
+                    <p className="text-sm font-bold text-jira-text">{row.value}</p>
+                    {row.detail && (
+                      <p className="text-[11px] text-jira-text-light">{row.detail}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
