@@ -1061,7 +1061,9 @@ Important details:
 - `sprints[0]` is always `{ id: "all", name: "All Sprints" }`.
 - Sprint option `id` is the **full** Jira sprint name; `name` is the display name;
   `sub` lists teams that own that sprint.
-- `jiraBaseUrl` is `JIRA_HOST` without a trailing slash, used to build browse links.
+- `jiraBaseUrl` is used to build Jira browse links. In Forge, the frontend replaces
+  it with the installed site's `siteUrl` from `view.getContext()`; standalone mode
+  continues to use `JIRA_HOST`.
 
 ### 12.3 Forge resolver calls
 
@@ -1141,8 +1143,10 @@ production, add `-e production` to each command and repeat the variable block.
 Deployment-configuration precedence: saved admin-page value, then Forge
 variables (`process.env`), then the code defaults.
 
-`JIRA_HOST` is required for browse links. The resolver does **not** use
-email/token variables; Forge authenticates with `api.asApp()`.
+`JIRA_HOST` is still used by the Forge resolver for Jira API URLs and as a fallback
+for browse links. The frontend gets the installed site's URL from Forge context for
+popup browse links. The resolver does **not** use email/token variables; Forge
+authenticates with `api.asApp()`.
 
 Two timing rules:
 

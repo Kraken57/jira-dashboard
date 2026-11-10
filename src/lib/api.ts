@@ -56,6 +56,18 @@ function unwrapBody<D>(response: unknown): D {
   return response as D;
 }
 
+async function addForgeSiteUrl(data: DashboardData): Promise<DashboardData> {
+  try {
+    const { view } = await import("@forge/bridge");
+    const context = await view.getContext();
+    const siteUrl = typeof context.siteUrl === "string" ? context.siteUrl.trim() : "";
+    if (siteUrl) return { ...data, jiraBaseUrl: siteUrl.replace(/\/+$/, "") };
+  } catch (err) {
+    console.warn("Could not read Jira site URL from Forge context:", err);
+  }
+  return data;
+}
+
 /**
  * Universal fetch client:
  * - Inside Atlassian Forge iframe: Uses @forge/bridge invoke('getDashboardData')
@@ -80,7 +92,9 @@ export async function fetchDashboardData(filters: DashboardFilters): Promise<Das
     }).bridge;
     if (forgeBridge && typeof forgeBridge.invoke === "function") {
       try {
-        return await forgeBridge.invoke("getDashboardData", filters);
+        return await addForgeSiteUrl(
+          await forgeBridge.invoke("getDashboardData", filters)
+        );
       } catch (err) {
         console.warn("Forge bridge invoke failed, trying @forge/bridge:", err);
       }
@@ -89,8 +103,10 @@ export async function fetchDashboardData(filters: DashboardFilters): Promise<Das
     // 2. @forge/bridge invoke (dynamic import keeps it out of the SSR bundle)
     try {
       const { invoke } = await import("@forge/bridge");
-      return unwrapBody(
-        (await invoke("getDashboardData", filters)) as DashboardData
+      return await addForgeSiteUrl(
+        unwrapBody(
+          (await invoke("getDashboardData", filters)) as DashboardData
+        )
       );
     } catch (err) {
       throw new Error(
