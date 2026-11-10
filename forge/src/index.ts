@@ -749,7 +749,15 @@ async function fetchZephyrExecutions(
           const candidate = body.message ?? body.error_description ?? body.error ?? body.title;
           if (typeof candidate === "string") responseMessage = candidate.slice(0, 240);
         } catch {
-          // Do not log arbitrary response bodies; they may contain sensitive data.
+          // Zephyr's gateway may return a plain-text rejection instead of JSON.
+          // Log only a short, sanitized excerpt to help diagnose those failures.
+          if (contentType.toLowerCase().startsWith("text/plain")) {
+            responseMessage = rawBody
+              .replace(/eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+/g, "[REDACTED_TOKEN]")
+              .replace(/[\r\n\t]+/g, " ")
+              .trim()
+              .slice(0, 240);
+          }
         }
         console.error("[ZEPHYR_FETCH] Zephyr API request rejected", {
           endpoint: url.pathname,
