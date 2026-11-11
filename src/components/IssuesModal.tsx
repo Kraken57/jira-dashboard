@@ -162,9 +162,15 @@ export function IssuesModal({
     : 0;
 
   return (
-    <DetailModal title={title} subtitle={subtitle} onClose={onClose} wide>
-      {overview}
-      <div className="px-5 py-4 border-b border-jira-border bg-jira-bg/40 space-y-4">
+    <DetailModal
+      title={title}
+      subtitle={subtitle}
+      onClose={onClose}
+      wide
+      bodyClassName="min-h-0 flex flex-col overflow-hidden"
+    >
+      {overview && <div className="shrink-0">{overview}</div>}
+      <div className="shrink-0 max-h-[34vh] overflow-y-auto overscroll-contain px-5 py-4 border-b border-jira-border bg-jira-bg/40 space-y-4">
         <div className="grid gap-3 md:grid-cols-4">
           <div className="md:col-span-2 bg-white border border-jira-border rounded-lg p-3">
             <p className="text-[11px] uppercase tracking-wider font-bold text-jira-text-muted">
@@ -322,7 +328,7 @@ export function IssuesModal({
         )}
       </div>
 
-      <div className="px-5 py-3 border-b border-jira-border flex flex-wrap gap-x-4 gap-y-1 text-xs text-jira-text-muted">
+      <div className="shrink-0 px-5 py-3 border-b border-jira-border flex flex-wrap gap-x-4 gap-y-1 text-xs text-jira-text-muted">
         <span>
           <strong className="text-jira-text">{issues.length}</strong> work items
         </span>
@@ -353,7 +359,7 @@ export function IssuesModal({
         )}
       </div>
 
-      <div className="px-5 py-3 border-b border-jira-border bg-white space-y-2">
+      <div className="shrink-0 px-5 py-3 border-b border-jira-border bg-white space-y-2">
         <div className="flex flex-wrap gap-2 items-center">
           <input
             type="text"
@@ -474,9 +480,9 @@ export function IssuesModal({
         </p>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-jira-bg text-jira-text-muted text-xs uppercase border-b border-jira-border font-semibold">
+      <div className="min-h-0 flex-1 overflow-auto overscroll-contain">
+        <table className="w-full min-w-[900px] text-left text-sm">
+          <thead className="sticky top-0 z-10 bg-jira-bg text-jira-text-muted text-xs uppercase border-b border-jira-border font-semibold">
             <tr>
               <th className="px-4 py-2.5">Key</th>
               <th className="px-4 py-2.5">Type</th>
