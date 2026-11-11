@@ -47,6 +47,40 @@ a:hover {
   text-decoration: underline;
 }
 
+/* Show one horizontal scrollbar at the popup's bottom while preserving
+   horizontal trackpad scrolling on the actual work-item table. */
+.modal-hide-horizontal-scrollbar {
+  scrollbar-width: none;
+}
+
+.modal-hide-horizontal-scrollbar::-webkit-scrollbar:horizontal {
+  height: 0;
+}
+
+.modal-pinned-horizontal-scrollbar {
+  flex: 0 0 14px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-top: 1px solid var(--color-jira-border);
+  background: white;
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 #f1f5f9;
+}
+
+.modal-pinned-horizontal-scrollbar::-webkit-scrollbar {
+  height: 12px;
+}
+
+.modal-pinned-horizontal-scrollbar::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+.modal-pinned-horizontal-scrollbar::-webkit-scrollbar-thumb {
+  border: 2px solid #f1f5f9;
+  border-radius: 9999px;
+  background: #94a3b8;
+}
+
 @layer utilities {
   .dashboard-topbar {
     box-shadow: 0 1px 0 rgb(15 23 42 / 0.02), 0 8px 24px rgb(15 23 42 / 0.035);

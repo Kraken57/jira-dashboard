@@ -7,6 +7,7 @@ interface DetailModalProps {
   subtitle?: string;
   onClose: () => void;
   children: ReactNode;
+  footer?: ReactNode;
   wide?: boolean;
   bodyClassName?: string;
 }
@@ -16,6 +17,7 @@ export function DetailModal({
   subtitle,
   onClose,
   children,
+  footer,
   wide,
   bodyClassName,
 }: DetailModalProps) {
@@ -61,7 +63,8 @@ export function DetailModal({
             ✕
           </button>
         </div>
-        <div className={bodyClassName ?? "min-h-0 overflow-y-auto"}>{children}</div>
+        <div className={bodyClassName ?? (footer ? "min-h-0 flex-1 overflow-y-auto" : "min-h-0 overflow-y-auto")}>{children}</div>
+        {footer}
       </div>
     </div>
   );
