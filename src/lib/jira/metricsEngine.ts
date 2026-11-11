@@ -75,6 +75,8 @@ function sprintDisplayName(name: string): string {
     const quarter = name.split("::")[2];
     return quarter && quarter !== "All" ? `${quarter} · ${commonName[1]}` : commonName[1];
   }
+  // Individual-pod sprint IDs retain Jira's full original name.
+  if (name.includes("::")) return name.split("::")[0];
   // "2026-Q3 Iteration 1"             -> "Iteration 1"
   // "DTR 2026 - Q4 - Iteration 2"     -> "Iteration 2"
   // "CY26 PI.3 Sprint 1"              -> "Sprint 1"
@@ -137,6 +139,7 @@ function normalizedSprintRange(meta?: SprintMeta): { key: string; startDate: str
 function commonizeSprints(
   items: JiraWorkItem[],
   sprintMeta: Record<string, SprintMeta>,
+  combinePods = true,
 ): { items: JiraWorkItem[]; meta: Record<string, SprintMeta> } {
   const quarterCountsBySprint = new Map<string, Map<string, number>>();
   for (const item of items) {
@@ -221,6 +224,20 @@ function commonizeSprints(
     const root = find(name);
     groups.set(root, [...(groups.get(root) || []), name]);
   }
+  if (!combinePods) {
+    // Keep the shared date-based PI mapping, but give every Jira sprint its
+    // own option and timeline when the user has selected one pod.
+    for (const names of groups.values()) {
+      const quarters = [...new Set(names.map((name) => details.get(name)?.quarter).filter(Boolean))];
+      if (quarters.length !== 1) continue;
+      for (const name of names) {
+        const detail = details.get(name)!;
+        detail.quarter ??= quarters[0];
+      }
+    }
+    groups.clear();
+    for (const name of allNames) groups.set(name, [name]);
+  }
   const groupRanges = new Map<string, Map<string, { key: string; startDate: string; endDate: string; count: number }>>();
   for (const [root, names] of groups) {
     const ranges = new Map<string, { key: string; startDate: string; endDate: string; count: number }>();
@@ -271,7 +288,7 @@ function commonizeSprints(
       ? ordinals[0]
       : (sprintNumberByQuarter.get(commonQuarter) ?? 0) + 1;
     sprintNumberByQuarter.set(commonQuarter, Math.max(sprintNumberByQuarter.get(commonQuarter) ?? 0, number));
-    const commonLabel = `Sprint ${number}`;
+    const commonLabel = combinePods ? `Sprint ${number}` : names[0];
     const id = `${commonLabel}::${range?.key || quarter || groupKey}::${commonQuarter}`;
     const states = names.map((name) => sprintMeta[name]?.state).filter(Boolean);
     commonMeta[id] = {
@@ -776,7 +793,8 @@ export function computeDashboardData(
   const { podId, quarterId, sprintId } = filters;
   const selectedSprints = filterValues(sprintId);
   const allSprintsSelected = isAllSelection(sprintId);
-  const commonized = commonizeSprints(eligibleItems, sprintMeta);
+  const combinePods = isAllSelection(podId) || filterValues(podId).length !== 1;
+  const commonized = commonizeSprints(eligibleItems, sprintMeta, combinePods);
   const effectiveSprintMeta = commonized.meta;
   // An issue can retain sprint history from several quarters. Filter each
   // sprint's own quarter as well as the issue's current quarter.

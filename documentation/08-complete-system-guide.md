@@ -416,6 +416,10 @@ not discovered by this path. PI membership comes from sprint names or a shared
 dated sprint with a PI label; calendar dates alone cannot establish a fiscal PI.
 Quarter options and issue scope include each mapped historical sprint quarter,
 so moving a story into a newer PI does not hide its older PI's sprint history.
+All Pods or several selected pods use the common sprint labels and groups.
+Exactly one selected pod uses each Jira sprint's full original name and its own
+date range. Selecting that option scopes the data to that pod and sprint.
+Changing the pod selection resets Sprint to All Sprints before switching modes.
 
 ---
 
