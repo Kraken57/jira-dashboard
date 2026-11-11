@@ -801,15 +801,18 @@ completedStoryPoints = round(sum(SP where done))
 ### 9.4 Executive KPI cards
 
 Cards and charts use the same pod, PI, sprint lifecycle, and sprint selection.
-Each work item contributes once to a card across selected sprints. Per-sprint
-chart points preserve sprint membership, so carried work can belong to several
-sprint commitments but completes in only one source sprint.
+Velocity normally counts each work item once across selected sprints. For the
+All Pods + All Quarters / PIs + All Sprints selection, it instead averages each
+pod's completed SP per sprint, then averages the pod values equally. Other cards
+continue to count each work item once. Per-sprint chart points preserve sprint
+membership, so carried work can belong to several sprint commitments but
+completes in only one source sprint.
 
 | Card | Formula |
 |---|---|
 | Say/Do Ratio | SP completed in the selected sprints / SP assigned to those sprints × 100 |
 | Sprint Carry Over | SP not delivered in the selection and carried from a started source sprint / selected committed SP × 100 |
-| Velocity | Combined SP completed in the selected sprints across selected pods; no global pod averaging |
+| Velocity | Normally, SP completed across the selected scope. When All Pods, All Quarters / PIs, and All Sprints are selected, calculate each pod's average completed SP per sprint, then average those pod averages equally. |
 | Feature Predictability | Uses the selected features and ancestors of selected work, with story delivery/due-date rules from `featureDelivery.ts` |
 
 A future source sprint contributes assigned work, but no carryover before it

@@ -1147,7 +1147,34 @@ export function computeDashboardData(
     .reduce((sum, item) => sum + (item.storyPoints || 0), 0);
   const sayDoRatio = scopeCommittedSP > 0 ? Math.round(scopeDoneSP / scopeCommittedSP * 100) : 0;
   const carryOver = scopeCommittedSP > 0 ? Math.round(scopeCarriedSP / scopeCommittedSP * 100) : 0;
-  const currentVelocity = scopeDoneSP;
+  const velocityUsesPodAverage = isAllSelection(podId)
+    && isAllSelection(quarterId)
+    && allSprintsSelected;
+  const podVelocityAverages = velocityUsesPodAverage
+    ? Array.from(new Set(scopeItems.map((item) => item.podKey))).map((podKey) => {
+        const podItems = activeItems.filter((item) => item.podKey === podKey);
+        const podSprintStats = windowNames
+          .filter((sprintName) => podItems.some((item) => matchesSprint(item.sprints, sprintName)))
+          .map((sprintName) => buildSprintStat(sprintName, podItems));
+        const average = podSprintStats.length
+          ? podSprintStats.reduce((sum, sprint) => sum + sprint.done, 0) / podSprintStats.length
+          : 0;
+        return {
+          name: podItems[0]?.podName || podKey,
+          average,
+        };
+      })
+    : [];
+  const currentVelocity = velocityUsesPodAverage
+    ? podVelocityAverages.length
+      ? Math.round(
+          (podVelocityAverages.reduce((sum, pod) => sum + pod.average, 0) / podVelocityAverages.length) * 10,
+        ) / 10
+      : 0
+    : scopeDoneSP;
+  const podVelocityBreakdown = podVelocityAverages
+    .map((pod) => `${pod.name}: ${Math.round(pod.average * 10) / 10} SP/sprint`)
+    .join(" · ");
 
   const sayDoOf = (s: typeof currentCompare | undefined) =>
     s && s.committed > 0 ? (s.done / s.committed) * 100 : 0;
@@ -1271,7 +1298,9 @@ export function computeDashboardData(
       title: "Velocity",
       value: `${currentVelocity} pts`,
       subtitle:
-        `SP completed across ${windowNames.length} selected sprint${windowNames.length === 1 ? "" : "s"}`,
+        velocityUsesPodAverage
+          ? "Average of each pod’s average completed SP per sprint"
+          : `SP completed across ${windowNames.length} selected sprint${windowNames.length === 1 ? "" : "s"}`,
       trend: effectiveVelocityTrendPct,
       trendLabel: trendLabelFor(),
       trendUnit: "%",
@@ -1780,11 +1809,19 @@ export function computeDashboardData(
       ],
     },
     "Avg. Sprint Velocity": {
-      what: "Combined story points completed in the selected sprints across the selected pods. Each work item contributes once.",
-      formula: "Completed SP in selected sprints",
-      calculation: `${fmt(currentVelocity)} SP completed`,
+      what: velocityUsesPodAverage
+        ? "Each pod’s completed story points are averaged across its selected sprints. Those pod averages are then averaged equally."
+        : "Combined story points completed in the selected sprints across the selected pods. Each work item contributes once.",
+      formula: velocityUsesPodAverage
+        ? "Average of each pod’s (completed SP ÷ that pod’s selected sprint count)"
+        : "Completed SP in selected sprints",
+      calculation: velocityUsesPodAverage
+        ? `${podVelocityBreakdown || "No pod sprint data"} · Equal pod average = ${fmt(currentVelocity)} SP/sprint`
+        : `${fmt(currentVelocity)} SP completed`,
       howToCompare:
-        "Compare with the previous sprint and the 3-sprint average. Rising velocity is good only if Say/Do and quality stay stable.",
+        velocityUsesPodAverage
+          ? "Compare the equally weighted pod average with other filter scopes; pair it with Say/Do and quality."
+          : "Compare with the previous sprint and the 3-sprint average. Rising velocity is good only if Say/Do and quality stay stable.",
       trend:
         trendBase && currentCompare && prevCompare
           ? {
@@ -1802,11 +1839,16 @@ export function computeDashboardData(
         value: `${s.done} SP`,
         detail: `${s.doneCount} of ${s.issueCount} items done`,
       })),
-      takeaways: [
-        `Peak sprint in this window: ${peakSprint?.done ?? 0} SP (${peakSprint?.name ?? "n/a"}).`,
-        `3-sprint average: ${avgLastThree} SP.`,
-        `Latest sprint: ${lastSprint?.done ?? 0} SP completed.`,
-      ],
+      takeaways: velocityUsesPodAverage
+        ? [
+            `Pod averages: ${podVelocityBreakdown || "No pod sprint data"}.`,
+            "Each pod has equal weight in the displayed velocity, regardless of how many issues it has.",
+          ]
+        : [
+            `Peak sprint in this window: ${peakSprint?.done ?? 0} SP (${peakSprint?.name ?? "n/a"}).`,
+            `3-sprint average: ${avgLastThree} SP.`,
+            `Latest sprint: ${lastSprint?.done ?? 0} SP completed.`,
+          ],
     },
     "Future Predictability": {
       what:
@@ -1877,12 +1919,15 @@ export function computeDashboardData(
     },
   };
 
-  // Keep legacy card-title aliases aligned with the combined selection total.
+  // Keep legacy card-title aliases aligned with the current velocity scope.
   metricInsights["Total Sprint Velocity"] = {
     ...metricInsights["Avg. Sprint Velocity"],
-    what:
-      "Total story points completed in the selected Pod, Quarter, and Sprint scope.",
-    formula: "Sum of story points completed in selected sprint groups",
+    ...(velocityUsesPodAverage
+      ? {}
+      : {
+          what: "Total story points completed in the selected Pod, Quarter, and Sprint scope.",
+          formula: "Sum of story points completed in selected sprint groups",
+        }),
   };
   metricInsights["Velocity"] = metricInsights["Total Sprint Velocity"];
   metricInsights["Feature Predictability"] = {
