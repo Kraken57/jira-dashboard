@@ -143,7 +143,8 @@ function normalizedSprintRange(meta?: SprintMeta): { key: string; startDate: str
 function commonizeSprints(
   items: JiraWorkItem[],
   sprintMeta: Record<string, SprintMeta>,
-): { items: JiraWorkItem[]; meta: Record<string, SprintMeta> } {
+  filters: DashboardFilters,
+): { items: JiraWorkItem[]; meta: Record<string, SprintMeta>; aliases: Map<string, string> } {
   const quarterCountsBySprint = new Map<string, Map<string, number>>();
   for (const item of items) {
     if (!item.quarter || item.quarter === "All") continue;
@@ -192,36 +193,33 @@ function commonizeSprints(
     const rightRoot = find(right);
     if (leftRoot !== rightRoot) parent.set(rightRoot, leftRoot);
   };
-  const firstByRange = new Map<string, string>();
-  const namesByQuarterOrdinal = new Map<string, string[]>();
+  // A PI and sprint number identify one common option, even when boards
+  // schedule that iteration on different dates or have different states.
+  const firstByNumber = new Map<string, string>();
+  const namesByRange = new Map<string, string[]>();
   for (const [name, info] of details) {
-    if (info.range) {
-      const lifecycleKey = `${sprintLifecycle(sprintMeta[name])}:${info.range.key}`;
-      const first = firstByRange.get(lifecycleKey);
-      if (first) union(first, name);
-      else firstByRange.set(lifecycleKey, name);
-    }
-    // Allow board date differences for the same PI/iteration, but never merge
-    // an older, non-overlapping sprint just because its number is the same.
     if (info.quarter && info.ordinal !== undefined) {
-      const key = `${sprintLifecycle(sprintMeta[name])}:${info.quarter}:sprint:${info.ordinal}`;
-      const peers = namesByQuarterOrdinal.get(key) || [];
-      for (const peer of peers) {
-        const other = details.get(peer)?.range;
-        if (!info.range && !other) union(peer, name);
-        else if (info.range && other) {
-          const start = Date.parse(info.range.startDate);
-          const end = Date.parse(info.range.endDate);
-          const otherStart = Date.parse(other.startDate);
-          const otherEnd = Date.parse(other.endDate);
-          const overlap = Math.min(end, otherEnd) - Math.max(start, otherStart);
-          const duration = Math.max(end - start, otherEnd - otherStart);
-          if (duration > 0 && overlap >= duration / 2) union(peer, name);
-        }
-      }
-      namesByQuarterOrdinal.set(key, [...peers, name]);
+      const key = `${info.quarter}:${info.ordinal}`;
+      const first = firstByNumber.get(key);
+      if (first) union(first, name);
+      else firstByNumber.set(key, name);
     }
+    if (info.range) namesByRange.set(info.range.key, [...(namesByRange.get(info.range.key) || []), name]);
   }
+  for (const [name, info] of details) {
+    if (!info.range) continue;
+    const peers = (namesByRange.get(info.range.key) || []).filter((peer) => {
+      if (peer === name) return false;
+      const other = details.get(peer)!;
+      return !(info.quarter && other.quarter && info.quarter !== other.quarter)
+        && !(info.ordinal !== undefined && other.ordinal !== undefined && info.ordinal !== other.ordinal);
+    });
+    if (new Set(peers.map(find)).size === 1) union(name, peers[0]);
+  }
+  const selectedNames = new Set(items.filter((item) => matchesSelection(item.podKey, filters.podId))
+    .flatMap((item) => item.sprints));
+  const matchesState = (name: string) => !filters.sprintStatus || filters.sprintStatus === "all"
+    || sprintLifecycle(sprintMeta[name]) === filters.sprintStatus;
 
   const groups = new Map<string, string[]>();
   for (const name of allNames) {
@@ -231,7 +229,7 @@ function commonizeSprints(
   const groupRanges = new Map<string, Map<string, { key: string; startDate: string; endDate: string; count: number }>>();
   for (const [root, names] of groups) {
     const ranges = new Map<string, { key: string; startDate: string; endDate: string; count: number }>();
-    for (const name of names) {
+    for (const name of names.filter((name) => selectedNames.has(name) && matchesState(name))) {
       const range = details.get(name)?.range;
       if (!range) continue;
       const current = ranges.get(range.key);
@@ -260,6 +258,13 @@ function commonizeSprints(
   const aliases = new Map<string, string>();
   const commonMeta: Record<string, SprintMeta> = {};
   const sprintNumberByQuarter = new Map<string, number>();
+  const reservedNumbers = new Map<string, Set<number>>();
+  for (const info of details.values()) {
+    if (!info.quarter || info.ordinal === undefined) continue;
+    const used = reservedNumbers.get(info.quarter) || new Set<number>();
+    used.add(info.ordinal);
+    reservedNumbers.set(info.quarter, used);
+  }
   for (const groupKey of groupOrder) {
     const names = groups.get(groupKey) || [];
     const byRange = [...(groupRanges.get(groupKey)?.entries() || [])]
@@ -274,15 +279,21 @@ function commonizeSprints(
     const commonQuarter = [...quarterCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] || quarter || "All";
     const ordinals = [...new Set(names.map((name) => details.get(name)?.ordinal)
       .filter((value): value is number => value !== undefined))];
-    const number = ordinals.length === 1
+    let number = ordinals.length === 1
       ? ordinals[0]
       : (sprintNumberByQuarter.get(commonQuarter) ?? 0) + 1;
+    const reserved = reservedNumbers.get(commonQuarter) || new Set<number>();
+    if (ordinals.length !== 1) while (reserved.has(number)) number++;
+    reserved.add(number);
+    reservedNumbers.set(commonQuarter, reserved);
     sprintNumberByQuarter.set(commonQuarter, Math.max(sprintNumberByQuarter.get(commonQuarter) ?? 0, number));
     const commonLabel = `Sprint ${number}`;
-    const id = `${commonLabel}::${range?.key || quarter || groupKey}::${commonQuarter}::${sprintLifecycle(sprintMeta[names[0]])}`;
-    const states = names.map((name) => sprintMeta[name]?.state).filter(Boolean);
+    const id = `${commonLabel}::${ordinals.length === 1 ? `number:${number}` : range?.key || groupKey}::${commonQuarter}`;
+    const states = names.filter((name) => selectedNames.has(name) && matchesState(name))
+      .map((name) => sprintMeta[name]?.state).filter(Boolean);
     commonMeta[id] = {
       name: id,
+      dateRanges: byRange.map(([, value]) => ({ startDate: value.startDate, endDate: value.endDate })),
       ...(range ? { startDate: range.startDate, endDate: range.endDate } : {}),
       ...(states.length
         ? { state: states.includes("active") ? "active" : states.includes("future") ? "future" : "closed" }
@@ -294,9 +305,10 @@ function commonizeSprints(
   return {
     items: items.map((item) => ({
       ...item,
-      sprints: [...new Set((item.sprints || []).map((name) => aliases.get(name) || name))],
+      sprints: [...new Set((item.sprints || []).filter(matchesState).map((name) => aliases.get(name) || name))],
     })),
     meta: commonMeta,
+    aliases,
   };
 }
 
@@ -783,7 +795,7 @@ export function computeDashboardData(
   const { podId, quarterId, sprintId } = filters;
   const selectedSprints = filterValues(sprintId);
   const allSprintsSelected = isAllSelection(sprintId);
-  const commonized = commonizeSprints(eligibleItems, sprintMeta);
+  const commonized = commonizeSprints(eligibleItems, sprintMeta, filters);
   const effectiveSprintMeta = commonized.meta;
   // An issue can retain sprint history from several quarters. Filter each
   // sprint's own quarter as well as the issue's current quarter.
@@ -950,11 +962,12 @@ export function computeDashboardData(
           .filter((name) => !isUpcoming(name) || name === revealedFuture)
           .slice(-SPRINT_WINDOW);
 
+  const originalItemByKey = new Map(eligibleItems.map((item) => [item.key, item]));
   const completionSprintCache = new Map<string, string | null>();
   const completionSprintFor = (item: JiraWorkItem): string | null => {
     if (!DONE_STATUSES.has(item.status)) return null;
     if (completionSprintCache.has(item.key)) return completionSprintCache.get(item.key) ?? null;
-    const attachedSprints = item.sprints ?? [];
+    const attachedSprints = originalItemByKey.get(item.key)?.sprints ?? [];
     if (!attachedSprints.length) {
       completionSprintCache.set(item.key, null);
       return null;
@@ -962,7 +975,7 @@ export function computeDashboardData(
     const resolvedAt = Date.parse(item.resolutionDate || "");
     if (!Number.isNaN(resolvedAt)) {
       const sprintDates = attachedSprints.map((name) => {
-        const meta = effectiveSprintMeta[name];
+        const meta = sprintMeta[name];
         const start = meta?.startDate ? Date.parse(meta.startDate) : Number.NaN;
         let end = meta?.endDate ? Date.parse(meta.endDate) : Number.NaN;
         if (meta?.endDate && /^\d{4}-\d{2}-\d{2}$/.test(meta.endDate) && !Number.isNaN(end)) end += DAY_MS - 1;
@@ -973,26 +986,38 @@ export function computeDashboardData(
         (Number.isNaN(sprint.end) || resolvedAt <= sprint.end)
       ).sort((a, b) => (Number.isNaN(b.start) ? -Infinity : b.start) - (Number.isNaN(a.start) ? -Infinity : a.start));
       if (containsResolution.length) {
-        completionSprintCache.set(item.key, containsResolution[0].name);
-        return containsResolution[0].name;
+        const mapped = commonized.aliases.get(containsResolution[0].name) || containsResolution[0].name;
+        completionSprintCache.set(item.key, mapped);
+        return mapped;
       }
       const startedBeforeResolution = sprintDates.filter((sprint) => !Number.isNaN(sprint.start) && sprint.start <= resolvedAt)
         .sort((a, b) => b.start - a.start);
       if (startedBeforeResolution.length) {
-        completionSprintCache.set(item.key, startedBeforeResolution[0].name);
-        return startedBeforeResolution[0].name;
+        const mapped = commonized.aliases.get(startedBeforeResolution[0].name) || startedBeforeResolution[0].name;
+        completionSprintCache.set(item.key, mapped);
+        return mapped;
       }
       if (sprintDates.length) {
         sprintDates.sort((a, b) => (Number.isNaN(a.start) ? Infinity : a.start) - (Number.isNaN(b.start) ? Infinity : b.start));
-        completionSprintCache.set(item.key, sprintDates[0].name);
-        return sprintDates[0].name;
+        const mapped = commonized.aliases.get(sprintDates[0].name) || sprintDates[0].name;
+        completionSprintCache.set(item.key, mapped);
+        return mapped;
       }
     }
     // Jira can omit sprint dates (or resolutiondate on legacy items). In that
     // case, the last sprint on the issue is the best available completion attribution.
     const fallback = attachedSprints[attachedSprints.length - 1];
-    completionSprintCache.set(item.key, fallback);
-    return fallback;
+    const mapped = commonized.aliases.get(fallback) || fallback;
+    completionSprintCache.set(item.key, mapped);
+    return mapped;
+  };
+
+  const sprintOrderForItem = (item: JiraWorkItem, commonName: string) => {
+    const starts = (originalItemByKey.get(item.key)?.sprints || [])
+      .filter((name) => commonized.aliases.get(name) === commonName)
+      .map((name) => Date.parse(sprintMeta[name]?.startDate || ""))
+      .filter(Number.isFinite);
+    return starts.length ? Math.max(...starts) : sprintOrderKey(commonName, effectiveSprintMeta[commonName]);
   };
 
   const buildSprintStat = (sprintName: string, pool: JiraWorkItem[]) => {
@@ -1015,7 +1040,7 @@ export function computeDashboardData(
         doneCount += 1;
       }
       const completionIsLater = completionSprint !== null &&
-        sprintOrderKey(completionSprint, effectiveSprintMeta[completionSprint]) > sprintOrderKey(sprintName, effectiveSprintMeta[sprintName]);
+        sprintOrderForItem(it, completionSprint) > sprintOrderForItem(it, sprintName);
       if (!completedHere && (!isDone || completionIsLater || !completionSprint)) {
         carriedSP += sp;
       }
@@ -2025,9 +2050,12 @@ export function computeDashboardData(
     { id: "all", name: "All Sprints", sub: `${scopedSprintNames.length} available` },
     ...scopedSprintNames.map((name) => ({
       id: name,
-      name: effectiveSprintMeta[name]?.startDate && effectiveSprintMeta[name]?.endDate
-        ? `${sprintDisplayName(name)} — ${formatSprintRange(effectiveSprintMeta[name].startDate!, effectiveSprintMeta[name].endDate!)}`
-        : sprintDisplayName(name),
+      name: sprintDisplayName(name),
+      sub: (effectiveSprintMeta[name]?.dateRanges?.length || 0) > 1
+        ? "Dates vary by pod"
+        : effectiveSprintMeta[name]?.startDate && effectiveSprintMeta[name]?.endDate
+          ? formatSprintRange(effectiveSprintMeta[name].startDate!, effectiveSprintMeta[name].endDate!)
+          : "Dates not set",
     })),
   ];
 

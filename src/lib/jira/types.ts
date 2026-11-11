@@ -103,6 +103,7 @@ export interface MetricCardData {
 }
 
 export interface SprintMeta {
+  dateRanges?: { startDate: string; endDate: string }[];
   name: string;
   id?: number;
   originBoardId?: number;

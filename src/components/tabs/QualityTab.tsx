@@ -9,6 +9,7 @@ import {
   ZephyrData,
 } from "@/lib/jira/types";
 import { IssuesModal } from "@/components/IssuesModal";
+import { Select } from "@/components/TabFilters";
 import { DetailModal } from "@/components/DetailModal";
 
 interface QualityTabProps {
@@ -630,7 +631,7 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, zephyrL
         </section>
       )}
       {zephyr?.available && (
-        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-200 px-5 py-5 sm:px-6">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -641,11 +642,15 @@ export function QualityTab({ qaCapacity, qaRosterConfigured = 0, zephyr, zephyrL
                 {scopedZephyrCases.length} matching cases · {scopedZephyrCases.reduce((total, testCase) => total + testCase.executionCount, 0)} runs
               </span>
             </div>
-            <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="mt-4 grid items-end gap-2 sm:grid-cols-2 xl:grid-cols-5">
               <select value={selectedZephyrMember ?? ""} onChange={(event) => setSelectedZephyrMember(event.target.value || null)} aria-label="Search people" className="min-w-0 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="">Search people</option>{zephyrPeopleOptions.map((member) => <option key={member.name} value={member.name}>{member.name}{member.podNames.length ? ` · ${member.podNames.join(", ")}` : ""}</option>)}</select>
               <select value={zephyrScope} onChange={(event) => { setZephyrScope(event.target.value); setZephyrQuarter("all"); setZephyrSprint("all"); }} aria-label="Filter by QA pod or project" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="all">All pods</option>{zephyrScopeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
               <select value={zephyrQuarter} onChange={(event) => { setZephyrQuarter(event.target.value); setZephyrSprint("all"); }} aria-label="Filter by quarter or program increment" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="all">All quarters / PIs</option>{quarterOptions.map((quarter) => <option key={quarter} value={quarter}>{quarter}</option>)}</select>
-              <select value={zephyrSprint} onChange={(event) => setZephyrSprint(event.target.value)} aria-label="Filter by Jira sprint" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="all">All sprints</option>{zephyrSprintOptions.map((sprint) => <option key={sprint} value={sprint}>{sprint}</option>)}<option value="__no_sprint__">No linked Jira sprint</option></select>
+              <Select label="Jira Sprint" value={zephyrSprint} onChange={setZephyrSprint} items={[
+                { id: "all", name: "All sprints" },
+                ...zephyrSprintOptions.map((sprint) => ({ id: sprint, name: sprint })),
+                { id: "__no_sprint__", name: "No linked Jira sprint" },
+              ]} />
               <select value={zephyrExecutionStatus} onChange={(event) => setZephyrExecutionStatus(event.target.value)} aria-label="Filter by execution status" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="all">All execution statuses</option><option value="passed">Passed</option><option value="failed">Failed</option><option value="blocked">Blocked</option><option value="in-progress">In progress</option><option value="pending">Not run yet</option></select>
             </div>
             <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">

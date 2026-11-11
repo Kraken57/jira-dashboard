@@ -37,7 +37,7 @@ const LABELS: Record<FilterKey, string> = {
   status: "Status",
 };
 
-function Select({
+export function Select({
   label,
   items,
   value,
@@ -120,11 +120,11 @@ function MultiSelect({
           onClick={() => setOpen((current) => !current)}
           className="flex w-full items-center justify-between rounded border border-jira-border bg-white px-3 py-2 text-left text-sm font-medium text-jira-text transition-colors hover:bg-jira-bg/50 focus:outline-none focus:ring-1 focus:ring-jira-blue"
         >
-          <span className="truncate">{summary}</span>
+          <span className="min-w-0 whitespace-normal break-words text-left">{summary}</span>
           <span className="ml-2 text-xs text-jira-text-muted">{open ? "▲" : "▼"}</span>
         </button>
         {open && (
-          <div className="absolute z-30 mt-1 w-full min-w-[220px] overflow-hidden rounded border border-jira-border bg-white shadow-lg">
+          <div className="absolute z-30 mt-1 w-full overflow-hidden rounded border border-jira-border bg-white shadow-lg">
             <div className="flex items-center justify-between border-b border-jira-border px-3 py-2">
               <span className="text-xs font-semibold text-jira-text-muted">Select one or more</span>
               <button
@@ -163,9 +163,9 @@ function MultiSelect({
                       }}
                       className="mt-0.5 accent-jira-blue"
                     />
-                    <span className="flex min-w-0 flex-1 items-center justify-between gap-2">
-                      <span className="truncate">{item.name}</span>
-                      {item.sub && <span className="shrink-0 text-xs text-jira-text-muted">{item.sub}</span>}
+                    <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
+                      <span className="w-full whitespace-normal break-words">{item.name}</span>
+                      {item.sub && <span className="whitespace-normal break-words text-xs text-jira-text-muted">{item.sub}</span>}
                     </span>
                   </label>
                 );

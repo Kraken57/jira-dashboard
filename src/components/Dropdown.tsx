@@ -24,9 +24,9 @@ const Dropdown = forwardRef<HTMLDivElement, DropdownProps>(({ label, items, onCh
           onClick={() => onToggle(!open)}
           className="flex w-full items-center justify-between px-3 py-2 bg-white border border-jira-border rounded text-jira-text text-sm font-medium hover:bg-jira-bg/50 transition-colors focus:outline-none focus:ring-1 focus:ring-jira-blue"
         >
-          <span>{selected?.name ?? "All"}</span>
+          <span className="min-w-0 whitespace-normal break-words text-left">{selected?.name ?? "All"}</span>
           <svg
-            className={`w-3.5 h-3.5 text-jira-text-muted transition-transform ${open ? "rotate-180" : ""}`}
+            className={`ml-2 shrink-0 w-3.5 h-3.5 text-jira-text-muted transition-transform ${open ? "rotate-180" : ""}`}
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -50,11 +50,11 @@ const Dropdown = forwardRef<HTMLDivElement, DropdownProps>(({ label, items, onCh
                     : "text-jira-text hover:bg-jira-bg/50"
                 }`}
               >
-                <div className="flex w-full items-center justify-between gap-2 min-w-0">
-                  <span className="font-medium truncate">{item.name}</span>
+                <div className="flex w-full flex-col items-start gap-0.5 min-w-0">
+                  <span className="w-full font-medium whitespace-normal break-words text-left">{item.name}</span>
                   {item.sub && (
                     <span
-                      className={`text-xs whitespace-nowrap shrink-0 ${
+                      className={`text-xs whitespace-normal break-words text-left ${
                         value === item.id ? "text-white/75" : "text-jira-text-muted"
                       }`}
                     >

@@ -408,9 +408,12 @@ IDs through `GET /rest/agile/1.0/sprint/{id}`, including closed sprints, in batc
 of eight. Unreadable sprint details retain the issue-field metadata and log a
 warning. This uses the configured Jira site; no board URL or date is hardcoded.
 The common label preserves the Jira sprint/iteration number, including zero.
-Within the same named PI and iteration, different board date ranges group only
-when they overlap by at least half the longer duration. Completely undated
-sprints can group by PI and iteration. Old non-overlapping dates stay separate.
+Within the same named PI and iteration, all board date ranges form one option.
+Different PI labels or explicit iteration numbers remain separate even when
+their dates coincide. Completion attribution and spillover ordering use the
+original work item's sprint dates before mapping to the common option.
+If selected pods have different timelines, the subtitle says “Dates vary by pod”;
+a single date range is shown only when the selected source ranges agree.
 Only sprints attached to fetched issues are included; empty board sprints are
 not discovered by this path. PI membership comes from sprint names or a shared
 dated sprint with a PI label; calendar dates alone cannot establish a fiscal PI.
@@ -422,13 +425,18 @@ The shared Sprint Status selector sits between Quarter / PI and Sprint:
 - Open Sprints includes Jira states `active` and `future`.
 - Closed Sprints includes Jira state `closed`.
 Unknown states appear only under All. State comes from Jira, rather than guessing
-from dates. Open and closed sprints never merge into the same common group.
+from dates. Lifecycle filtering applies to each source sprint before combining
+work items, so one common sprint number can appear in both Open and Closed
+views when its pods have different states. Each view includes only its matching
+source work items.
 Status filters both the sprint options and work-item scope across the shared
 filter tabs, including audit cards. An item with both open and closed sprint
 history can appear in either view, but is counted once within each view.
 Changing status, pod, or quarter resets the sprint selection to All Sprints.
 Reset restores all pods, quarters, statuses, and sprints. Quality retains its
 separate QA filters and portfolio scope.
+Shared dropdowns wrap full option names and date subtitles. The Quality sprint
+filter uses the same wrapping dropdown instead of a clipped native select.
 
 ---
 
