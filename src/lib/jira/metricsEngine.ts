@@ -237,9 +237,23 @@ function commonizeSprints(
     }
     groupRanges.set(root, ranges);
   }
+  // Use a real Jira range nearest to all selected source ranges. Weight each
+  // range by its source count; break ties by popularity, then chronologically.
+  const representativeRanges = new Map([...groupRanges].map(([root, ranges]) => {
+    const candidates = [...ranges.values()];
+    const ranked = candidates.map((range) => ({
+      range,
+      distance: candidates.reduce((sum, other) => sum + other.count * (
+        Math.abs(Date.parse(range.startDate) - Date.parse(other.startDate))
+        + Math.abs(Date.parse(range.endDate) - Date.parse(other.endDate))
+      ), 0),
+    })).sort((a, b) => a.distance - b.distance || b.range.count - a.range.count
+      || a.range.key.localeCompare(b.range.key));
+    return [root, ranked[0]?.range] as const;
+  }));
   const groupOrder = [...groups.keys()].sort((a, b) => {
-    const aRange = [...(groupRanges.get(a)?.values() || [])].sort((x, y) => y.count - x.count)[0];
-    const bRange = [...(groupRanges.get(b)?.values() || [])].sort((x, y) => y.count - x.count)[0];
+    const aRange = representativeRanges.get(a);
+    const bRange = representativeRanges.get(b);
     const aDetails = (groups.get(a) || []).map((name) => details.get(name));
     const bDetails = (groups.get(b) || []).map((name) => details.get(name));
     const aQuarter = aDetails.find((detail) => detail?.quarter)?.quarter || "";
@@ -269,7 +283,7 @@ function commonizeSprints(
     const names = groups.get(groupKey) || [];
     const byRange = [...(groupRanges.get(groupKey)?.entries() || [])]
       .sort((a, b) => b[1].count - a[1].count || a[0].localeCompare(b[0]));
-    const range = byRange[0]?.[1];
+    const range = representativeRanges.get(groupKey);
     const quarterCounts = new Map<string, number>();
     names.forEach((name) => {
       const quarter = details.get(name)?.quarter;
@@ -2051,9 +2065,7 @@ export function computeDashboardData(
     ...scopedSprintNames.map((name) => ({
       id: name,
       name: sprintDisplayName(name),
-      sub: (effectiveSprintMeta[name]?.dateRanges?.length || 0) > 1
-        ? "Dates vary by pod"
-        : effectiveSprintMeta[name]?.startDate && effectiveSprintMeta[name]?.endDate
+      sub: effectiveSprintMeta[name]?.startDate && effectiveSprintMeta[name]?.endDate
           ? formatSprintRange(effectiveSprintMeta[name].startDate!, effectiveSprintMeta[name].endDate!)
           : "Dates not set",
     })),

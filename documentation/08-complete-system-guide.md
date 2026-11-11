@@ -412,8 +412,12 @@ Within the same named PI and iteration, all board date ranges form one option.
 Different PI labels or explicit iteration numbers remain separate even when
 their dates coincide. Completion attribution and spillover ordering use the
 original work item's sprint dates before mapping to the common option.
-If selected pods have different timelines, the subtitle says “Dates vary by pod”;
-a single date range is shown only when the selected source ranges agree.
+If selected pods have different timelines, the subtitle shows the real Jira
+range closest to the selected source ranges, minimizing the sum of start/end
+date differences weighted by source count. Ties prefer the most common range,
+then the earliest range. A single selected pod uses its own source range.
+This representative timeline does not replace source dates for completion
+attribution or spillover calculations. Missing Jira dates show “Dates not set.”
 Only sprints attached to fetched issues are included; empty board sprints are
 not discovered by this path. PI membership comes from sprint names or a shared
 dated sprint with a PI label; calendar dates alone cannot establish a fiscal PI.
