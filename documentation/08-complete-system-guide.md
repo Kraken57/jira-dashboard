@@ -400,6 +400,12 @@ value is what narrows the data, not the option list.
 Sprint options, in contrast, come from the **scoped** data (`activeItems`), so they reflect
 the selected pod/quarter.
 
+For dated sprints, the common sprint grouping uses Jira's start/end dates.
+An unnamed sprint joins a PI when its date range matches a sprint whose name
+identifies that PI. An issue's current quarter does not assign its historical
+dated sprints to that PI. Sprint ordinals are a fallback only when dates are
+unavailable.
+
 ---
 
 ## 7. Tabs, cards, and what each popup shows

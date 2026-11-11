@@ -164,7 +164,10 @@ function commonizeSprints(
       ? [...quarterCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]
       : undefined;
     details.set(name, {
-      quarter: namedQuarter || associatedQuarter,
+      // An issue retains old sprints after it moves to a later PI. Its current
+      // quarter cannot establish the quarter of a dated historical sprint.
+      // Dated names without a PI are grouped with a dated, named sprint below.
+      quarter: namedQuarter || (range ? undefined : associatedQuarter),
       ordinal: sprintOrdinal(name),
       range,
     });
@@ -191,7 +194,9 @@ function commonizeSprints(
       if (first) union(first, name);
       else firstByRange.set(info.range.key, name);
     }
-    if (info.quarter && info.ordinal) {
+    // Ordinals repeat across pods and PIs. Only use them when Jira has no
+    // dates; dated sprints must agree on their actual date range.
+    if (info.quarter && info.ordinal && !info.range) {
       const key = `${info.quarter}:sprint:${info.ordinal}`;
       const first = firstByQuarterOrdinal.get(key);
       if (first) union(first, name);
