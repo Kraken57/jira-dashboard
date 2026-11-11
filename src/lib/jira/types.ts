@@ -301,6 +301,8 @@ export interface IssueRow {
   isDone: boolean;
   /** Sprint in which Jira resolved this issue, inferred from resolution/sprint dates. */
   completionSprint?: string;
+  completedInScope?: boolean;
+  carriedInScope?: boolean;
   originalEstimateHours?: number;
   isSubtask?: boolean;
   reason?: string;

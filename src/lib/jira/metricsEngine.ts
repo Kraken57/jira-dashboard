@@ -342,12 +342,6 @@ function sprintOrderKey(name: string, meta?: SprintMeta): number {
   return iter;
 }
 
-function daysUntil(iso?: string): number | null {
-  if (!iso) return null;
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return null;
-  return (t - Date.now()) / 86400000;
-}
 
 function pctChange(current: number, previous: number): number {
   if (previous > 0) return Math.round(((current - previous) / previous) * 100);
@@ -824,10 +818,6 @@ export function computeDashboardData(
     || itemSprintQuarters(item).some((quarter) => matchesSelection(quarter, quarterId));
   const DONE_STATUSES = new Set(config.doneStatuses);
   const SUBTASK_DONE_STATUSES = new Set(config.subtaskDoneStatuses);
-  // How many recent sprints to plot; a future sprint is surfaced when the
-  // active sprint is this close to ending.
-  const SPRINT_WINDOW = Math.max(1, Number(config.sprintWindow) || 1);
-  const NEXT_SPRINT_REVEAL_DAYS = Math.max(0, Number(config.nextSprintRevealDays) || 0);
   // Sub-tasks often use a simpler workflow than their parent story.
   const isSubtaskDoneStatus = (status: string) =>
     DONE_STATUSES.has(status) || SUBTASK_DONE_STATUSES.has(status);
@@ -931,50 +921,12 @@ export function computeDashboardData(
       (a, b) => sprintOrderKey(a, effectiveSprintMeta[a]) - sprintOrderKey(b, effectiveSprintMeta[b])
     );
 
-  // "Upcoming" is judged by start date: Jira sometimes reports already-started
-  // historical sprints as state=future, which must not hide real work.
   const now = Date.now();
-  const sprintStatus = (name: string): "Active" | "Closed" | "Upcoming" | "" => {
-    const meta = effectiveSprintMeta[name];
-    if (meta?.state === "active") return "Active";
-    if (meta?.state === "closed") return "Closed";
-    if (meta?.state === "future") return "Upcoming";
-    const start = meta?.startDate ? Date.parse(meta.startDate) : NaN;
-    const end = meta?.endDate ? Date.parse(meta.endDate) : NaN;
-    if (!Number.isNaN(start) && !Number.isNaN(end)) {
-      if (start > now) return "Upcoming";
-      if (end < now) return "Closed";
-      return "Active";
-    }
-    if (meta?.state === "future") return "Upcoming";
-    if (meta?.state === "closed") return "Closed";
-    return "";
-  };
-  const isUpcoming = (name: string) => sprintStatus(name) === "Upcoming";
-
-  // Only reveal the nearest upcoming sprint when the active one is nearly over.
-  const activeEndDays = observedSprints
-    .filter((name) => sprintStatus(name) === "Active")
-    .map((name) => daysUntil(effectiveSprintMeta[name]?.endDate))
-    .filter((d): d is number => d !== null)
-    .sort((a, b) => a - b)[0];
-
-  let revealedFuture: string | null = null;
-  if (activeEndDays !== undefined && activeEndDays <= NEXT_SPRINT_REVEAL_DAYS) {
-    const upcoming = observedSprints
-      .filter(isUpcoming)
-      .sort(
-        (a, b) => sprintOrderKey(a, effectiveSprintMeta[a]) - sprintOrderKey(b, effectiveSprintMeta[b])
-      );
-    revealedFuture = upcoming[0] || null;
-  }
-
-  const windowNames =
-    !allSprintsSelected
-      ? observedSprints.filter((name) => selectedSprints.includes(name))
-      : observedSprints
-          .filter((name) => !isUpcoming(name) || name === revealedFuture)
-          .slice(-SPRINT_WINDOW);
+  // All means every sprint in the current pod/PI/lifecycle scope, including
+  // future sprints. Explicit selection controls the chart exactly.
+  const windowNames = allSprintsSelected
+    ? observedSprints
+    : observedSprints.filter((name) => selectedSprints.includes(name));
 
   const originalItemByKey = new Map(eligibleItems.map((item) => [item.key, item]));
   const completionSprintCache = new Map<string, string | null>();
@@ -1034,6 +986,14 @@ export function computeDashboardData(
     return starts.length ? Math.max(...starts) : sprintOrderKey(commonName, effectiveSprintMeta[commonName]);
   };
 
+  const canCarryInSprint = (item: JiraWorkItem, commonName: string) =>
+    (originalItemByKey.get(item.key)?.sprints || []).some((name) => {
+      if (commonized.aliases.get(name) !== commonName) return false;
+      const meta = sprintMeta[name];
+      const start = Date.parse(meta?.startDate || "");
+      return meta?.state !== "future" && (!Number.isFinite(start) || start <= now);
+    });
+
   const buildSprintStat = (sprintName: string, pool: JiraWorkItem[]) => {
     const sprintItems = pool.filter((it) => matchesSprint(it.sprints, sprintName));
     let committedSP = 0;
@@ -1055,7 +1015,7 @@ export function computeDashboardData(
       }
       const completionIsLater = completionSprint !== null &&
         sprintOrderForItem(it, completionSprint) > sprintOrderForItem(it, sprintName);
-      if (!completedHere && (!isDone || completionIsLater || !completionSprint)) {
+      if (!completedHere && canCarryInSprint(it, sprintName) && (!isDone || completionIsLater || !completionSprint)) {
         carriedSP += sp;
       }
     });
@@ -1102,7 +1062,6 @@ export function computeDashboardData(
   };
 
   const completedSeries = sprintStats.map((s) => s.done);
-  const committedSeries = sprintStats.map((s) => s.committed);
   const totalFinished = completedSeries.reduce((a, b) => a + b, 0);
   const lastThree = completedSeries.slice(Math.max(completedSeries.length - 3, 0));
   const avgLastThree = lastThree.length
@@ -1161,67 +1120,27 @@ export function computeDashboardData(
   const prevCompare = compareStats[compareStats.length - 2];
   const hasComparison = !isAllSelection(podId) && filterValues(podId).length === 1 && Boolean(currentCompare && prevCompare);
 
-  const scopeCommittedSP = isAllSprints
-    ? summary.totalStoryPoints
-    : windowNames.length > 1 ? summary.totalStoryPoints : lastSprint?.committed ?? 0;
-  const scopeDoneSP = isAllSprints
-    ? summary.completedStoryPoints
-    : windowNames.length > 1 ? sprintStats.reduce((sum, sprint) => sum + sprint.done, 0) : lastSprint?.done ?? 0;
-  const scopeCarriedSP = isAllSprints
-    ? Math.max(summary.totalStoryPoints - summary.completedStoryPoints, 0)
-    : windowNames.length > 1 ? Math.max(scopeCommittedSP - scopeDoneSP, 0) : lastSprint?.carried ?? 0;
-
-  const sayDoRatio = scopeCommittedSP > 0
-    ? Math.round((scopeDoneSP / scopeCommittedSP) * 100)
-    : 0;
-  const carryOver = scopeCommittedSP > 0
-    ? Math.round((scopeCarriedSP / scopeCommittedSP) * 100)
-    : 0;
-  let currentVelocity = scopeDoneSP;
-  let velocityPodCount = 0;
-  let globalPodPools: Map<string, JiraWorkItem[]> | null = null;
-
-  // Two-level average for the global "All Pods / All Quarters / All Sprints"
-  // view: average each pod's sprint velocity first, then average the pods.
-  // This stops a large pod from dominating the enterprise average. Every
-  // other filter combination keeps the existing calculation.
-  const isGlobalAll =
-    isAllSelection(podId) && isAllSelection(quarterId) && isAllSprints;
-  if (isGlobalAll) {
-    // Velocity only counts accepted (done) items with real story points.
-    // Zero-SP items (including subtasks) cannot contribute velocity.
-    const velocityItems = activeItems.filter(
-      (it) => DONE_STATUSES.has(it.status) && (it.storyPoints || 0) > 0
-    );
-    const podPools = new Map<string, JiraWorkItem[]>();
-    velocityItems.forEach((it) => {
-      const key = it.podKey || "UNKNOWN";
-      if (!podPools.has(key)) podPools.set(key, []);
-      podPools.get(key)!.push(it);
-    });
-
-    const podAverages: number[] = [];
-    podPools.forEach((pool) => {
-      const podSprints = windowNames.filter((name) =>
-        pool.some((it) => matchesSprint(it.sprints, name))
-      );
-      if (!podSprints.length) return;
-      const perSprint = podSprints.map(
-        (name) => buildSprintStat(name, pool).done
-      );
-      podAverages.push(
-        perSprint.reduce((a, b) => a + b, 0) / perSprint.length
-      );
-    });
-
-    velocityPodCount = podAverages.length;
-    currentVelocity = podAverages.length
-      ? Math.round(
-          podAverages.reduce((a, b) => a + b, 0) / podAverages.length
-        )
-      : 0;
-    globalPodPools = podPools;
-  }
+  const scopeNames = new Set(windowNames);
+  const scopeItems = activeItems.filter((item) => item.sprints.some((name) => scopeNames.has(name)));
+  const completedScopeKeys = new Set(scopeItems.filter((item) => {
+    const completion = completionSprintFor(item);
+    return completion !== null && scopeNames.has(completion);
+  }).map((item) => item.key));
+  const carriedScopeKeys = new Set(scopeItems.filter((item) => {
+    if (completedScopeKeys.has(item.key)) return false;
+    const completion = completionSprintFor(item);
+    return item.sprints.some((name) => scopeNames.has(name) && canCarryInSprint(item, name)
+      && (!DONE_STATUSES.has(item.status) || !completion
+        || sprintOrderForItem(item, completion) > sprintOrderForItem(item, name)));
+  }).map((item) => item.key));
+  const scopeCommittedSP = scopeItems.reduce((sum, item) => sum + (item.storyPoints || 0), 0);
+  const scopeDoneSP = scopeItems.filter((item) => completedScopeKeys.has(item.key))
+    .reduce((sum, item) => sum + (item.storyPoints || 0), 0);
+  const scopeCarriedSP = scopeItems.filter((item) => carriedScopeKeys.has(item.key))
+    .reduce((sum, item) => sum + (item.storyPoints || 0), 0);
+  const sayDoRatio = scopeCommittedSP > 0 ? Math.round(scopeDoneSP / scopeCommittedSP * 100) : 0;
+  const carryOver = scopeCommittedSP > 0 ? Math.round(scopeCarriedSP / scopeCommittedSP * 100) : 0;
+  const currentVelocity = scopeDoneSP;
 
   const sayDoOf = (s: typeof currentCompare | undefined) =>
     s && s.committed > 0 ? (s.done / s.committed) * 100 : 0;
@@ -1241,27 +1160,9 @@ export function computeDashboardData(
       ? pctChange(currentCompare.done, prevCompare.done)
       : 0;
 
-  // Keep the global trend consistent with the two-level average: compare the
-  // pod-averaged velocity of the latest sprint with the previous sprint.
-  let effectiveVelocityTrendPct = velocityTrendPct;
-  let velocityCompareCurrent = currentCompare?.done ?? 0;
-  let velocityComparePrevious = prevCompare?.done ?? 0;
-  if (isGlobalAll && globalPodPools && hasComparison && currentCompare && prevCompare) {
-    const podAvgForSprint = (name: string) => {
-      const vals: number[] = [];
-      globalPodPools!.forEach((pool) => {
-        if (!pool.some((it) => matchesSprint(it.sprints, name))) return;
-        vals.push(buildSprintStat(name, pool).done);
-      });
-      return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
-    };
-    velocityCompareCurrent = podAvgForSprint(currentCompare.fullName);
-    velocityComparePrevious = podAvgForSprint(prevCompare.fullName);
-    effectiveVelocityTrendPct = pctChange(
-      velocityCompareCurrent,
-      velocityComparePrevious
-    );
-  }
+  const effectiveVelocityTrendPct = velocityTrendPct;
+  const velocityCompareCurrent = currentCompare?.done ?? 0;
+  const velocityComparePrevious = prevCompare?.done ?? 0;
 
   // Show the size of the change; the card appends better/worse.
   const trendText = (delta: number, unit: string) =>
@@ -1363,11 +1264,7 @@ export function computeDashboardData(
       title: "Velocity",
       value: `${currentVelocity} pts`,
       subtitle:
-        isAllSprints
-          ? isGlobalAll
-            ? `Average SP per sprint across ${velocityPodCount} pods`
-            : `SP completed across ${windowNames.length} sprints`
-          : "SP completed in selected sprint",
+        `SP completed across ${windowNames.length} selected sprint${windowNames.length === 1 ? "" : "s"}`,
       trend: effectiveVelocityTrendPct,
       trendLabel: trendLabelFor(),
       trendUnit: "%",
@@ -1869,14 +1766,9 @@ export function computeDashboardData(
       ],
     },
     "Avg. Sprint Velocity": {
-      what:
-        "Average story points completed per sprint. With All Pods, All Quarters, and All Sprints selected, it averages each pod's sprint velocity first, then averages the pods, so one large pod cannot dominate.",
-      formula: isGlobalAll
-        ? "Mean of each pod's average sprint velocity"
-        : "Sum of story points on done items",
-      calculation: isGlobalAll
-        ? `${fmt(currentVelocity)} SP average per sprint across ${velocityPodCount} pods`
-        : `${fmt(currentVelocity)} SP completed`,
+      what: "Combined story points completed in the selected sprints across the selected pods. Each work item contributes once.",
+      formula: "Completed SP in selected sprints",
+      calculation: `${fmt(currentVelocity)} SP completed`,
       howToCompare:
         "Compare with the previous sprint and the 3-sprint average. Rising velocity is good only if Say/Do and quality stay stable.",
       trend:
@@ -1971,15 +1863,14 @@ export function computeDashboardData(
     },
   };
 
-  // Total Sprint Velocity is the same card for non-global filters; keep its
-  // popup explanation aligned with the title.
+  // Keep legacy card-title aliases aligned with the combined selection total.
   metricInsights["Total Sprint Velocity"] = {
     ...metricInsights["Avg. Sprint Velocity"],
     what:
       "Total story points completed in the selected Pod, Quarter, and Sprint scope.",
-    formula: "Sum of story points on done items",
+    formula: "Sum of story points completed in selected sprint groups",
   };
-  metricInsights["Velocity"] = metricInsights[isGlobalAll ? "Avg. Sprint Velocity" : "Total Sprint Velocity"];
+  metricInsights["Velocity"] = metricInsights["Total Sprint Velocity"];
   metricInsights["Feature Predictability"] = {
     what: "Features delivered on time or still in progress within their due date.",
     formula: "(On-time delivered + unfinished within due date + features without a due date) ÷ all selected features × 100",
@@ -2004,6 +1895,8 @@ export function computeDashboardData(
     dueDate: it.dueDate || "",
     isDone: DONE_STATUSES.has(it.status),
     completionSprint: completionSprintFor(it) ?? undefined,
+    completedInScope: completedScopeKeys.has(it.key),
+    carriedInScope: carriedScopeKeys.has(it.key),
     originalEstimateHours: estimateHours(it.originalEstimateSeconds),
     reason: futurePredictability.reasons.get(it.key),
   });

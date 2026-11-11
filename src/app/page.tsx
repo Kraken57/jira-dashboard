@@ -350,33 +350,17 @@ export default function DashboardPage() {
 
     switch (card.title) {
       case "Sprint Carry Over":
-        issues = all.filter((i) => {
-          if (!i.isDone) return true;
-          if (baseFilters.sprint.includes("all") || baseFilters.sprint.length === 0 || !i.completionSprint) return false;
-          const selectedSprint = baseFilters.sprint.filter((sprint) => sprint !== "all").at(-1);
-          if (!selectedSprint) return false;
-          const selectedStart = feed?.sprintMeta?.[selectedSprint]?.startDate;
-          const completionStart = feed?.sprintMeta?.[i.completionSprint]?.startDate;
-          const selectedAt = selectedStart ? Date.parse(selectedStart) : Number.NaN;
-          const completionAt = completionStart ? Date.parse(completionStart) : Number.NaN;
-          if (!Number.isNaN(selectedAt) && !Number.isNaN(completionAt)) {
-            return completionAt > selectedAt;
-          }
-          const attached = i.sprint.split(", ");
-          return attached.indexOf(i.completionSprint) > attached.indexOf(selectedSprint);
-        });
+        issues = all.filter((i) => i.carriedInScope);
         label = "Not accepted / spilled-over committed work";
         break;
       case "Avg. Sprint Velocity":
       case "Velocity":
       case "Total Sprint Velocity":
-        issues = all.filter((i) => i.isDone);
+        issues = all.filter((i) => i.completedInScope);
         label = "Completed work items";
         break;
       case "Say/Do Ratio":
-        issues = all.filter((i) =>
-          i.isDone && (baseFilters.sprint.includes("all") || baseFilters.sprint.includes(i.completionSprint || ""))
-        );
+        issues = all.filter((i) => i.completedInScope);
         label = "Accepted / completed committed work";
         break;
       case "Feature Predictability":

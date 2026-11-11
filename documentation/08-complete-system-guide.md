@@ -458,9 +458,9 @@ navigates to another tab and never triggers a new Jira request.
 
 | Card | Popup issue list | Popup subtitle |
 |---|---|---|
-| Say/Do Ratio | Done issues; for a selected sprint, only issues completed in that sprint | “Accepted / completed committed work” |
-| Sprint Carry Over | Open issues plus issues completed in a later sprint; for All Sprints, only currently unfinished work | “Not accepted / spilled-over committed work” |
-| Avg. Sprint Velocity / Total Sprint Velocity | `isDone` | “Completed work items” |
+| Say/Do Ratio | `completedInScope` | “Accepted / completed committed work” |
+| Sprint Carry Over | `carriedInScope` | “Not accepted / spilled-over committed work” |
+| Velocity | `completedInScope` | “Completed work items” |
 | Future Predictability | open features with a due date | “Planned features vs due-date forecast” |
 
 The subtitle also appends the current scope, e.g. `CRM · CY26 PI.3 · Iteration 2`.
@@ -790,50 +790,33 @@ completedStoryPoints = round(sum(SP where done))
 
 ### 9.4 Executive KPI cards
 
-For **All Sprints**, totals are de-duplicated (`summary`), so an issue that appears in
-multiple sprints is counted once.
+Cards and charts use the same pod, PI, sprint lifecycle, and sprint selection.
+Each work item contributes once to a card across selected sprints. Per-sprint
+chart points preserve sprint membership, so carried work can belong to several
+sprint commitments but completes in only one source sprint.
 
-For **one specific sprint**, the totals come from that sprint's stats.
+| Card | Formula |
+|---|---|
+| Say/Do Ratio | SP completed in the selected sprints / SP assigned to those sprints × 100 |
+| Sprint Carry Over | SP not delivered in the selection and carried from a started source sprint / selected committed SP × 100 |
+| Velocity | Combined SP completed in the selected sprints across selected pods; no global pod averaging |
+| Feature Predictability | Uses the selected features and ancestors of selected work, with story delivery/due-date rules from `featureDelivery.ts` |
 
-| Card | Formula | Trend | Color rule |
-|---|---|---|---|
-| Say/Do Ratio | `doneSP / committedSP × 100` | size of the change from the previous sprint, shown as `N pts` plus `better`/`worse` | ≥80 green, ≥65 blue, else red |
-| Sprint Carry Over | `carriedSP / committedSP × 100` | size of the change from the previous sprint, shown as `N pt(s)` plus `better`/`worse` | ≤18 green, ≤28 blue, else red |
-| Avg. Sprint Velocity | Global All/All/All: mean of each pod’s average sprint SP, counting only accepted items with SP > 0. Otherwise the card is titled **Total Sprint Velocity** and shows `doneSP` for the period | change in SP from the previous sprint, shown as `N SP` plus `better`/`worse` | always blue |
-| Future Predictability | on-time-forecast estimated features / estimated features (future due dates) × 100 | `on time of estimated` features; not sprint-trended | ≥85 green, ≥50 blue, else red |
+A future source sprint contributes assigned work, but no carryover before it
+starts. Completed work attributed to an unselected sprint is not included in
+selected-sprint velocity or Say/Do. Popup rows use the same `completedInScope`
+and `carriedInScope` flags as the card numerators. Feature details retain the
+full child-story rollup for each selected feature.
 
-The trend arrow and color describe **performance direction**, not raw movement: green/up means
-better, red/down means worse. For Sprint Carry Over (lower is better) a decrease is shown as
-an up/green improvement, and an increase is shown as a down/red regression.
+For one selected pod, a single selected sprint compares against its previous
+available sprint in the pod/PI/lifecycle scope. Multiple selected sprints compare
+the last two selected sprints. Combined pod views show totals without that
+single-pod trend comparison.
 
-**Future Predictability math** (different from Say/Do):
-
-- Planned features = open (not done) features with a due date on or after today.
-  If the site has no `Feature` issue type, `Epic` is used instead.
-- Remaining work = sum of open child story points. The feature’s own story points are
-  used only when it has no estimated children. Features with no remaining estimate are
-  excluded from the score and reported as `No Estimate`.
-- On time = remaining SP fit inside the **weekdays** remaining until the due date at
-  the team’s recent rate (completed SP over the last 30 calendar days ÷ working days in
-  that window). Weekends do not add capacity. Public holidays are not modelled.
-- Past-due open features are excluded from the score and listed as `Past Due`.
-- If no planned feature has a remaining estimate, the card shows `N/A` instead of a
-  misleading 0% or 100%.
-- Example: 8 estimated planned features, 6 forecast on time → 75%.
-
-The trend is **not** hard-coded to zero for All Sprints. It compares the latest sprint
-in the window with the sprint before it, even when the card value aggregates the whole
-selection. The label names both sprints (e.g. `Iteration 4 vs Iteration 3`). If there is no
-previous sprint in the data, the trend is `0` and the label says `no previous sprint`.
-
-Notes:
-
-- Future Predictability is a **forward-looking due-date forecast** and shares no math
-  with Say/Do, which is a retrospective delivered/committed ratio.
-- `MetricCard.trendGood` controls whether an increase is good (`up`) or bad (`down`).
-  Carry Over uses `down`.
-- `MetricCard` also receives a legacy `drilldownTab`, but the page now always passes
-  `onOpen`; clicking opens a popup, not a tab.
+These figures use current Jira estimates and resolution/sprint timestamps.
+They do not reconstruct sprint-start commitments or historical statuses from
+changelog snapshots. Missing timestamps retain the documented completion
+fallback; exact historical Jira report parity is not guaranteed.
 
 ### 9.5 Sprint window and ordering
 
@@ -841,12 +824,12 @@ Notes:
 - Observed sprints are those with at least one item in the current scope.
 - Ordering uses a numeric key derived from year/quarter/PI/iteration in the name; if that
   fails, the sprint start date; if that fails, the iteration number.
-- Only the latest `JIRA_SPRINT_WINDOW` sprints are plotted (default 5).
-- Upcoming sprints are hidden unless the active sprint ends within
-  `JIRA_NEXT_SPRINT_REVEAL_DAYS` (default 5).
-- Sprint state is judged by **dates first**, then Jira state. This avoids a real bug where
-  Jira reports an already-running sprint as `state: "future"`.
-- Display names strip prefixes: `"DTR 2026 - Q4 - Iteration 2"` → `"Iteration 2"`.
+- All Sprints plots every observed sprint in the selected pod/PI/lifecycle scope,
+  including future sprints. The legacy recent-window and future-reveal limits
+  do not hide sprints in the shared-filter charts.
+- Explicit sprint selections plot exactly those available sprint groups.
+- Labels use the common quarter and sprint number; source dates remain available
+  for completion attribution and carryover ordering.
 
 Per-sprint `committed` includes each item Jira lists in that sprint, preserving the
 commitment across carry-over. A completed item contributes to `done` in only one sprint:
@@ -1496,7 +1479,7 @@ If full Forge parity is required, port the logic from `metricsEngine.ts` into
 | **SP** | Story Points |
 | **PI** | Program Increment; mapped to a quarter (`CY26 PI.3`) |
 | **Pod** | Team/service grouping. Custom field value, or Jira project as fallback |
-| **Sprint window** | The latest N sprints shown in charts (default 5) |
+| **Sprint selection** | All available sprint groups in scope, or the explicitly selected groups |
 | **Done** | Status present in `JIRA_DONE_STATUSES` (exact, case-sensitive) |
 | **Carry over / spillover** | Committed SP not completed in the sprint |
 | **Say/Do** | Done SP ÷ committed SP |
