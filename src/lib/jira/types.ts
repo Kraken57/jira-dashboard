@@ -145,6 +145,8 @@ export interface DeveloperStat {
   assignedTasks?: number;
   completedTasks?: number;
   loggedHours?: number;
+  capacityHours: number;
+  utilizationPct: number;
   unestimatedIssues?: number;
   assignedStories: number;
   assignedSubtasks: number;

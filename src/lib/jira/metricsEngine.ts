@@ -1038,7 +1038,7 @@ export function computeDashboardData(
   // Charts use a stable natural quarter/sprint order (for example, Q3 before
   // Q4 and Iteration 0 before Iteration 1). Keep sprintStats in its existing
   // order for cards and metric comparisons.
-  const chartSprintStats = [...sprintStats].sort(
+  let chartSprintStats = [...sprintStats].sort(
     (a, b) =>
       sprintOrderKey(a.fullName, effectiveSprintMeta[a.fullName]) -
         sprintOrderKey(b.fullName, effectiveSprintMeta[b.fullName]) ||
@@ -1051,6 +1051,13 @@ export function computeDashboardData(
         sensitivity: "base",
       }),
   );
+  // Keep the fully aggregated scope for KPI totals, but cap the default
+  // all-portfolio chart view so long histories do not overwhelm the graphs.
+  const showLatestFiveOnly = allSprintsSelected
+    && isAllSelection(podId)
+    && isAllSelection(quarterId)
+    && (!filters.sprintStatus || filters.sprintStatus === "all");
+  if (showLatestFiveOnly) chartSprintStats = chartSprintStats.slice(-5);
 
   // 5. Delivery and Velocity Datasets
   const delivery: DeliveryChartData = {
@@ -1322,6 +1329,7 @@ export function computeDashboardData(
       totalSP: number;
       originalEstimateSeconds: number;
       completedEstimateSeconds: number;
+      loggedSeconds: number;
       team: string;
     }
   >();
@@ -1339,6 +1347,7 @@ export function computeDashboardData(
         totalSP: 0,
         originalEstimateSeconds: 0,
         completedEstimateSeconds: 0,
+        loggedSeconds: 0,
         team: it.team || it.podName,
       };
     const isSubtask = /^sub-?task$/i.test(it.workType);
@@ -1347,6 +1356,7 @@ export function computeDashboardData(
     existing.assigned += 1;
     existing.totalSP += it.storyPoints || 0;
     existing.originalEstimateSeconds += it.originalEstimateSeconds || 0;
+    existing.loggedSeconds += it.timeSpentSeconds || 0;
     if (isSubtask) existing.subtasks += 1;
     else if (/^story$/i.test(it.workType)) existing.stories += 1;
 
@@ -1366,7 +1376,11 @@ export function computeDashboardData(
       team: [...new Set(developerItems.filter((item) => (item.assignee || "Unassigned") === name).map((item) => item.podName || item.team))].join(", "),
       assignedTasks: developerItems.filter((item) => (item.assignee || "Unassigned") === name && /^task$/i.test(item.workType)).length,
       completedTasks: developerItems.filter((item) => (item.assignee || "Unassigned") === name && /^task$/i.test(item.workType) && DONE_STATUSES.has(item.status)).length,
-      loggedHours: estimateHours(developerItems.filter((item) => (item.assignee || "Unassigned") === name).reduce((sum, item) => sum + (item.timeSpentSeconds || 0), 0)),
+      loggedHours: estimateHours(stat.loggedSeconds),
+      capacityHours: windowNames.length * 60,
+      utilizationPct: windowNames.length > 0
+        ? Math.round((estimateHours(stat.loggedSeconds) / (windowNames.length * 60)) * 100)
+        : 0,
       unestimatedIssues: developerItems.filter((item) => (item.assignee || "Unassigned") === name && !(item.hasOriginalEstimate ?? ((item.originalEstimateSeconds || 0) > 0))).length,
       assignedIssues: stat.assigned,
       completedIssues: stat.done,

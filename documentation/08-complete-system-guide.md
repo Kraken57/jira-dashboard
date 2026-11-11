@@ -425,7 +425,8 @@ Quarter options and issue scope include each mapped historical sprint quarter,
 so moving a story into a newer PI does not hide its older PI's sprint history.
 All pod selections use consistent common labels (Sprint 0, Sprint 1, etc.).
 The shared Sprint Status selector sits between Quarter / PI and Sprint:
-- All Sprints includes every lifecycle state (the default).
+- Any Sprint Status includes every lifecycle state (the default); the Sprint
+  dropdown's “All Sprints” option means all sprint names within that lifecycle scope.
 - Open Sprints includes Jira states `active` and `future`.
 - Closed Sprints includes Jira state `closed`.
 Unknown states appear only under All. State comes from Jira, rather than guessing
@@ -506,6 +507,15 @@ The table now has separate **Story Points** (`Delivered / Assigned`) and **Hours
 (`Completed / Original estimate`) columns, plus a team-total footer. Hours come from
 Jira’s `timeoriginalestimate` or `timetracking.originalEstimateSeconds`, both in seconds, divided by 3600. The Jira display text (for example, `1d 2h`) is not parsed, so the site’s hours-per-day configuration is respected. Logged hours use `timespent`; completed estimate hours are not actual logged hours. Missing estimates are counted separately. Completion rate is completed items ÷ assigned items.
 Developer rows are tinted **yellow above 70%** and **red at 70% or below**.
+
+The capacity view also shows utilization: Jira `timespent` hours divided by the
+assumed available hours for the filtered sprint scope. Capacity is 60 hours per
+contributor per sprint (6 effective hours × 10 weekdays). Missing worklogs count
+as 0 hours; utilization can exceed 100%. The team figure is total logged hours
+divided by total contributor capacity, so it is weighted rather than averaging
+individual percentages. The same percentage and logged/available hour totals appear
+in each developer row. This is an agreed planning assumption, not Jira's recorded
+work schedule.
 
 Sub-tasks inherit their parent story’s sprint/quarter when they have none of their own.
 Sub-task completion also accepts `JIRA_SUBTASK_DONE_STATUSES` (default
@@ -1432,7 +1442,9 @@ does not exist.
   dates, with the last-listed sprint as fallback; All-Sprints totals remain de-duplicated.
 - **The trend chart’s “moving average” is an expanding average**, unlike the trailing
   3-sprint average in the Executive velocity chart.
-- **The trend charts are capped** by `JIRA_SPRINT_WINDOW` (default 5).
+- **Broad portfolio charts** (All Pods, All Quarters / PIs, Any Sprint Status,
+  All Sprints) show the latest five sprint groups. Other filter combinations show
+  every sprint in the selected scope.
 
 ### 17.2 Forge parity
 

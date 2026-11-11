@@ -52,6 +52,13 @@ export function DeveloperTab({
   const totalCompletedHours = Math.round(
     developers.reduce((acc, d) => acc + d.completedEstimateHours, 0) * 10
   ) / 10;
+  const totalLoggedHours = Math.round(
+    developers.reduce((acc, d) => acc + (d.loggedHours ?? 0), 0) * 10
+  ) / 10;
+  const totalCapacityHours = developers.reduce((acc, d) => acc + d.capacityHours, 0);
+  const totalUtilization = totalCapacityHours > 0
+    ? Math.round((totalLoggedHours / totalCapacityHours) * 100)
+    : 0;
   const overallCompletion = totalAssigned > 0 ? Math.round((totalCompleted / totalAssigned) * 100) : 0;
   const hasDeveloperFilter = Boolean(nameSearch.trim()) || !allDevelopersSelected;
   const visibleNames = new Set(developers.map((developer) => developer.name));
@@ -72,7 +79,7 @@ export function DeveloperTab({
   return (
     <div className="space-y-6">
       {/* KPI Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <button
           type="button"
           onClick={() => open("Active Contributors", `${podName} · all assigned story, task and sub-task work`, scopedIssues)}
@@ -114,6 +121,23 @@ export function DeveloperTab({
           </p>
           <p className="text-xs text-jira-text-light mt-1">
             Delivered SP ÷ {totalDevs} contributors
+          </p>
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            open(
+              "Total Utilization",
+              `${podName} · ${totalLoggedHours} logged hrs of ${totalCapacityHours} available hrs`,
+              scopedIssues,
+            )
+          }
+          className="text-left bg-white border border-jira-border rounded-lg p-4 shadow-sm hover:border-jira-blue/50 transition"
+        >
+          <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Total Utilization</p>
+          <p className="text-2xl font-bold text-jira-blue mt-1">{totalUtilization}%</p>
+          <p className="text-xs text-jira-text-light mt-1">
+            {totalLoggedHours} logged hrs ÷ {totalCapacityHours} available hrs
           </p>
         </button>
       </div>
@@ -174,11 +198,17 @@ export function DeveloperTab({
                   </span>
                 </th>
                 <th className="px-6 py-3 text-right">Completion Rate</th>
+                <th className="px-6 py-3 text-right">
+                  <span className="block">Utilization</span>
+                  <span className="block text-[10px] font-medium normal-case tracking-normal text-jira-text-light">
+                    Logged hours ÷ available hours
+                  </span>
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-jira-border/60">
               {developers.length === 0 && (
-                <tr><td colSpan={7} className="px-6 py-12 text-center"><p className="text-sm font-semibold text-slate-800">No developers match “{nameSearch || developerFilter}”</p><button type="button" onClick={() => setNameSearch("")} className="mt-2 text-xs font-semibold text-indigo-700 hover:text-indigo-900">Clear search</button></td></tr>
+                <tr><td colSpan={8} className="px-6 py-12 text-center"><p className="text-sm font-semibold text-slate-800">No developers match “{nameSearch || developerFilter}”</p><button type="button" onClick={() => setNameSearch("")} className="mt-2 text-xs font-semibold text-indigo-700 hover:text-indigo-900">Clear search</button></td></tr>
               )}
               {developers.map((dev, idx) => (
                 <tr
@@ -247,6 +277,12 @@ export function DeveloperTab({
                       </span>
                     </div>
                   </td>
+                  <td className="px-6 py-3 text-right">
+                    <p className="text-sm font-bold text-jira-blue">{dev.capacityHours > 0 ? `${dev.utilizationPct}%` : "—"}</p>
+                    <p className="text-[11px] text-jira-text-muted mt-0.5">
+                      {dev.loggedHours ?? 0} / {dev.capacityHours} hrs
+                    </p>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -274,6 +310,12 @@ export function DeveloperTab({
                   {totalCompletedHours} / {totalOriginalHours} hrs
                 </td>
                 <td className="px-6 py-3 text-right">{overallCompletion}%</td>
+                <td className="px-6 py-3 text-right text-jira-blue">
+                  {totalCapacityHours > 0 ? `${totalUtilization}%` : "—"}
+                  <p className="text-[11px] font-normal text-jira-text-muted mt-0.5">
+                    {totalLoggedHours} / {totalCapacityHours} hrs
+                  </p>
+                </td>
               </tr>
             </tfoot>
           </table>
@@ -300,7 +342,7 @@ export function DeveloperTab({
                   ["Items without estimate", String(focusedDeveloper.unestimatedIssues ?? 0)],
                 ].map(([label, value]) => <div key={label} className="rounded border border-jira-border bg-white p-3"><p className="text-xs text-jira-text-muted">{label}</p><p className="mt-1 font-semibold text-jira-text">{value}</p></div>)}
               </div>
-              <p className="mt-3 text-xs text-jira-text-muted">{focusedDeveloper.team} · Stories, tasks and subtasks in the selected filters. Completed estimate is the original estimate of completed work; logged time is Jira time spent on these items. Open work estimates do not measure remaining capacity. Availability needs working capacity and a date range.</p>
+              <p className="mt-3 text-xs text-jira-text-muted">{focusedDeveloper.team} · Stories, tasks and subtasks in the selected filters. Utilization is Jira time logged divided by available sprint hours, using 6 effective hours × 10 weekdays (60 hours) for each selected sprint. A missing worklog counts as 0 logged hours.</p>
             </div>
           )}
           onClose={() => setModal(null)}

@@ -387,7 +387,7 @@ export default function DashboardPage() {
     pod: pods.map((p) => ({ id: p.id, name: p.name, sub: p.sub })),
     quarter: quarters.map((q) => ({ id: q.id, name: q.name, sub: q.sub })),
     sprintStatus: [
-      { id: "all", name: "All Sprints" },
+      { id: "all", name: "Any Sprint Status" },
       { id: "open", name: "Open Sprints", sub: "Active and upcoming" },
       { id: "closed", name: "Closed Sprints", sub: "Completed sprints" },
     ],
