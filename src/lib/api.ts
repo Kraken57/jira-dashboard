@@ -56,12 +56,14 @@ function unwrapBody<D>(response: unknown): D {
   return response as D;
 }
 
-async function addForgeSiteUrl(data: DashboardData): Promise<DashboardData> {
+async function addForgeSiteUrl<T extends { jiraBaseUrl?: string }>(data: T): Promise<T> {
   try {
     const { view } = await import("@forge/bridge");
     const context = await view.getContext();
     const siteUrl = typeof context.siteUrl === "string" ? context.siteUrl.trim() : "";
-    if (siteUrl) return { ...data, jiraBaseUrl: siteUrl.replace(/\/+$/, "") };
+    if (siteUrl) {
+      return { ...data, jiraBaseUrl: siteUrl.replace(/\/+$/, "") } as T;
+    }
   } catch (err) {
     console.warn("Could not read Jira site URL from Forge context:", err);
   }
@@ -242,7 +244,10 @@ export async function fetchRawFeed(
         caseCount: feed.zephyr?.testCasesTotal ?? feed.zephyr?.cases?.length ?? 0,
         executionCount: feed.zephyr?.testExecutionsTotal ?? 0,
       });
-      return feed;
+      // The raw-feed resolver is the path used by the dashboard UI. Resolve
+      // the site URL here too, so issue keys in every tab and popup get a real
+      // Jira browse link in Forge, where JIRA_HOST may not be configured.
+      return await addForgeSiteUrl(feed);
     } catch (error) {
       if (error instanceof DashboardLoadError) throw error;
       throw createDashboardLoadError(error, "Forge resolver");
