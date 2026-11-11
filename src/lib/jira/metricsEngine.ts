@@ -1051,12 +1051,9 @@ export function computeDashboardData(
         sensitivity: "base",
       }),
   );
-  // Keep the fully aggregated scope for KPI totals, but cap the default
-  // all-portfolio chart view so long histories do not overwhelm the graphs.
-  const showLatestFiveOnly = allSprintsSelected
-    && isAllSelection(podId)
-    && isAllSelection(quarterId)
-    && (!filters.sprintStatus || filters.sprintStatus === "all");
+  // Keep the full selected scope for KPI totals, but cap all-pod charts at the
+  // five latest sprint groups, including when the user selects one quarter.
+  const showLatestFiveOnly = allSprintsSelected && isAllSelection(podId);
   if (showLatestFiveOnly) chartSprintStats = chartSprintStats.slice(-5);
 
   // 5. Delivery and Velocity Datasets
