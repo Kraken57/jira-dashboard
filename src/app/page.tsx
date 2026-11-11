@@ -42,18 +42,19 @@ const TABS = [
 // Pod / Quarter / Sprint are shared across tabs (a selection carries over).
 // Each tab adds only the extra filters that make sense for it.
 const TAB_FILTERS: Record<string, FilterKey[]> = {
-  executive: ["pod", "quarter", "sprint"],
-  pod: ["pod", "quarter", "sprint"],
-  developer: ["pod", "quarter", "sprint", "developer"],
+  executive: ["pod", "quarter", "sprintStatus", "sprint"],
+  pod: ["pod", "quarter", "sprintStatus", "sprint"],
+  developer: ["pod", "quarter", "sprintStatus", "sprint", "developer"],
   quality: [], // QA tab owns its filters (per-member, per-team slicing)
-  diagnosis: ["pod", "quarter", "sprint", "status"],
-  issues: ["pod", "quarter", "sprint"],
+  diagnosis: ["pod", "quarter", "sprintStatus", "sprint", "status"],
+  issues: ["pod", "quarter", "sprintStatus", "sprint"],
 };
 
 const BASE_DEFAULT = {
   pod: ["all"],
   quarter: ["all"],
   sprint: ["all"],
+  sprintStatus: "all" as "all" | "open" | "closed",
 };
 const EXTRA_DEFAULT = { developer: ["all"], status: "all" };
 
@@ -110,12 +111,13 @@ export default function DashboardPage() {
         podId: baseFilters.pod,
         quarterId: baseFilters.quarter,
         sprintId: "all",
+        sprintStatus: baseFilters.sprintStatus,
       },
       feed.sprintMeta,
       feed.config,
       feed.zephyr
     );
-  }, [feed, baseFilters.pod, baseFilters.quarter]);
+  }, [feed, baseFilters.pod, baseFilters.quarter, baseFilters.sprintStatus]);
 
   const dashboardData: DashboardData | null = useMemo(() => {
     if (!feed || !Array.isArray(feed.items)) return null;
@@ -126,6 +128,7 @@ export default function DashboardPage() {
           podId: baseFilters.pod,
           quarterId: baseFilters.quarter,
           sprintId: effectiveSprint,
+          sprintStatus: TAB_FILTERS[activeTab]?.includes("sprintStatus") ? baseFilters.sprintStatus : "all",
         },
         feed.sprintMeta,
         feed.config,
@@ -133,7 +136,7 @@ export default function DashboardPage() {
       ),
       jiraBaseUrl: feed.jiraBaseUrl,
     };
-  }, [feed, baseFilters.pod, baseFilters.quarter, effectiveSprint]);
+  }, [feed, baseFilters.pod, baseFilters.quarter, baseFilters.sprintStatus, effectiveSprint, activeTab]);
 
   const feedAgeMin = feed
     ? Math.max(0, Math.round((now - feed.fetchedAt) / 60000))
@@ -277,7 +280,10 @@ export default function DashboardPage() {
   }, [isLoading, feedRequestComplete, loadFailure, feed, dashboardData, dropdownData]);
 
   const updateFilter = (key: FilterKey, value: FilterValue) => {
-    if (key === "pod" || key === "quarter" || key === "sprint") {
+    if (key === "sprintStatus") {
+      if (value !== "all" && value !== "open" && value !== "closed") return;
+      setBaseFilters((prev) => ({ ...prev, sprintStatus: value, sprint: ["all"] }));
+    } else if (key === "pod" || key === "quarter" || key === "sprint") {
       const selected = Array.isArray(value) ? value : [value];
       setBaseFilters((prev) => ({
         ...prev,
@@ -331,6 +337,7 @@ export default function DashboardPage() {
       selectedPodName,
       selectedQuarterName,
       selectedSprintName,
+      baseFilters.sprintStatus === "open" ? "Open Sprints" : baseFilters.sprintStatus === "closed" ? "Closed Sprints" : "",
     ]
       .filter((v) => !v.startsWith("All"))
       .join(" · ") || "All work";
@@ -395,6 +402,11 @@ export default function DashboardPage() {
   const filterOptions: Partial<Record<FilterKey, FilterOption[]>> = {
     pod: pods.map((p) => ({ id: p.id, name: p.name, sub: p.sub })),
     quarter: quarters.map((q) => ({ id: q.id, name: q.name, sub: q.sub })),
+    sprintStatus: [
+      { id: "all", name: "All Sprints" },
+      { id: "open", name: "Open Sprints", sub: "Active and upcoming" },
+      { id: "closed", name: "Closed Sprints", sub: "Completed sprints" },
+    ],
     sprint: sprints.map((s) => ({ id: s.id, name: s.name, sub: s.sub })),
     developer: [
       { id: "all", name: "All Developers" },
@@ -536,7 +548,7 @@ export default function DashboardPage() {
             <IssuesTab
               issues={dashboardData.issueList}
               auditItems={feed?.items ?? []}
-              filters={{ podId: baseFilters.pod, quarterId: baseFilters.quarter, sprintId: baseFilters.sprint }}
+              filters={{ podId: baseFilters.pod, quarterId: baseFilters.quarter, sprintId: baseFilters.sprint, sprintStatus: baseFilters.sprintStatus }}
               sprintMeta={feed?.sprintMeta}
               jiraDomain={dashboardData.jiraBaseUrl}
             />

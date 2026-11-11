@@ -361,10 +361,13 @@ export interface DashboardData {
   jiraBaseUrl?: string;
 }
 
+export type SprintStatusFilter = "all" | "open" | "closed";
+
 export interface DashboardFilters {
   podId: string | string[];
   quarterId: string | string[];
   sprintId: string | string[];
+  sprintStatus?: SprintStatusFilter;
 }
 
 export interface JiraWorkItem {

@@ -8,6 +8,7 @@ export type FilterKey =
   | "pod"
   | "quarter"
   | "sprint"
+  | "sprintStatus"
   | "developer"
   | "status";
 
@@ -15,6 +16,7 @@ export type FilterState = {
   pod: string[];
   quarter: string[];
   sprint: string[];
+  sprintStatus: "all" | "open" | "closed";
   developer: string[];
   status: string;
 };
@@ -30,6 +32,7 @@ const LABELS: Record<FilterKey, string> = {
   pod: "Services / Pods",
   quarter: "Quarter / PI",
   sprint: "Sprint",
+  sprintStatus: "Sprint Status",
   developer: "Developer",
   status: "Status",
 };

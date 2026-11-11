@@ -75,8 +75,6 @@ function sprintDisplayName(name: string): string {
     const quarter = name.split("::")[2];
     return quarter && quarter !== "All" ? `${quarter} · ${commonName[1]}` : commonName[1];
   }
-  // Individual-pod sprint IDs retain Jira's full original name.
-  if (name.includes("::")) return name.split("::")[0];
   // "2026-Q3 Iteration 1"             -> "Iteration 1"
   // "DTR 2026 - Q4 - Iteration 2"     -> "Iteration 2"
   // "CY26 PI.3 Sprint 1"              -> "Sprint 1"
@@ -125,6 +123,12 @@ function sprintOrdinal(name: string): number | undefined {
   return Number.isFinite(ordinal) && ordinal >= 0 ? ordinal : undefined;
 }
 
+export function sprintLifecycle(meta?: SprintMeta): "open" | "closed" | "unknown" {
+  if (meta?.state === "closed") return "closed";
+  if (meta?.state === "active" || meta?.state === "future") return "open";
+  return "unknown";
+}
+
 function normalizedSprintRange(meta?: SprintMeta): { key: string; startDate: string; endDate: string } | undefined {
   if (!meta?.startDate || !meta.endDate) return undefined;
   const start = Date.parse(meta.startDate);
@@ -139,7 +143,6 @@ function normalizedSprintRange(meta?: SprintMeta): { key: string; startDate: str
 function commonizeSprints(
   items: JiraWorkItem[],
   sprintMeta: Record<string, SprintMeta>,
-  combinePods = true,
 ): { items: JiraWorkItem[]; meta: Record<string, SprintMeta> } {
   const quarterCountsBySprint = new Map<string, Map<string, number>>();
   for (const item of items) {
@@ -193,14 +196,15 @@ function commonizeSprints(
   const namesByQuarterOrdinal = new Map<string, string[]>();
   for (const [name, info] of details) {
     if (info.range) {
-      const first = firstByRange.get(info.range.key);
+      const lifecycleKey = `${sprintLifecycle(sprintMeta[name])}:${info.range.key}`;
+      const first = firstByRange.get(lifecycleKey);
       if (first) union(first, name);
-      else firstByRange.set(info.range.key, name);
+      else firstByRange.set(lifecycleKey, name);
     }
     // Allow board date differences for the same PI/iteration, but never merge
     // an older, non-overlapping sprint just because its number is the same.
     if (info.quarter && info.ordinal !== undefined) {
-      const key = `${info.quarter}:sprint:${info.ordinal}`;
+      const key = `${sprintLifecycle(sprintMeta[name])}:${info.quarter}:sprint:${info.ordinal}`;
       const peers = namesByQuarterOrdinal.get(key) || [];
       for (const peer of peers) {
         const other = details.get(peer)?.range;
@@ -223,20 +227,6 @@ function commonizeSprints(
   for (const name of allNames) {
     const root = find(name);
     groups.set(root, [...(groups.get(root) || []), name]);
-  }
-  if (!combinePods) {
-    // Keep the shared date-based PI mapping, but give every Jira sprint its
-    // own option and timeline when the user has selected one pod.
-    for (const names of groups.values()) {
-      const quarters = [...new Set(names.map((name) => details.get(name)?.quarter).filter(Boolean))];
-      if (quarters.length !== 1) continue;
-      for (const name of names) {
-        const detail = details.get(name)!;
-        detail.quarter ??= quarters[0];
-      }
-    }
-    groups.clear();
-    for (const name of allNames) groups.set(name, [name]);
   }
   const groupRanges = new Map<string, Map<string, { key: string; startDate: string; endDate: string; count: number }>>();
   for (const [root, names] of groups) {
@@ -288,8 +278,8 @@ function commonizeSprints(
       ? ordinals[0]
       : (sprintNumberByQuarter.get(commonQuarter) ?? 0) + 1;
     sprintNumberByQuarter.set(commonQuarter, Math.max(sprintNumberByQuarter.get(commonQuarter) ?? 0, number));
-    const commonLabel = combinePods ? `Sprint ${number}` : names[0];
-    const id = `${commonLabel}::${range?.key || quarter || groupKey}::${commonQuarter}`;
+    const commonLabel = `Sprint ${number}`;
+    const id = `${commonLabel}::${range?.key || quarter || groupKey}::${commonQuarter}::${sprintLifecycle(sprintMeta[names[0]])}`;
     const states = names.map((name) => sprintMeta[name]?.state).filter(Boolean);
     commonMeta[id] = {
       name: id,
@@ -793,12 +783,13 @@ export function computeDashboardData(
   const { podId, quarterId, sprintId } = filters;
   const selectedSprints = filterValues(sprintId);
   const allSprintsSelected = isAllSelection(sprintId);
-  const combinePods = isAllSelection(podId) || filterValues(podId).length !== 1;
-  const commonized = commonizeSprints(eligibleItems, sprintMeta, combinePods);
+  const commonized = commonizeSprints(eligibleItems, sprintMeta);
   const effectiveSprintMeta = commonized.meta;
   // An issue can retain sprint history from several quarters. Filter each
   // sprint's own quarter as well as the issue's current quarter.
   const matchesSprintQuarter = (name: string) => {
+    if (filters.sprintStatus && filters.sprintStatus !== "all"
+      && sprintLifecycle(effectiveSprintMeta[name]) !== filters.sprintStatus) return false;
     if (isAllSelection(quarterId)) return true;
     const quarter = name.split("::")[2];
     return Boolean(quarter && matchesSelection(quarter, quarterId));
@@ -824,6 +815,7 @@ export function computeDashboardData(
   const scopedItems = workItems.filter((item) => {
     if (!matchesSelection(item.podKey, podId)) return false;
     if (!matchesItemQuarter(item)) return false;
+    if (filters.sprintStatus && filters.sprintStatus !== "all" && !item.sprints.some(matchesSprintQuarter)) return false;
     return true;
   });
 
@@ -863,6 +855,7 @@ export function computeDashboardData(
       if (!/^(story|task|sub-?task)$/i.test(item.workType)) return false;
       if (!matchesSelection(item.podKey, podId)) return false;
       if (!matchesItemQuarter(item)) return false;
+      if (filters.sprintStatus && filters.sprintStatus !== "all" && !item.sprints.some(matchesSprintQuarter)) return false;
       if (!allSprintsSelected && !item.sprints?.some((name) => selectedSprints.includes(name))) return false;
       return true;
     });
@@ -918,6 +911,8 @@ export function computeDashboardData(
   const sprintStatus = (name: string): "Active" | "Closed" | "Upcoming" | "" => {
     const meta = effectiveSprintMeta[name];
     if (meta?.state === "active") return "Active";
+    if (meta?.state === "closed") return "Closed";
+    if (meta?.state === "future") return "Upcoming";
     const start = meta?.startDate ? Date.parse(meta.startDate) : NaN;
     const end = meta?.endDate ? Date.parse(meta.endDate) : NaN;
     if (!Number.isNaN(start) && !Number.isNaN(end)) {

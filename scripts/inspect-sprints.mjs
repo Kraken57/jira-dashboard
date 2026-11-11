@@ -11,9 +11,11 @@ try {
 const env = (key, fallback = "") => process.env[key] || fileEnv[key] || fallback;
 const argument = (name) => process.argv[process.argv.indexOf(name) + 1];
 const project = process.argv.includes("--project") ? argument("--project") : "";
+const allProjects = project.toLowerCase() === "all";
 const board = process.argv.includes("--board") ? argument("--board") : "";
-if (!/^[A-Z][A-Z0-9_]*$/i.test(project) || !/^\d+$/.test(board)) {
-  console.error("Usage: node scripts/inspect-sprints.mjs --project ERP --board 237");
+const selectedQuarter = process.argv.includes("--quarter") ? argument("--quarter") : "";
+if (!/^[A-Z][A-Z0-9_]*$/i.test(project) || (board && !/^\d+$/.test(board)) || (!allProjects && !board)) {
+  console.error('Usage: node scripts/inspect-sprints.mjs --project ERP --board 237\nOr: node scripts/inspect-sprints.mjs --project all --quarter "CY26 PI.4"');
   process.exit(1);
 }
 const host = env("JIRA_HOST").replace(/\/+$/, "");
@@ -52,7 +54,7 @@ const search = async (jql) => {
   const seen = new Set();
   for (let page = 0; page < 1000; page++) {
     const data = await request("/rest/api/3/search/jql", {
-      jql, fields: ["issuetype", "status", "resolutiondate", sprintField, spField],
+      jql, fields: ["project", "issuetype", "status", "resolutiondate", sprintField, spField],
       maxResults: 100, ...(nextPageToken ? { nextPageToken } : {}),
     });
     if (!Array.isArray(data.issues)) throw new Error("Search response omitted issues");
@@ -71,9 +73,10 @@ const quarter = (name) => {
   return pi ? `CY${pi[1]} PI.${pi[2]}` : null;
 };
 try {
+  if (allProjects && !env("JIRA_JQL")) throw new Error("All-project audit requires JIRA_JQL to define the dashboard scope.");
   const baseJql = env("JIRA_JQL", `project = ${project}`).replace(/\s+ORDER\s+BY[\s\S]*$/i, "");
-  const jql = `(${baseJql}) AND project = ${project}`;
-  const [sprints, issues] = await Promise.all([listSprints(), search(jql)]);
+  const jql = allProjects ? baseJql : `(${baseJql}) AND project = ${project}`;
+  const [sprints, issues] = await Promise.all([board ? listSprints() : Promise.resolve([]), search(jql)]);
   const byId = new Map(sprints.map((s) => [String(s.id), { ...s, onSelectedBoard: true }]));
   const counts = new Map();
   let missingSprintIds = 0;
@@ -84,8 +87,10 @@ try {
       if (!sprint?.id) { missingSprintIds++; continue; }
       const id = String(sprint.id);
       if (!byId.has(id)) byId.set(id, { ...sprint, onSelectedBoard: false });
-      const bucket = counts.get(id) || { fetchedWorkItems: 0, dashboardWorkItems: 0, storyPoints: 0, statuses: {} };
+      const bucket = counts.get(id) || { fetchedWorkItems: 0, dashboardWorkItems: 0, storyPoints: 0, statuses: {}, projects: {} };
       bucket.fetchedWorkItems++;
+      const key = fields.project?.key || "Unknown";
+      bucket.projects[key] = (bucket.projects[key] || 0) + 1;
       const status = fields.status?.name || "Unknown";
       bucket.statuses[status] = (bucket.statuses[status] || 0) + 1;
       if (!/^sub-?task$/i.test(fields.issuetype?.name || "") && !/^cancel{1,2}ed$/i.test(status.trim())) {
@@ -95,13 +100,27 @@ try {
       counts.set(id, bucket);
     }
   }
+  const otherSprints = [...byId.entries()].filter(([, sprint]) => !sprint.onSelectedBoard);
+  for (let offset = 0; offset < otherSprints.length; offset += 8) {
+    await Promise.all(otherSprints.slice(offset, offset + 8).map(async ([id, sprint]) => {
+      try {
+        const detail = await request(`/rest/agile/1.0/sprint/${id}`);
+        byId.set(id, { ...sprint, ...detail, metadataSource: "sprint API" });
+      } catch {
+        byId.set(id, { ...sprint, metadataSource: "issue field (sprint API unreadable)" });
+      }
+    }));
+  }
   console.log(JSON.stringify({
-    host, project, board: Number(board), jql, fetchedIssues: issues.length, missingSprintIds,
+    host, project, board: board ? Number(board) : undefined, jql, fetchedIssues: issues.length, missingSprintIds,
+    doneStatuses: env("JIRA_DONE_STATUSES", "Done,Accepted,Released,Closed,Resolved").split(",").map((s) => s.trim()),
     note: "Counts use current statuses and configured dashboard JQL. A work item may appear in several historical sprints. This is not a sprint-start snapshot.",
-    sprints: [...byId.values()].sort((a, b) => String(a.startDate || "").localeCompare(String(b.startDate || ""))).map((s) => ({
+    sprints: [...byId.values()].filter((s) => !selectedQuarter || quarter(s.name || "") === selectedQuarter)
+      .sort((a, b) => String(a.startDate || "").localeCompare(String(b.startDate || ""))).map((s) => ({
       id: s.id, name: s.name, quarter: quarter(s.name || ""), state: s.state,
       startDate: s.startDate, endDate: s.endDate, completeDate: s.completeDate,
-      originBoardId: s.originBoardId, onSelectedBoard: s.onSelectedBoard,
+      originBoardId: s.originBoardId, onSelectedBoard: board ? s.onSelectedBoard : undefined,
+      metadataSource: s.metadataSource || "board API",
       ...(counts.get(String(s.id)) || { fetchedWorkItems: 0, dashboardWorkItems: 0, storyPoints: 0, statuses: {} }),
     })),
   }, null, 2));

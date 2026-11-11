@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { computeDashboardData } from "@/lib/jira/metricsEngine";
 import { DetailModal } from "@/components/DetailModal";
 import { DashboardFilters, IssueRow, JiraWorkItem, SprintMeta } from "@/lib/jira/types";
 
@@ -26,23 +27,10 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
     const eligibleItems = [...new Map(auditItems.filter((item) => !/^cancel{1,2}ed$/i.test(item.status.trim())).map((item) => [item.key, item])).values()];
     const allByKey = new Map(eligibleItems.map((item) => [item.key, item]));
     const podValues = Array.isArray(filters.podId) ? filters.podId : [filters.podId];
-    const quarterValues = Array.isArray(filters.quarterId) ? filters.quarterId : [filters.quarterId];
-    const selectedSprints = Array.isArray(filters.sprintId) ? filters.sprintId : [filters.sprintId];
     const allPods = podValues.includes("all");
-    const allQuarters = quarterValues.includes("all");
-    const allSprints = selectedSprints.includes("all");
     const selectedPods = podValues.filter((id) => id !== "all");
-    const selectedQuarters = quarterValues.filter((id) => id !== "all");
-    const sprintMatches = (sprints: string[]) => allSprints || (selectedSprints.length > 0 && sprints.some((name) => {
-      if (selectedSprints.includes(name)) return true;
-      const meta = sprintMeta[name];
-      if (!meta?.startDate || !meta.endDate) return false;
-      const start = Date.parse(meta.startDate);
-      const end = Date.parse(meta.endDate);
-      if (Number.isNaN(start) || Number.isNaN(end)) return false;
-      const range = `${new Date(start).toISOString().slice(0, 10)}/${new Date(end).toISOString().slice(0, 10)}`;
-      return selectedSprints.some((selected) => selected.split("::")[1] === range);
-    }));
+    const scope = computeDashboardData(eligibleItems, filters, sprintMeta);
+    const scopedKeys = new Set([...scope.issueList, ...scope.developerIssueList].map((item) => item.key));
     const contextualItems = eligibleItems.map((item) => {
       if (!/^sub-?task$/i.test(item.workType) || !item.parentKey) return item;
       const parent = allByKey.get(item.parentKey);
@@ -53,11 +41,7 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
         sprints: item.sprints.length ? item.sprints : parent.sprints,
       };
     });
-    const directlyScoped = contextualItems.filter((item) =>
-      (allPods || selectedPods.includes(item.podKey)) &&
-      (allQuarters || selectedQuarters.includes(item.quarter)) &&
-      sprintMatches(item.sprints)
-    );
+    const directlyScoped = contextualItems.filter((item) => scopedKeys.has(item.key));
     // Features often have no sprint/PI themselves. Include those reached
     // through child work in scope, while respecting the selected pod(s).
     const includedKeys = new Set(directlyScoped.map((item) => item.key));

@@ -122,6 +122,7 @@ export async function fetchDashboardData(filters: DashboardFilters): Promise<Das
     pod: serializeSelection(filters.podId),
     quarter: serializeSelection(filters.quarterId),
     sprint: serializeSelection(filters.sprintId),
+    sprintStatus: filters.sprintStatus || "all",
   });
 
   const url = `${BASE_URL.replace(/\/+$/, "")}/api/jira?${params.toString()}`;

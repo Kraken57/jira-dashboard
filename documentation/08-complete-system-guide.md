@@ -416,10 +416,19 @@ not discovered by this path. PI membership comes from sprint names or a shared
 dated sprint with a PI label; calendar dates alone cannot establish a fiscal PI.
 Quarter options and issue scope include each mapped historical sprint quarter,
 so moving a story into a newer PI does not hide its older PI's sprint history.
-All Pods or several selected pods use the common sprint labels and groups.
-Exactly one selected pod uses each Jira sprint's full original name and its own
-date range. Selecting that option scopes the data to that pod and sprint.
-Changing the pod selection resets Sprint to All Sprints before switching modes.
+All pod selections use consistent common labels (Sprint 0, Sprint 1, etc.).
+The shared Sprint Status selector sits between Quarter / PI and Sprint:
+- All Sprints includes every lifecycle state (the default).
+- Open Sprints includes Jira states `active` and `future`.
+- Closed Sprints includes Jira state `closed`.
+Unknown states appear only under All. State comes from Jira, rather than guessing
+from dates. Open and closed sprints never merge into the same common group.
+Status filters both the sprint options and work-item scope across the shared
+filter tabs, including audit cards. An item with both open and closed sprint
+history can appear in either view, but is counted once within each view.
+Changing status, pod, or quarter resets the sprint selection to All Sprints.
+Reset restores all pods, quarters, statuses, and sprints. Quality retains its
+separate QA filters and portfolio scope.
 
 ---
 

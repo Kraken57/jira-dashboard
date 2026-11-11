@@ -49,6 +49,7 @@ export async function GET(request: NextRequest) {
       podId,
       quarterId,
       sprintId,
+      sprintStatus: searchParams.get("sprintStatus") === "open" ? "open" : searchParams.get("sprintStatus") === "closed" ? "closed" : "all",
     });
 
     return NextResponse.json(data, {
