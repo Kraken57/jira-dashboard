@@ -62,6 +62,41 @@ async function resolveAhaUrlField(): Promise<string | undefined> {
   return result;
 }
 
+/** Refresh unique sprint IDs, including closed sprints, once per feed fetch. */
+async function refreshSprintDetails(
+  issues: Record<string, unknown>[],
+  sprintField: string,
+  fetchSprint: (id: string) => Promise<Record<string, unknown> | null>,
+): Promise<void> {
+  const references = new Map<string, Record<string, unknown>[]>();
+  for (const issue of issues) {
+    const fields = issue.fields as Record<string, unknown> | undefined;
+    const sprints = fields?.[sprintField];
+    if (!Array.isArray(sprints)) continue;
+    for (const value of sprints) {
+      if (!value || typeof value !== "object") continue;
+      const sprint = value as Record<string, unknown>;
+      const id = String(sprint.id ?? "");
+      if (!/^\d+$/.test(id)) continue;
+      references.set(id, [...(references.get(id) || []), sprint]);
+    }
+  }
+  let failures = 0;
+  const ids = [...references.keys()];
+  for (let offset = 0; offset < ids.length; offset += 8) {
+    await Promise.all(ids.slice(offset, offset + 8).map(async (id) => {
+      try {
+        const detail = await fetchSprint(id);
+        if (!detail || typeof detail.name !== "string") { failures++; return; }
+        for (const sprint of references.get(id) || []) Object.assign(sprint, detail);
+      } catch { failures++; }
+    }));
+  }
+  if (failures) console.warn("[SPRINT_FETCH] Keeping issue-field metadata for unreadable sprints", {
+    failed: failures, total: ids.length,
+  });
+}
+
 async function fetchAllLiveJiraIssues(jqlOverride?: string, queryLabel = "dashboard"): Promise<{
   items: JiraWorkItem[];
   sprintMeta: Record<string, SprintMeta>;
@@ -171,6 +206,15 @@ async function fetchAllLiveJiraIssues(jqlOverride?: string, queryLabel = "dashbo
     durationMs: Date.now() - startedAt,
   });
 
+  if (queryLabel === "dashboard") {
+    await refreshSprintDetails(allIssues, sprintField, async (id) => {
+      const response = await fetch(`${host.replace(/\/+$/, "")}/rest/agile/1.0/sprint/${id}`, {
+        headers: { Authorization: `Basic ${authHeader}`, Accept: "application/json" },
+        cache: "no-store",
+      });
+      return response.ok ? await response.json() as Record<string, unknown> : null;
+    });
+  }
   const sprintMeta: Record<string, SprintMeta> = {};
 
   const items = allIssues.map((issue: Record<string, unknown>) => {
@@ -192,13 +236,15 @@ async function fetchAllLiveJiraIssues(jqlOverride?: string, queryLabel = "dashbo
     if (Array.isArray(sprintObj)) {
       for (const s of sprintObj) {
         if (s && typeof s.name === "string") {
-          const meta = s as { state?: string; startDate?: string; endDate?: string };
+          const meta = s as { id?: number; originBoardId?: number; state?: string; startDate?: string; endDate?: string };
           s.name.split(",").forEach((part: string) => {
             const trimmed = part.trim();
             if (trimmed) {
               if (!sprintMeta[trimmed]) {
                 sprintMeta[trimmed] = {
                   name: trimmed,
+                  id: meta.id,
+                  originBoardId: meta.originBoardId,
                   state: meta.state,
                   startDate: meta.startDate,
                   endDate: meta.endDate,
@@ -327,7 +373,7 @@ function getFeedQueryFingerprint(): string {
     .update(`${JIRA_CONFIG.host}\n${JIRA_CONFIG.email}\n${JIRA_CONFIG.apiToken}`)
     .digest("hex");
   return createHash("sha256")
-    .update(`audit-aha-auto-v13\n${process.env.JIRA_AHA_URL_FIELD || "customfield_10280"}\n${mainJql}\n${defectJql}\n${uatDefectJql}\n${leakageDefectJql}\n${authFingerprint}`)
+    .update(`sprint-details-v14\n${process.env.JIRA_AHA_URL_FIELD || "customfield_10280"}\n${mainJql}\n${defectJql}\n${uatDefectJql}\n${leakageDefectJql}\n${authFingerprint}`)
     .digest("hex");
 }
 

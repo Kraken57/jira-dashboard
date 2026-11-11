@@ -377,6 +377,41 @@ function inheritParentContext(items: any[]): any[] {
  * field objects carry state/start/end when present; names alone still sort
  * via the metricsEngine regex keys.
  */
+/** Refresh unique sprint IDs, including closed sprints, once per feed fetch. */
+async function refreshSprintDetails(
+  issues: Record<string, unknown>[],
+  sprintField: string,
+  fetchSprint: (id: string) => Promise<Record<string, unknown> | null>,
+): Promise<void> {
+  const references = new Map<string, Record<string, unknown>[]>();
+  for (const issue of issues) {
+    const fields = issue.fields as Record<string, unknown> | undefined;
+    const sprints = fields?.[sprintField];
+    if (!Array.isArray(sprints)) continue;
+    for (const value of sprints) {
+      if (!value || typeof value !== "object") continue;
+      const sprint = value as Record<string, unknown>;
+      const id = String(sprint.id ?? "");
+      if (!/^\d+$/.test(id)) continue;
+      references.set(id, [...(references.get(id) || []), sprint]);
+    }
+  }
+  let failures = 0;
+  const ids = [...references.keys()];
+  for (let offset = 0; offset < ids.length; offset += 8) {
+    await Promise.all(ids.slice(offset, offset + 8).map(async (id) => {
+      try {
+        const detail = await fetchSprint(id);
+        if (!detail || typeof detail.name !== "string") { failures++; return; }
+        for (const sprint of references.get(id) || []) Object.assign(sprint, detail);
+      } catch { failures++; }
+    }));
+  }
+  if (failures) console.warn("[SPRINT_FETCH] Keeping issue-field metadata for unreadable sprints", {
+    failed: failures, total: ids.length,
+  });
+}
+
 function collectSprintMeta(
   issues: any[],
   sprintField: string = "customfield_10020"
@@ -389,6 +424,8 @@ function collectSprintMeta(
       if (s && typeof s.name === "string" && !meta[s.name]) {
         meta[s.name] = {
           name: s.name,
+          id: s.id,
+          originBoardId: s.originBoardId,
           state: s.state,
           startDate: s.startDate,
           endDate: s.endDate,
@@ -1667,8 +1704,8 @@ function calculateKPIs(
  * is fresh enough, refreshed on demand otherwise. Values are zlib-deflated
  * and chunked because KVS caps individual values.
  */
-const FEED_META_KEY = "raw-feed-v11-meta";
-const FEED_PART_KEY = "raw-feed-v11-part-";
+const FEED_META_KEY = "raw-feed-v12-meta";
+const FEED_PART_KEY = "raw-feed-v12-part-";
 // Legacy @forge/api storage caps a single persisted value at ~128 KB raw.
 // 90 KB compressed -> ~120 KB base64, under the cap; a 930-item feed still
 // needs a single part. Raise to ~175 KB after the @forge/kvs flip (240 KiB).
@@ -1762,6 +1799,10 @@ async function fetchAndStoreFeed(): Promise<FeedEnvelope> {
     uatDefectJql ? jiraClient.searchIssuesJql(uatDefectJql, fields) : Promise.resolve([]),
     leakageDefectJql ? jiraClient.searchIssuesJql(leakageDefectJql, fields) : Promise.resolve([]),
   ]);
+  await refreshSprintDetails(issues, config.sprintField, async (id) => {
+    const response = await api.asApp().requestJira(route`/rest/agile/1.0/sprint/${id}`);
+    return response.ok ? await response.json() as Record<string, unknown> : null;
+  });
   const mapQaDefects = (source: any[]) => source.map((issue: any) => {
     const item = mapIssueToWorkItem(issue, config);
     return {

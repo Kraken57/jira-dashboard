@@ -104,6 +104,8 @@ export interface MetricCardData {
 
 export interface SprintMeta {
   name: string;
+  id?: number;
+  originBoardId?: number;
   state?: string;
   startDate?: string;
   endDate?: string;

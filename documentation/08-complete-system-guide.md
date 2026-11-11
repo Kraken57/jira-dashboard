@@ -403,8 +403,19 @@ the selected pod/quarter.
 For dated sprints, the common sprint grouping uses Jira's start/end dates.
 An unnamed sprint joins a PI when its date range matches a sprint whose name
 identifies that PI. An issue's current quarter does not assign its historical
-dated sprints to that PI. Sprint ordinals are a fallback only when dates are
-unavailable.
+dated sprints to that PI. Local and Forge raw-feed fetches refresh unique sprint
+IDs through `GET /rest/agile/1.0/sprint/{id}`, including closed sprints, in batches
+of eight. Unreadable sprint details retain the issue-field metadata and log a
+warning. This uses the configured Jira site; no board URL or date is hardcoded.
+The common label preserves the Jira sprint/iteration number, including zero.
+Within the same named PI and iteration, different board date ranges group only
+when they overlap by at least half the longer duration. Completely undated
+sprints can group by PI and iteration. Old non-overlapping dates stay separate.
+Only sprints attached to fetched issues are included; empty board sprints are
+not discovered by this path. PI membership comes from sprint names or a shared
+dated sprint with a PI label; calendar dates alone cannot establish a fiscal PI.
+Quarter options and issue scope include each mapped historical sprint quarter,
+so moving a story into a newer PI does not hide its older PI's sprint history.
 
 ---
 

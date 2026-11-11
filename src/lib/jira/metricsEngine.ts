@@ -120,7 +120,7 @@ function sprintOrdinal(name: string): number | undefined {
   const match = name.match(/(?:sprint|iteration|iter)\s*[-#._ ]?(\d+)/i)
     || name.match(/(?:^|[-_\s])S(\d+)(?=$|[-_\s])/i);
   const ordinal = Number(match?.[1]);
-  return Number.isFinite(ordinal) && ordinal > 0 ? ordinal : undefined;
+  return Number.isFinite(ordinal) && ordinal >= 0 ? ordinal : undefined;
 }
 
 function normalizedSprintRange(meta?: SprintMeta): { key: string; startDate: string; endDate: string } | undefined {
@@ -187,20 +187,32 @@ function commonizeSprints(
     if (leftRoot !== rightRoot) parent.set(rightRoot, leftRoot);
   };
   const firstByRange = new Map<string, string>();
-  const firstByQuarterOrdinal = new Map<string, string>();
+  const namesByQuarterOrdinal = new Map<string, string[]>();
   for (const [name, info] of details) {
     if (info.range) {
       const first = firstByRange.get(info.range.key);
       if (first) union(first, name);
       else firstByRange.set(info.range.key, name);
     }
-    // Ordinals repeat across pods and PIs. Only use them when Jira has no
-    // dates; dated sprints must agree on their actual date range.
-    if (info.quarter && info.ordinal && !info.range) {
+    // Allow board date differences for the same PI/iteration, but never merge
+    // an older, non-overlapping sprint just because its number is the same.
+    if (info.quarter && info.ordinal !== undefined) {
       const key = `${info.quarter}:sprint:${info.ordinal}`;
-      const first = firstByQuarterOrdinal.get(key);
-      if (first) union(first, name);
-      else firstByQuarterOrdinal.set(key, name);
+      const peers = namesByQuarterOrdinal.get(key) || [];
+      for (const peer of peers) {
+        const other = details.get(peer)?.range;
+        if (!info.range && !other) union(peer, name);
+        else if (info.range && other) {
+          const start = Date.parse(info.range.startDate);
+          const end = Date.parse(info.range.endDate);
+          const otherStart = Date.parse(other.startDate);
+          const otherEnd = Date.parse(other.endDate);
+          const overlap = Math.min(end, otherEnd) - Math.max(start, otherStart);
+          const duration = Math.max(end - start, otherEnd - otherStart);
+          if (duration > 0 && overlap >= duration / 2) union(peer, name);
+        }
+      }
+      namesByQuarterOrdinal.set(key, [...peers, name]);
     }
   }
 
@@ -253,8 +265,12 @@ function commonizeSprints(
     });
     const quarter = names.map((name) => details.get(name)?.quarter).find(Boolean);
     const commonQuarter = [...quarterCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] || quarter || "All";
-    const number = (sprintNumberByQuarter.get(commonQuarter) || 0) + 1;
-    sprintNumberByQuarter.set(commonQuarter, number);
+    const ordinals = [...new Set(names.map((name) => details.get(name)?.ordinal)
+      .filter((value): value is number => value !== undefined))];
+    const number = ordinals.length === 1
+      ? ordinals[0]
+      : (sprintNumberByQuarter.get(commonQuarter) ?? 0) + 1;
+    sprintNumberByQuarter.set(commonQuarter, Math.max(sprintNumberByQuarter.get(commonQuarter) ?? 0, number));
     const commonLabel = `Sprint ${number}`;
     const id = `${commonLabel}::${range?.key || quarter || groupKey}::${commonQuarter}`;
     const states = names.map((name) => sprintMeta[name]?.state).filter(Boolean);
@@ -489,11 +505,17 @@ function quarterSortKey(q: string): number {
   return m ? Number(m[1]) * 100 + Number(m[2]) : 9999;
 }
 
+function itemSprintQuarters(item: JiraWorkItem): string[] {
+  const quarters = [...new Set((item.sprints || []).map((name) => name.split("::")[2])
+    .filter((quarter): quarter is string => Boolean(quarter && quarter !== "All")))];
+  return quarters.length ? quarters : item.quarter && item.quarter !== "All" ? [item.quarter] : [];
+}
+
 function deriveQuarters(items: JiraWorkItem[]): QuarterOption[] {
   const counts = new Map<string, number>();
   for (const item of items) {
-    if (item.quarter && item.quarter !== "All") {
-      counts.set(item.quarter, (counts.get(item.quarter) || 0) + 1);
+    for (const quarter of itemSprintQuarters(item)) {
+      counts.set(quarter, (counts.get(quarter) || 0) + 1);
     }
   }
   const quarters: QuarterOption[] = [
@@ -763,6 +785,8 @@ export function computeDashboardData(
     const quarter = name.split("::")[2];
     return Boolean(quarter && matchesSelection(quarter, quarterId));
   };
+  const matchesItemQuarter = (item: JiraWorkItem) => isAllSelection(quarterId)
+    || itemSprintQuarters(item).some((quarter) => matchesSelection(quarter, quarterId));
   const DONE_STATUSES = new Set(config.doneStatuses);
   const SUBTASK_DONE_STATUSES = new Set(config.subtaskDoneStatuses);
   // How many recent sprints to plot; a future sprint is surfaced when the
@@ -781,7 +805,7 @@ export function computeDashboardData(
   // 1. Scoped items by Pod & Quarter
   const scopedItems = workItems.filter((item) => {
     if (!matchesSelection(item.podKey, podId)) return false;
-    if (!matchesSelection(item.quarter, quarterId)) return false;
+    if (!matchesItemQuarter(item)) return false;
     return true;
   });
 
@@ -820,7 +844,7 @@ export function computeDashboardData(
     .filter((item) => {
       if (!/^(story|task|sub-?task)$/i.test(item.workType)) return false;
       if (!matchesSelection(item.podKey, podId)) return false;
-      if (!matchesSelection(item.quarter, quarterId)) return false;
+      if (!matchesItemQuarter(item)) return false;
       if (!allSprintsSelected && !item.sprints?.some((name) => selectedSprints.includes(name))) return false;
       return true;
     });
