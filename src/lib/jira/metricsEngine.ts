@@ -1051,10 +1051,9 @@ export function computeDashboardData(
         sensitivity: "base",
       }),
   );
-  // Keep the full selected scope for KPI totals, but cap all-pod charts at the
-  // five latest sprint groups, including when the user selects one quarter.
-  const showLatestFiveOnly = allSprintsSelected && isAllSelection(podId);
-  if (showLatestFiveOnly) chartSprintStats = chartSprintStats.slice(-5);
+  // Keep the full selected scope for KPI totals, but show at most the five
+  // latest sprint groups in every sprint chart, regardless of filter scope.
+  if (chartSprintStats.length > 5) chartSprintStats = chartSprintStats.slice(-5);
 
   // 5. Delivery and Velocity Datasets
   const delivery: DeliveryChartData = {

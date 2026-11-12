@@ -1452,9 +1452,8 @@ does not exist.
   dates, with the last-listed sprint as fallback; All-Sprints totals remain de-duplicated.
 - **The trend chart’s “moving average” is an expanding average**, unlike the trailing
   3-sprint average in the Executive velocity chart.
-- **All-Pods charts** show the latest five sprint groups whenever All Sprints
-  is selected, including when a specific quarter or sprint lifecycle is selected.
-  Other filter combinations show every sprint in the selected scope.
+- **Sprint charts** show at most the latest five sprint groups for every filter
+  combination. Dropdown options and KPI calculations retain the full selected scope.
 
 ### 17.2 Forge parity
 
