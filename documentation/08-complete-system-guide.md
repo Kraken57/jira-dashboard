@@ -195,7 +195,7 @@ src/
 │   ├── Dropdown.tsx              # Generic filter dropdown
 │   ├── TabFilters.tsx            # Per-tab filter bar + FilterKey/FilterState types
 │   ├── MetricCard.tsx            # Executive KPI card (clickable)
-│   ├── VelocityGrid.tsx          # Velocity + delivery charts
+│   ├── VelocityGrid.tsx          # Sprint delivery chart
 │   ├── DetailModal.tsx           # Generic popup shell
 │   ├── IssuesModal.tsx           # Popup that lists work items
 │   └── tabs/                     # One component per tab
@@ -453,7 +453,7 @@ navigates to another tab and never triggers a new Jira request.
 ### 7.1 Executive Summary
 
 - Four `MetricCard`s from `dashboardData.metrics`.
-- `VelocityGrid` charts.
+- Sprint delivery and executive trend charts.
 
 `openMetricCard` in `src/app/page.tsx:147` maps each card to a subset:
 
@@ -576,15 +576,16 @@ page.
 
 The Status filter applies to the cards and the bottom table.
 
-### 7.7 Executive trend charts (`TrendsCharts`)
+### 7.7 Executive charts (`TrendsCharts`)
 
-Two read-only charts sit below Team Velocity and Sprint Delivery Overview on the
-Executive Summary:
+The Executive Summary shows four charts in a two-column grid:
 
 | Chart | Shows |
 |---|---|
+| Sprint Delivery Overview | Committed, completed, and carried story points per sprint |
 | Velocity Trajectory & Moving Average | Done SP per sprint plus the expanding moving average |
 | Cumulative Throughput Growth | Running total of tracked items vs completed items |
+| Features Completed by Sprint | Features whose child stories are all completed, attributed to the sprint that completed the last story |
 
 There is no separate Trends tab.
 
@@ -864,21 +865,10 @@ continue to use de-duplicated summary totals.
 
 ### 9.6 Velocity and delivery charts
 
-`VelocityChartData`:
-
-- `completed` = done SP per sprint
-- `committed` = committed SP per sprint
-- `totalFinished` = sum of `completed` in the window
-- `avgLastThree` = average of the last up-to-3 completed values
-- `trendStatus` = last vs previous (`rising` / `falling` / `stable`)
-
-`VelocityGrid.tsx` draws:
-
-- Done SP bars.
-- A **trailing 3-sprint moving average** line, computed in the component:
-  `completed.slice(max(0, i-2), i+1)`.
-
-`DeliveryChartData` is Committed / Done / Carried per sprint.
+`VelocityGrid.tsx` draws the sprint delivery chart. `TrendsCharts.tsx` draws the
+velocity trajectory, cumulative throughput, and completed-features charts. They use
+the same selected sprint scope and latest-five chart window. A feature is counted
+in the sprint where its last child story is attributed as completed.
 
 ### 9.7 Developer stats
 

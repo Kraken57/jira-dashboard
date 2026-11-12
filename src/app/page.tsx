@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { TabBar } from "@/components/TabBar";
 import { MetricCard } from "@/components/MetricCard";
-import { VelocityGrid } from "@/components/VelocityGrid";
 import { TabFilters, FilterKey, FilterState, FilterOption, FilterValue } from "@/components/TabFilters";
 import { IssuesModal } from "@/components/IssuesModal";
 import { FeatureDetailsModal } from "@/components/FeatureDetailsModal";
@@ -478,11 +477,10 @@ export default function DashboardPage() {
 
               {dashboardData && (
                 <>
-                  <VelocityGrid
-                    velocity={dashboardData.velocity}
+                  <TrendsCharts
+                    data={dashboardData.trends}
                     delivery={dashboardData.delivery}
                   />
-                  <TrendsCharts data={dashboardData.trends} />
                 </>
               )}
             </div>

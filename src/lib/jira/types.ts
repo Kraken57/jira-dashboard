@@ -285,6 +285,7 @@ export interface PredictabilityData {
 export interface TrendsData {
   velocityTrend: { labels: string[]; velocity: number[]; movingAvg: number[] };
   cumulativeThroughput: { labels: string[]; totalIssues: number[]; completedIssues: number[] };
+  featureCompletion: { labels: string[]; completedFeatures: number[] };
 }
 
 export interface IssueRow {

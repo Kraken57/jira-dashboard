@@ -1693,6 +1693,21 @@ export function computeDashboardData(
     return cumulativeDoneIssues;
   });
   const chartCompletedSeries = chartSprintStats.map((s) => s.done);
+  const completedFeaturesBySprint = new Map<string, number>();
+  featureDetails.forEach((detail) => {
+    if (detail.status !== "Delivered") return;
+    const completionSprints = detail.stories
+      .map((story) => completionSprintFor(story))
+      .filter((sprint): sprint is string => Boolean(sprint));
+    const completedSprint = completionSprints.sort((a, b) =>
+      sprintOrderKey(a, effectiveSprintMeta[a]) - sprintOrderKey(b, effectiveSprintMeta[b]),
+    ).at(-1);
+    if (!completedSprint) return;
+    completedFeaturesBySprint.set(
+      completedSprint,
+      (completedFeaturesBySprint.get(completedSprint) || 0) + 1,
+    );
+  });
 
   const trends: TrendsData = {
     velocityTrend: {
@@ -1707,6 +1722,12 @@ export function computeDashboardData(
       labels: chartSprintStats.map((s) => s.name),
       totalIssues: totalIssuesSeries,
       completedIssues: completedIssuesSeries,
+    },
+    featureCompletion: {
+      labels: chartSprintStats.map((s) => s.name),
+      completedFeatures: chartSprintStats.map((sprint) =>
+        completedFeaturesBySprint.get(sprint.fullName) || 0,
+      ),
     },
   };
 
