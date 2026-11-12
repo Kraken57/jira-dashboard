@@ -1188,7 +1188,8 @@ export function computeDashboardData(
   );
   const closedVelocitySprints = sprintStats
     .filter((sprint) => closedSprintNames.has(sprint.fullName))
-    .slice(-5);
+    .slice(isAllSelection(podId) ? -3 : -5);
+  const allPodsSelected = isAllSelection(podId);
   const sourceSprintNamesByGroup = new Map<string, Map<string, string>>();
   for (const item of scopedItems) {
     for (const sourceName of originalItemByKey.get(item.key)?.sprints || []) {
@@ -1205,7 +1206,11 @@ export function computeDashboardData(
       sourceSprintNamesByGroup.set(sprintKey, names);
     }
   }
-  const columnByNormalizedName = new Map<string, { sprintKeys: string[]; sprintName: string }>();
+  const columnByNormalizedName = new Map<string, {
+    sprintKeys: string[];
+    sprintName: string;
+    timeline?: string;
+  }>();
   for (const sprint of closedVelocitySprints) {
     const commonRange = normalizedSprintRange(effectiveSprintMeta[sprint.fullName]);
     const rangeDistance = (sourceName: string) => {
@@ -1217,13 +1222,22 @@ export function computeDashboardData(
     const candidates = [...(sourceSprintNamesByGroup.get(sprint.fullName)?.values() || [])]
       .sort((a, b) => rangeDistance(a) - rangeDistance(b)
         || a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
-    const sprintName = candidates[0] || sprint.fullName;
+    const sprintName = allPodsSelected
+      ? sprint.name
+      : candidates[0] || sprint.fullName;
     const normalizedName = sprintName.toLocaleLowerCase().replace(/\s+/g, " ").trim();
+    const timeline = allPodsSelected && effectiveSprintMeta[sprint.fullName]?.startDate && effectiveSprintMeta[sprint.fullName]?.endDate
+      ? formatSprintRange(
+          effectiveSprintMeta[sprint.fullName].startDate!,
+          effectiveSprintMeta[sprint.fullName].endDate!,
+        )
+      : undefined;
     const column = columnByNormalizedName.get(normalizedName);
     if (column) column.sprintKeys.push(sprint.fullName);
     else columnByNormalizedName.set(normalizedName, {
       sprintKeys: [sprint.fullName],
       sprintName,
+      ...(timeline ? { timeline } : {}),
     });
   }
   const velocityColumns = [...columnByNormalizedName.values()]

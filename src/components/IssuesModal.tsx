@@ -333,6 +333,11 @@ export function IssuesModal({
                       {detail.velocitySprintTable.columns.map((column) => (
                         <th key={column.sprintKeys.join("|")} className="min-w-40 px-3 py-2 font-semibold normal-case">
                           {column.sprintName || column.sprintKeys[0]}
+                          {column.timeline && (
+                            <span className="mt-1 block whitespace-nowrap text-[10px] font-normal text-jira-text-light">
+                              {column.timeline}
+                            </span>
+                          )}
                         </th>
                       ))}
                       <th className="min-w-32 px-3 py-2 font-semibold">Average SP / sprint</th>
