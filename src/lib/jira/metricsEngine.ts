@@ -1188,29 +1188,45 @@ export function computeDashboardData(
   );
   const closedVelocitySprints = sprintStats
     .filter((sprint) => closedSprintNames.has(sprint.fullName))
-    .slice(-5)
-    .reverse();
+    .slice(-5);
+  const sourceSprintNamesByGroup = new Map<string, Set<string>>();
+  for (const item of scopedItems) {
+    for (const sourceName of originalItemByKey.get(item.key)?.sprints || []) {
+      if (sprintMeta[sourceName]?.state !== "closed") continue;
+      const sprintKey = commonized.aliases.get(sourceName) || sourceName;
+      if (!closedSprintNames.has(sprintKey)) continue;
+      const names = sourceSprintNamesByGroup.get(sprintKey) || new Set<string>();
+      names.add(sourceName);
+      sourceSprintNamesByGroup.set(sprintKey, names);
+    }
+  }
+  const velocityColumns = closedVelocitySprints
+    .map((sprint) => ({
+      sprintKey: sprint.fullName,
+      sprintName: [...(sourceSprintNamesByGroup.get(sprint.fullName) || [])]
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }))
+        .join(" · "),
+    }))
+    .sort((a, b) => a.sprintName.localeCompare(b.sprintName, undefined, {
+      numeric: true,
+      sensitivity: "base",
+    }));
   const velocitySprintTable = {
-    columns: closedVelocitySprints.map((sprint, index) => ({
-      label: index === 0
-        ? "Closed sprint"
-        : `Closed sprint -${index}`,
-      sprintName: sprint.name,
-    })),
+    columns: velocityColumns,
     rows: Array.from(new Set(scopedItems.map((item) => item.podKey)))
       .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
       .map((podKey) => {
         const podItems = scopedItems.filter((item) => item.podKey === podKey);
         const closedSprintNamesForPod = closedSourceSprintsByPod.get(podKey) || new Set<string>();
-        const stats = closedVelocitySprints.map((sprint) => {
-          if (!closedSprintNamesForPod.has(sprint.fullName)) return null;
+        const stats = velocityColumns.map((column) => {
+          if (!closedSprintNamesForPod.has(column.sprintKey)) return null;
           const closedItems = podItems.filter((item) =>
             (originalItemByKey.get(item.key)?.sprints || []).some((sourceName) =>
-              (commonized.aliases.get(sourceName) || sourceName) === sprint.fullName
+              (commonized.aliases.get(sourceName) || sourceName) === column.sprintKey
               && sprintMeta[sourceName]?.state === "closed",
             ),
           );
-          return buildSprintStat(sprint.fullName, closedItems);
+          return buildSprintStat(column.sprintKey, closedItems);
         });
         const values = stats.map((stat) => stat && stat.issueCount > 0 ? stat.done : null);
         const populated = values.filter((value): value is number => value !== null);

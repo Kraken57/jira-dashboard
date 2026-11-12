@@ -331,9 +331,8 @@ export function IssuesModal({
                     <tr>
                       <th className="sticky left-0 z-10 min-w-36 bg-jira-bg px-3 py-2 font-semibold">Pod</th>
                       {detail.velocitySprintTable.columns.map((column) => (
-                        <th key={column.sprintName} className="min-w-32 px-3 py-2 font-semibold">
-                          <span>{column.label}</span>
-                          <span className="mt-1 block normal-case font-normal text-jira-text-light">{column.sprintName}</span>
+                        <th key={column.sprintKey} className="min-w-40 px-3 py-2 font-semibold normal-case">
+                          {column.sprintName || column.sprintKey}
                         </th>
                       ))}
                       <th className="min-w-32 px-3 py-2 font-semibold">Average SP / sprint</th>
