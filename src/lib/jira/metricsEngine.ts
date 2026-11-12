@@ -1189,24 +1189,36 @@ export function computeDashboardData(
   const closedVelocitySprints = sprintStats
     .filter((sprint) => closedSprintNames.has(sprint.fullName))
     .slice(-5);
-  const sourceSprintNamesByGroup = new Map<string, Set<string>>();
+  const sourceSprintNamesByGroup = new Map<string, Map<string, string>>();
   for (const item of scopedItems) {
     for (const sourceName of originalItemByKey.get(item.key)?.sprints || []) {
       if (sprintMeta[sourceName]?.state !== "closed") continue;
       const sprintKey = commonized.aliases.get(sourceName) || sourceName;
       if (!closedSprintNames.has(sprintKey)) continue;
-      const names = sourceSprintNamesByGroup.get(sprintKey) || new Set<string>();
-      names.add(sourceName);
+      const names = sourceSprintNamesByGroup.get(sprintKey) || new Map<string, string>();
+      const displayName = sourceName.trim().replace(/\s+/g, " ");
+      const normalizedName = displayName.toLocaleLowerCase();
+      const currentName = names.get(normalizedName);
+      if (!currentName || displayName.localeCompare(currentName, undefined, { sensitivity: "base" }) < 0) {
+        names.set(normalizedName, displayName);
+      }
       sourceSprintNamesByGroup.set(sprintKey, names);
     }
   }
-  const velocityColumns = closedVelocitySprints
-    .map((sprint) => ({
-      sprintKey: sprint.fullName,
-      sprintName: [...(sourceSprintNamesByGroup.get(sprint.fullName) || [])]
-        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }))
-        .join(" · "),
-    }))
+  const columnByNormalizedName = new Map<string, { sprintKeys: string[]; sprintName: string }>();
+  for (const sprint of closedVelocitySprints) {
+    const sprintName = [...(sourceSprintNamesByGroup.get(sprint.fullName)?.values() || [])]
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }))
+      .join(" · ") || sprint.fullName;
+    const normalizedName = sprintName.toLocaleLowerCase().replace(/\s+/g, " ").trim();
+    const column = columnByNormalizedName.get(normalizedName);
+    if (column) column.sprintKeys.push(sprint.fullName);
+    else columnByNormalizedName.set(normalizedName, {
+      sprintKeys: [sprint.fullName],
+      sprintName,
+    });
+  }
+  const velocityColumns = [...columnByNormalizedName.values()]
     .sort((a, b) => a.sprintName.localeCompare(b.sprintName, undefined, {
       numeric: true,
       sensitivity: "base",
@@ -1219,14 +1231,22 @@ export function computeDashboardData(
         const podItems = scopedItems.filter((item) => item.podKey === podKey);
         const closedSprintNamesForPod = closedSourceSprintsByPod.get(podKey) || new Set<string>();
         const stats = velocityColumns.map((column) => {
-          if (!closedSprintNamesForPod.has(column.sprintKey)) return null;
-          const closedItems = podItems.filter((item) =>
-            (originalItemByKey.get(item.key)?.sprints || []).some((sourceName) =>
-              (commonized.aliases.get(sourceName) || sourceName) === column.sprintKey
-              && sprintMeta[sourceName]?.state === "closed",
-            ),
+          const podSprintKeys = column.sprintKeys.filter((sprintKey) =>
+            closedSprintNamesForPod.has(sprintKey),
           );
-          return buildSprintStat(column.sprintKey, closedItems);
+          if (!podSprintKeys.length) return null;
+          return podSprintKeys.map((sprintKey) => {
+            const closedItems = podItems.filter((item) =>
+              (originalItemByKey.get(item.key)?.sprints || []).some((sourceName) =>
+                (commonized.aliases.get(sourceName) || sourceName) === sprintKey
+                && sprintMeta[sourceName]?.state === "closed",
+              ),
+            );
+            return buildSprintStat(sprintKey, closedItems);
+          }).reduce((combined, stat) => ({
+            done: combined.done + stat.done,
+            issueCount: combined.issueCount + stat.issueCount,
+          }), { done: 0, issueCount: 0 });
         });
         const values = stats.map((stat) => stat && stat.issueCount > 0 ? stat.done : null);
         const populated = values.filter((value): value is number => value !== null);
