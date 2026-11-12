@@ -621,8 +621,8 @@ export function IssuesModal({
                   </td>
                   <td className="px-4 py-2.5 text-xs whitespace-nowrap">{issue.workType}</td>
                   <td className="px-4 py-2.5 text-xs text-jira-text">
-                    <p className="line-clamp-1">{issue.summary}</p>
-                    <p className="text-[11px] text-jira-text-light mt-0.5">{issue.podName}</p>
+                    <p className="line-clamp-1" title={issue.summary}>{issue.summary}</p>
+                    <p className="text-[11px] text-jira-text-light mt-0.5" title={issue.podName}>{issue.podName}</p>
                   </td>
                   <td className="px-4 py-2.5 text-xs whitespace-nowrap">
                     <span
@@ -651,12 +651,12 @@ export function IssuesModal({
                       </span>
                     </td>
                   )}
-                  <td className="px-4 py-2.5 text-xs whitespace-nowrap">{issue.assignee}</td>
-                  <td className="px-4 py-2.5 text-xs whitespace-nowrap text-jira-text-muted">
-                    {issue.sprint}
+                  <td className="px-4 py-2.5 text-xs whitespace-nowrap" title={issue.assignee}>{issue.assignee}</td>
+                  <td className="max-w-56 px-4 py-2.5 text-xs text-jira-text-muted">
+                    <span className="block max-w-56 truncate" title={issue.sprint}>{issue.sprint}</span>
                   </td>
                   {hasReason && (
-                    <td className="px-4 py-2.5 text-xs text-jira-text-muted">
+                    <td className="px-4 py-2.5 text-xs text-jira-text-muted" title={issue.reason || "—"}>
                       {issue.reason || "—"}
                     </td>
                   )}

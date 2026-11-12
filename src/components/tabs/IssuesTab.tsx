@@ -349,10 +349,10 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
                         </span>
                       </td>
                       <td className="px-5 py-3">
-                        <p className="text-jira-text font-medium text-xs line-clamp-1">
+                        <p className="text-jira-text font-medium text-xs line-clamp-1" title={issue.summary}>
                           {issue.summary}
                         </p>
-                        <p className="text-[11px] text-jira-text-light mt-0.5">
+                        <p className="text-[11px] text-jira-text-light mt-0.5" title={`${issue.podName} • ${issue.sprint}`}>
                           {issue.podName} • {issue.sprint}
                         </p>
                       </td>
@@ -447,7 +447,7 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="min-w-0">
                       <a href={jiraDomain ? `${jiraDomain}/browse/${issue.key}` : undefined} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-jira-blue hover:underline">{issue.key}</a>
-                      <h3 className="mt-1 text-sm font-semibold text-slate-900">{issue.summary}</h3>
+                      <h3 className="mt-1 text-sm font-semibold text-slate-900" title={issue.summary}>{issue.summary}</h3>
                     </div>
                     <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-700">{issue.status}</span>
                   </div>
@@ -457,7 +457,7 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
                     <p><b>Parent:</b> {issue.parentKey || "None"}{issue.parentWorkType ? ` · ${issue.parentWorkType}` : ""}</p>
                     <p><b>Pod:</b> {issue.podName || issue.projectName || issue.projectKey || "Unknown"}</p>
                     <p><b>PI:</b> {issue.quarter === "All" ? "Not tagged" : issue.quarter}</p>
-                    <p><b>Sprint:</b> {issue.sprints.join(", ") || "Backlog"}</p>
+                    <p title={issue.sprints.join(", ") || "Backlog"}><b>Sprint:</b> {issue.sprints.join(", ") || "Backlog"}</p>
                     <p><b>Due date:</b> {issue.dueDate || "None"}</p>
                     <p><b>Aha URL:</b> {issue.ahaUrl === undefined ? "Not returned" : issue.ahaUrl || "Empty"}</p>
                     <p><b>Assignee:</b> {issue.assignee || "Unassigned"}</p>

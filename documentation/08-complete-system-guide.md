@@ -692,6 +692,8 @@ Any new card popup should pass a filtered `IssueRow[]` and let `IssuesModal` do 
 Executive cards also pass `dashboardData.metricInsights[title]`, which is computed in
 `metricsEngine.ts` and contains the real numbers, trend, target, recent sprints, and
 takeaways.
+Popup rows display Jira's original sprint names rather than internal common-sprint
+identifiers; clipped summary and sprint values expose their full text on hover.
 
 The Velocity popup shows a pod-by-closed-sprint matrix for the current pod, quarter,
 sprint, and sprint-status filters. It displays up to the three latest closed sprint

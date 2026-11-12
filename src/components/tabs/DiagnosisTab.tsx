@@ -288,8 +288,8 @@ export function DiagnosisTab({ data, podName, jiraDomain, statusFilter }: Diagno
                       </span>
                     </td>
                     <td className="px-5 py-3">
-                      <p className="text-jira-text font-medium text-xs line-clamp-1">{issue.summary}</p>
-                      <p className="text-[11px] text-jira-text-light mt-0.5">
+                      <p className="text-jira-text font-medium text-xs line-clamp-1" title={issue.summary}>{issue.summary}</p>
+                      <p className="text-[11px] text-jira-text-light mt-0.5" title={`${issue.podName} • ${issue.sprint}`}>
                         {issue.podName} • {issue.sprint}
                       </p>
                     </td>

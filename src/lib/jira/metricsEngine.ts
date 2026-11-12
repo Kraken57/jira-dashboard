@@ -986,6 +986,15 @@ export function computeDashboardData(
     return starts.length ? Math.max(...starts) : sprintOrderKey(commonName, effectiveSprintMeta[commonName]);
   };
 
+  const displaySprintsFor = (item: JiraWorkItem): string => {
+    let names = originalItemByKey.get(item.key)?.sprints || [];
+    if (!names.length && item.parentKey) {
+      names = originalItemByKey.get(item.parentKey)?.sprints || [];
+    }
+    if (!names.length) names = item.sprints || [];
+    return [...new Set(names.map((name) => name.trim()).filter(Boolean))].join(", ") || "Backlog";
+  };
+
   const canCarryInSprint = (item: JiraWorkItem, commonName: string) =>
     (originalItemByKey.get(item.key)?.sprints || []).some((name) => {
       if (commonized.aliases.get(name) !== commonName) return false;
@@ -1785,7 +1794,7 @@ export function computeDashboardData(
       storyPoints: it.storyPoints || 0,
       podKey: it.podKey,
       podName: it.podName,
-      sprint: it.sprints.length > 0 ? it.sprints.join(", ") : "Backlog",
+      sprint: displaySprintsFor(it),
       assignee: it.assignee || "Unassigned",
       priority: it.priority || "Medium",
       reason: getReason(it),
@@ -2052,7 +2061,7 @@ export function computeDashboardData(
     storyPoints: it.storyPoints || 0,
     podKey: it.podKey,
     podName: it.podName,
-    sprint: it.sprints.length > 0 ? it.sprints.join(", ") : "Backlog",
+    sprint: displaySprintsFor(it),
     assignee: it.assignee || "Unassigned",
     priority: it.priority || "Medium",
     createdDate: it.createdDate || "",
@@ -2077,7 +2086,7 @@ export function computeDashboardData(
     storyPoints: it.storyPoints || 0,
     podKey: it.podKey,
     podName: it.podName,
-    sprint: it.sprints.length > 0 ? it.sprints.join(", ") : "Backlog",
+    sprint: displaySprintsFor(it),
     assignee: it.assignee || "Unassigned",
     priority: it.priority || "Medium",
     createdDate: it.createdDate || "",
