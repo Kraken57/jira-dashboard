@@ -1207,9 +1207,17 @@ export function computeDashboardData(
   }
   const columnByNormalizedName = new Map<string, { sprintKeys: string[]; sprintName: string }>();
   for (const sprint of closedVelocitySprints) {
-    const sprintName = [...(sourceSprintNamesByGroup.get(sprint.fullName)?.values() || [])]
-      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }))
-      .join(" · ") || sprint.fullName;
+    const commonRange = normalizedSprintRange(effectiveSprintMeta[sprint.fullName]);
+    const rangeDistance = (sourceName: string) => {
+      const sourceRange = normalizedSprintRange(sprintMeta[sourceName]);
+      if (!sourceRange || !commonRange) return Number.POSITIVE_INFINITY;
+      return Math.abs(Date.parse(sourceRange.startDate) - Date.parse(commonRange.startDate))
+        + Math.abs(Date.parse(sourceRange.endDate) - Date.parse(commonRange.endDate));
+    };
+    const candidates = [...(sourceSprintNamesByGroup.get(sprint.fullName)?.values() || [])]
+      .sort((a, b) => rangeDistance(a) - rangeDistance(b)
+        || a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
+    const sprintName = candidates[0] || sprint.fullName;
     const normalizedName = sprintName.toLocaleLowerCase().replace(/\s+/g, " ").trim();
     const column = columnByNormalizedName.get(normalizedName);
     if (column) column.sprintKeys.push(sprint.fullName);
