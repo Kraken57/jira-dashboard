@@ -8,6 +8,7 @@ import Resolver from "@forge/resolver";
 import api, { route } from "@forge/api";
 import { kvs } from "./kvsClient";
 import zlib from "node:zlib";
+import { createHash } from "node:crypto";
 import { JiraClient } from "./api/jiraClient";
 
 const resolver = new Resolver();
@@ -720,6 +721,23 @@ interface ZephyrProjectData {
   executions: ZephyrCompatibleTestExecution[];
 }
 
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (true) {
+      const index = nextIndex++;
+      if (index >= items.length) return;
+      results[index] = await worker(items[index]);
+    }
+  }));
+  return results;
+}
+
 
 function qaPoolFromItems(items: any[]): any[] {
   return items.filter((i: any) => !/^sub-?task$/i.test(String(i.workType || "")));
@@ -763,7 +781,7 @@ async function fetchZephyrExecutions(
     url.pathname = url.pathname.replace(/^\/connect\/v2(?=\/|$)/, "/v2");
     return url;
   };
-  const allPages = async <E extends keyof ZephyrEndpointRows>(endpoint: E, projectKey: string) => {
+  const allPages = async <E extends keyof ZephyrEndpointRows>(endpoint: E, projectKey: string, signal?: AbortSignal) => {
     const firstUrl = new URL(`${base}/${endpoint}`);
     firstUrl.search = new URLSearchParams({ projectKey, startAt: "0", maxResults: "100" }).toString();
     let url: URL | null = firstUrl;
@@ -775,6 +793,7 @@ async function fetchZephyrExecutions(
       url = normalizeZephyrUrl(url);
       const response = await fetch(url, {
         headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+        signal,
       });
       if (!response.ok) {
         const contentType = response.headers.get("content-type") || "unknown";
@@ -831,19 +850,29 @@ async function fetchZephyrExecutions(
   };
   try {
     const metricsByAlias: NonNullable<ZephyrData["metricsByAlias"]> = {};
-    const projectData: ZephyrProjectData[] = [];
     const projectErrors: string[] = [];
-    for (const project of projects) {
+    const projectResults = await mapWithConcurrency(projects, 8, async (project) => {
+      let cases: ZephyrApiTestCase[] | null = null;
+      let executions: ZephyrCompatibleTestExecution[] = [];
+      const controller = new AbortController();
+      const projectTimer = setTimeout(() => controller.abort(), 12_000);
       try {
-        const cases = await allPages("testcases", project);
-        let executions: ZephyrCompatibleTestExecution[] = [];
-        try { executions = (await allPages("testexecutions", project)).values; }
-        catch (error) { projectErrors.push(`${project} executions: ${error instanceof Error ? error.message : "request failed"}`); }
-        projectData.push({ key: project, cases: cases.values, executions });
+        const [caseResult, executionResult] = await Promise.allSettled([
+          allPages("testcases", project, controller.signal),
+          allPages("testexecutions", project, controller.signal),
+        ]);
+        if (caseResult.status === "fulfilled") cases = caseResult.value.values;
+        else projectErrors.push(`${project} test cases: ${caseResult.reason instanceof Error ? caseResult.reason.message : "request failed"}`);
+        if (executionResult.status === "fulfilled") executions = executionResult.value.values;
+        else projectErrors.push(`${project} executions: ${executionResult.reason instanceof Error ? executionResult.reason.message : "request failed"}`);
       } catch (error) {
-        projectErrors.push(`${project} test cases: ${error instanceof Error ? error.message : "request failed"}`);
+        projectErrors.push(`${project}: ${error instanceof Error ? error.message : "request failed"}`);
+      } finally {
+        clearTimeout(projectTimer);
       }
-    }
+      return cases ? { key: project, cases, executions } satisfies ZephyrProjectData : null;
+    });
+    const projectData = projectResults.filter((project): project is ZephyrProjectData => project !== null);
     if (!projectData.length) {
       const message = projectErrors.join("; ") || "No Zephyr projects could be read";
       const statusCode = message.match(/(?:returned|failed:|rate limited)\s*(\d{3})\b/i)?.[1];
@@ -865,7 +894,7 @@ async function fetchZephyrExecutions(
         try {
           const url = new URL(self);
           normalizeZephyrUrl(url);
-          const response = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+          const response = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }, signal: AbortSignal.timeout(8_000) });
           if (!response.ok) return fallback;
           const body = await response.json();
           return String(get(body, "name", "value", "displayName", "statusName") || fallback);
@@ -902,32 +931,25 @@ async function fetchZephyrExecutions(
       }
     });
     let traceabilityFailures = 0;
-    for (let offset = 0; offset < traceabilityTargets.length; offset += 8) {
-      const batch = traceabilityTargets.slice(offset, offset + 8);
-      const results = await Promise.all(batch.map(async ({ rowKey, url }) => {
+    await mapWithConcurrency(traceabilityTargets, 32, async ({ rowKey, url }) => {
         try {
-          const response = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
-          if (!response.ok) return { rowKey, issues: null };
+          const response = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }, signal: AbortSignal.timeout(8_000) });
+          if (!response.ok) { traceabilityFailures++; return; }
           const body = record(await response.json());
-          return { rowKey, issues: Array.isArray(body.issues) ? body.issues : [] };
+          traceabilityIssues.set(rowKey, Array.isArray(body.issues) ? body.issues : []);
         } catch {
-          return { rowKey, issues: null };
+          traceabilityFailures++;
         }
-      }));
-      for (const result of results) {
-        if (result.issues === null) traceabilityFailures++;
-        else traceabilityIssues.set(result.rowKey, result.issues);
-      }
-    }
+      });
     if (traceabilityFailures) projectErrors.push(`Zephyr Traceability links unavailable for ${traceabilityFailures} of ${traceabilityTargets.length} cases`);
     const idToKey = new Map(caseRows.map((testCase) => [String(testCase.id || ""), String(testCase.key || "")]));
     const users = new Set<string>();
     for (const testCase of caseRows) { const id = personId(testCase.owner); if (id) users.add(id); }
     for (const { executions } of projectData) for (const execution of executions) for (const actor of [execution.assignee, execution.assignedTo, execution.executedBy, execution.executor]) { const id = personId(actor); if (id) users.add(id); }
     const names: Record<string, string> = {};
-    await Promise.all(Array.from(users).map(async (id) => {
+    await mapWithConcurrency(Array.from(users), 16, async (id) => {
       try { const response = await api.asApp().requestJira(route`/rest/api/3/user?accountId=${id}`); if (response.ok) { const user = await response.json() as { displayName?: string }; if (user.displayName) names[id] = user.displayName; } } catch { /* account ID is the visible fallback */ }
-    }));
+    });
     const executionMap = new Map<string, any[]>();
     const allExecutions = projectData.flatMap(({ executions }) => executions);
     for (const execution of allExecutions) {
@@ -981,18 +1003,14 @@ async function fetchZephyrExecutions(
     const jiraFields = ["summary", "status", "issuetype", "project", config.sprintField, config.podField, config.storyPointsField];
     const linkedIdItems = new Map<string, any>();
     const linkedIds = Array.from(new Set(cases.flatMap((testCase) => testCase.linkedIssueIds ?? [])));
-    for (let offset = 0; offset < linkedIds.length; offset += 8) {
-      const chunk = linkedIds.slice(offset, offset + 8);
-      const resolved = await Promise.all(chunk.map(async (id) => {
+    await mapWithConcurrency(linkedIds, 16, async (id) => {
         try {
           const issue = await jiraClient.getIssue(id, jiraFields);
-          return [id, mapIssueToWorkItem(issue, config)] as const;
+          linkedIdItems.set(id, mapIssueToWorkItem(issue, config));
         } catch {
-          return null;
+          // Keep the linked issue key/ID available when Jira cannot enrich it.
         }
-      }));
-      for (const entry of resolved) if (entry) linkedIdItems.set(entry[0], entry[1]);
-    }
+      });
     const sprintLookupKeys = Array.from(new Set(cases.flatMap((testCase) => [
       testCase.key,
       ...testCase.linkedIssueKeys,
@@ -1001,10 +1019,11 @@ async function fetchZephyrExecutions(
       .filter((key) => /^[A-Z][A-Z0-9_]*-\d+$/i.test(key));
     try {
       const sprintItems: any[] = Array.from(linkedIdItems.values());
-      for (let offset = 0; offset < sprintLookupKeys.length; offset += 80) {
-        const chunk = sprintLookupKeys.slice(offset, offset + 80);
-        if (chunk.length) sprintItems.push(...await jiraClient.searchIssuesJql(`key in (${chunk.join(", ")})`, jiraFields));
-      }
+      const sprintChunks = Array.from({ length: Math.ceil(sprintLookupKeys.length / 80) }, (_, index) => sprintLookupKeys.slice(index * 80, (index + 1) * 80));
+      const sprintResults = await mapWithConcurrency(sprintChunks, 4, async (chunk) =>
+        chunk.length ? jiraClient.searchIssuesJql(`key in (${chunk.join(", ")})`, jiraFields) : []
+      );
+      sprintItems.push(...sprintResults.flat());
       const byKey = new Map(sprintItems.map((issue) => {
         const item = mapIssueToWorkItem(issue, config);
         return [item.key, item] as const;
@@ -1712,6 +1731,53 @@ const FEED_PART_KEY = "raw-feed-v12-part-";
 const FEED_PART_BYTES = 90 * 1024;
 const FEED_TTL_MS = 5 * 60 * 1000;
 const FEED_STALE_OK_MS = 30 * 60 * 1000;
+const ZEPHYR_CACHE_META_KEY = "zephyr-feed-v1-meta";
+const ZEPHYR_CACHE_PART_KEY = "zephyr-feed-v1-part-";
+const ZEPHYR_CACHE_TTL_MS = 5 * 60 * 1000;
+
+interface ZephyrCacheMeta {
+  fetchedAt: number;
+  parts: number;
+  fingerprint: string;
+}
+
+function getZephyrCacheFingerprint(): string {
+  return createHash("sha256")
+    .update(`${process.env.JIRA_ZEPHYR_PROJECT_KEYS || ""}\n${process.env.JIRA_ZEPHYR_API_TOKEN || ""}`)
+    .digest("hex");
+}
+
+async function readZephyrCache(fingerprint: string): Promise<ZephyrData | null> {
+  const meta = await kvs.get(ZEPHYR_CACHE_META_KEY).catch(() => undefined) as ZephyrCacheMeta | undefined;
+  if (!meta || meta.fingerprint !== fingerprint || Date.now() - meta.fetchedAt >= ZEPHYR_CACHE_TTL_MS) return null;
+  const chunks = await Promise.all(Array.from({ length: meta.parts }, (_, index) =>
+    kvs.get(`${ZEPHYR_CACHE_PART_KEY}${index + 1}`).catch(() => undefined)
+  ));
+  if (chunks.some((chunk) => typeof chunk !== "string")) return null;
+  try {
+    const json = zlib.inflateSync(Buffer.from((chunks as string[]).join(""), "base64")).toString("utf8");
+    const data = JSON.parse(json) as ZephyrData;
+    return typeof data.available === "boolean" ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeZephyrCache(fingerprint: string, data: ZephyrData): Promise<void> {
+  if (!data.available) return;
+  const compressed = zlib.deflateSync(Buffer.from(JSON.stringify(data))).toString("base64");
+  const parts = Array.from({ length: Math.ceil(compressed.length / FEED_PART_BYTES) }, (_, index) =>
+    compressed.slice(index * FEED_PART_BYTES, (index + 1) * FEED_PART_BYTES)
+  );
+  await Promise.all(parts.map((part, index) => kvs.set(`${ZEPHYR_CACHE_PART_KEY}${index + 1}`, part)));
+  const previous = await kvs.get(ZEPHYR_CACHE_META_KEY).catch(() => undefined) as ZephyrCacheMeta | undefined;
+  if (previous && typeof previous.parts === "number") {
+    await Promise.all(Array.from({ length: Math.max(0, previous.parts - parts.length) }, (_, index) =>
+      kvs.delete(`${ZEPHYR_CACHE_PART_KEY}${parts.length + index + 1}`).catch(() => undefined)
+    ));
+  }
+  await kvs.set(ZEPHYR_CACHE_META_KEY, { fetchedAt: Date.now(), parts: parts.length, fingerprint } satisfies ZephyrCacheMeta);
+}
 
 // Shared with the resolver's metric behavior; mirrors the env rules so the
 // browser computes with identical rules in both local and Forge modes.
@@ -2049,8 +2115,19 @@ resolver.define("getRawFeed", async (req) => {
 });
 
 /** Load optional Zephyr data only after the Jira feed is available. */
-resolver.define("getZephyrData", async () => {
+resolver.define("getZephyrData", async (req) => {
   try {
+    const forceRefresh = Boolean((req.payload as { refresh?: boolean } | undefined)?.refresh);
+    const fingerprint = getZephyrCacheFingerprint();
+    if (!forceRefresh) {
+      const cached = await readZephyrCache(fingerprint);
+      if (cached) {
+        console.info("[ZEPHYR_FETCH] Serving Forge cache", {
+          caseCount: cached.testCasesTotal ?? cached.cases?.length ?? 0,
+        });
+        return cached;
+      }
+    }
     const metaRaw = (await kvs.get(FEED_META_KEY).catch(() => undefined)) as FeedMeta | undefined;
     const meta = metaRaw && typeof metaRaw.fetchedAt === "number" && typeof metaRaw.parts === "number"
       ? metaRaw
@@ -2062,7 +2139,11 @@ resolver.define("getZephyrData", async () => {
       envelope = await fetchAndStoreFeed();
     }
     const config = await getFieldConfig();
-    return await fetchZephyrExecutions(qaPoolFromItems(envelope.items), config);
+    const data = await fetchZephyrExecutions(qaPoolFromItems(envelope.items), config);
+    await writeZephyrCache(fingerprint, data).catch((error: unknown) => {
+      console.warn("[ZEPHYR_FETCH] Could not cache Forge result", error);
+    });
+    return data;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Zephyr data could not be loaded.";
     console.error("[ZEPHYR_FETCH] Forge resolver failed", message);

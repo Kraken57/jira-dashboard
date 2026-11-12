@@ -283,6 +283,12 @@ done statuses, sprint window — travel inside the feed as `config`).
   `invoke("getZephyrData")` after accepting the Jira feed, so slow or unavailable
   Zephyr requests cannot hold up the initial dashboard response. Local mode uses
   the `/api/jira?zephyr=1` route for the same background step.
+- Zephyr project reads run concurrently with a bounded limit; test-case and
+  execution pages for a project are requested together. Traceability links are
+  also fetched with bounded concurrency. Forge caches the compressed Zephyr
+  result for five minutes, keyed by the configured project list and token; local
+  mode has its own five-minute in-memory cache. Failed/slow projects are reported
+  as partial data, while successful projects can still be shown.
 - The browser mirrors the feed in `sessionStorage` (`jira-raw-feed-v1`, tab
   scope, wiped on tab close), so page refresh renders instantly and
   revalidates quietly. The header chip shows the snapshot age and whether a

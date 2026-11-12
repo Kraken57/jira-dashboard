@@ -7,6 +7,23 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (true) {
+      const index = nextIndex++;
+      if (index >= items.length) return;
+      results[index] = await worker(items[index]);
+    }
+  }));
+  return results;
+}
+
 /**
  * Derive the enterprise quarter id from a Jira sprint name.
  * Handles the different naming conventions used across Jira sites:
@@ -484,26 +501,37 @@ async function fetchZephyrExecutions(jiraItems: JiraWorkItem[] = []): Promise<Ze
   };
 
   try {
-    type RawProject = { key: string; name: string; testCases: Record<string, unknown>[]; executions: Record<string, unknown>[] };
-    const projects: RawProject[] = [];
+    type RawProject = { key: string; name: string; testCases: Record<string, unknown>[]; executions: Record<string, unknown>[]; totalTestCases: number };
     const projectErrors: string[] = [];
-    let totalTestCases = 0;
-    for (const key of projectKeys) {
+    const projectResults = await mapWithConcurrency(projectKeys, 4, async (key): Promise<RawProject | null> => {
       try {
-        const cases = await requestAllPages("testcases", key);
-        totalTestCases += cases.total ?? cases.values.length;
-        let executions: Record<string, unknown>[] = [];
-        try {
-          executions = (await requestAllPages("testexecutions", key)).values;
-        } catch (error) {
-          projectErrors.push(`${key} executions: ${error instanceof Error ? error.message : "request failed"}`);
+        const [caseResult, executionResult] = await Promise.allSettled([
+          requestAllPages("testcases", key),
+          requestAllPages("testexecutions", key),
+        ]);
+        if (caseResult.status === "rejected") {
+          projectErrors.push(`${key} test cases: ${caseResult.reason instanceof Error ? caseResult.reason.message : "request failed"}`);
+          return null;
+        }
+        const executions = executionResult.status === "fulfilled" ? executionResult.value.values : [];
+        if (executionResult.status === "rejected") {
+          projectErrors.push(`${key} executions: ${executionResult.reason instanceof Error ? executionResult.reason.message : "request failed"}`);
         }
         const sourceName = jiraItems.find((item) => item.projectKey === key)?.projectName;
-        projects.push({ key, name: sourceName || key, testCases: cases.values, executions });
+        return {
+          key,
+          name: sourceName || key,
+          testCases: caseResult.value.values,
+          executions,
+          totalTestCases: caseResult.value.total ?? caseResult.value.values.length,
+        };
       } catch (error) {
         projectErrors.push(`${key} test cases: ${error instanceof Error ? error.message : "request failed"}`);
+        return null;
       }
-    }
+    });
+    const projects = projectResults.filter((project): project is RawProject => project !== null);
+    const totalTestCases = projects.reduce((total, project) => total + project.totalTestCases, 0);
 
     if (!projects.length) {
       const message = projectErrors.join("; ") || "No Zephyr projects could be read";
@@ -828,23 +856,19 @@ async function fetchZephyrForItems(jiraItems: JiraWorkItem[]): Promise<ZephyrDat
   const linkedIdToKey = new Map<string, string>();
   const linkedIds = Array.from(new Set(zephyr.cases.flatMap((testCase) => testCase.linkedIssueIds ?? [])));
   const authHeader = Buffer.from(`${JIRA_CONFIG.email}:${JIRA_CONFIG.apiToken}`).toString("base64");
-  for (let offset = 0; offset < linkedIds.length; offset += 32) {
-    const chunk = linkedIds.slice(offset, offset + 32);
-    const resolved = await Promise.all(chunk.map(async (issueId) => {
+  await mapWithConcurrency(linkedIds, 16, async (issueId) => {
       try {
         const response = await fetch(`${JIRA_CONFIG.host.replace(/\/+$/, "")}/rest/api/3/issue/${issueId}?fields=key`, {
           headers: { Authorization: `Basic ${authHeader}`, Accept: "application/json" },
           cache: "no-store",
         });
-        if (!response.ok) return null;
+        if (!response.ok) return;
         const issue = await response.json() as { key?: string };
-        return issue.key ? [issueId, issue.key] as const : null;
+        if (issue.key) linkedIdToKey.set(issueId, issue.key);
       } catch {
-        return null;
+        // Keep the traceability link even if Jira cannot resolve its numeric ID.
       }
-    }));
-    for (const entry of resolved) if (entry) linkedIdToKey.set(entry[0], entry[1]);
-  }
+    });
   const lookupKeys = Array.from(new Set(zephyr.cases.flatMap((testCase) => [
     testCase.key,
     ...testCase.linkedIssueKeys,
@@ -852,12 +876,11 @@ async function fetchZephyrForItems(jiraItems: JiraWorkItem[]): Promise<ZephyrDat
   ]))).filter((key) => /^[A-Z][A-Z0-9_]*-\d+$/i.test(key));
   const sprintItems: JiraWorkItem[] = [];
   try {
-    for (let offset = 0; offset < lookupKeys.length; offset += 80) {
-      const chunk = lookupKeys.slice(offset, offset + 80);
-      if (!chunk.length) continue;
-      const sprintFeed = await fetchAllLiveJiraIssues(`key in (${chunk.join(", ")})`, "Zephyr sprint mapping");
-      sprintItems.push(...sprintFeed.items);
-    }
+    const lookupChunks = Array.from({ length: Math.ceil(lookupKeys.length / 80) }, (_, index) => lookupKeys.slice(index * 80, (index + 1) * 80));
+    const sprintFeeds = await mapWithConcurrency(lookupChunks, 4, async (chunk) =>
+      chunk.length ? fetchAllLiveJiraIssues(`key in (${chunk.join(", ")})`, "Zephyr sprint mapping") : null
+    );
+    sprintItems.push(...sprintFeeds.flatMap((feed) => feed?.items ?? []));
     const byKey = new Map(sprintItems.map((item) => [item.key, item]));
     zephyr.cases = zephyr.cases.map((testCase) => {
       const resolvedKeys = (testCase.linkedIssueIds ?? []).map((id) => linkedIdToKey.get(id) || "").filter(Boolean);
