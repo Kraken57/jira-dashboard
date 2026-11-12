@@ -14,7 +14,7 @@ import {
 import type { DashboardLoadingStage } from "@/components/DashboardLoadState";
 import {
   fetchRawFeed,
-  fetchLocalZephyrData,
+  fetchZephyrData,
   getDashboardLoadFailure,
   isRawFeedStale,
   readSessionRawFeed,
@@ -191,11 +191,13 @@ export default function DashboardPage() {
         writeSessionRawFeed(next);
         setFeed(next);
         const localRuntime = window.self === window.top;
-        const shouldLoadZephyrSeparately = localRuntime &&
-          (hard || !next.zephyr || isRawFeedStale(next));
+        // Forge's raw Jira resolver deliberately excludes Zephyr. Request it
+        // independently so slow Zephyr calls cannot time out the dashboard.
+        const shouldLoadZephyrSeparately = !localRuntime ||
+          hard || !next.zephyr || isRawFeedStale(next);
         setZephyrLoading(shouldLoadZephyrSeparately);
         if (shouldLoadZephyrSeparately) {
-          void fetchLocalZephyrData(hard).then((zephyr) => {
+          void fetchZephyrData(hard).then((zephyr) => {
             if (cancelled) return;
             setFeed((current) => {
               if (!current) return current;

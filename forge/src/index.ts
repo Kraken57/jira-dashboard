@@ -1840,8 +1840,6 @@ async function fetchAndStoreFeed(): Promise<FeedEnvelope> {
     config: resolveFeedConfig(),
   };
 
-  const zephyr = await fetchZephyrExecutions(qaPoolFromItems(envelope.items), config);
-  envelope.zephyr = zephyr;
   console.info("[JIRA_FETCH] Forge feed assembled", {
     issueCount: envelope.items.length,
     defectCount: envelope.qaDefects.length,
@@ -2010,17 +2008,21 @@ resolver.define("getRawFeed", async (req) => {
       if (ageMs <= FEED_TTL_MS) {
         const envelope = await assembleFeed(meta);
         if (envelope && Array.isArray(envelope.qaDefects)) {
-          return { ...envelope, source: "kvs", ageMs };
+          // Older cached envelopes may contain Zephyr data. Keep the raw Jira
+          // resolver response small and let the Quality tab request Zephyr.
+          const { zephyr: _legacyZephyr, ...jiraEnvelope } = envelope;
+          return { ...jiraEnvelope, source: "kvs", ageMs };
         }
       } else if (ageMs <= FEED_STALE_OK_MS) {
         // # ponytail: Forge may cut post-response promises; if it does, the
         // next open pays the refresh instead of this user (still never both).
         const envelope = await assembleFeed(meta);
         if (envelope && Array.isArray(envelope.qaDefects)) {
+          const { zephyr: _legacyZephyr, ...jiraEnvelope } = envelope;
           void fetchAndStoreFeed().catch((err: unknown) =>
             console.warn("[feed] background refresh failed:", err)
           );
-          return { ...envelope, source: "kvs-stale", ageMs };
+          return { ...jiraEnvelope, source: "kvs-stale", ageMs };
         }
       }
     }
@@ -2043,6 +2045,28 @@ resolver.define("getRawFeed", async (req) => {
       statusCode: statusCode ? Number(statusCode) : null,
       source: "forge-live",
     };
+  }
+});
+
+/** Load optional Zephyr data only after the Jira feed is available. */
+resolver.define("getZephyrData", async () => {
+  try {
+    const metaRaw = (await kvs.get(FEED_META_KEY).catch(() => undefined)) as FeedMeta | undefined;
+    const meta = metaRaw && typeof metaRaw.fetchedAt === "number" && typeof metaRaw.parts === "number"
+      ? metaRaw
+      : null;
+    let envelope = meta ? await assembleFeed(meta) : null;
+    if (!envelope || !Array.isArray(envelope.items)) {
+      // Usually getRawFeed has just populated this. This fallback also handles
+      // a direct Quality-tab request before the Jira feed cache exists.
+      envelope = await fetchAndStoreFeed();
+    }
+    const config = await getFieldConfig();
+    return await fetchZephyrExecutions(qaPoolFromItems(envelope.items), config);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Zephyr data could not be loaded.";
+    console.error("[ZEPHYR_FETCH] Forge resolver failed", message);
+    return { available: false, message } satisfies ZephyrData;
   }
 });
 

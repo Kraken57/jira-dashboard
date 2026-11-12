@@ -318,8 +318,22 @@ export async function fetchRawFeed(
   }
 }
 
-/** Fetch the optional, slower Zephyr portfolio after the Jira dashboard renders. */
-export async function fetchLocalZephyrData(forceRefresh = false): Promise<ZephyrData> {
+/** Fetch the optional Zephyr portfolio after the Jira feed has rendered. */
+export async function fetchZephyrData(forceRefresh = false): Promise<ZephyrData> {
+  if (typeof window === "undefined") {
+    throw new Error("fetchZephyrData must be called in the browser");
+  }
+  if (window.self !== window.top) {
+    const { invoke } = await import("@forge/bridge");
+    const result = unwrapBody<ZephyrData>(
+      await invoke("getZephyrData", forceRefresh ? { refresh: true } : undefined),
+    );
+    if (!result || typeof result.available !== "boolean") {
+      throw new Error("The Forge resolver returned no Zephyr data.");
+    }
+    return result;
+  }
+
   const url = `${BASE_URL.replace(/\/+$/, "")}/api/jira?zephyr=1${forceRefresh ? "&refresh=1" : ""}`;
   const response = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
   const body = await response.text();

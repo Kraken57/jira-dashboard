@@ -279,6 +279,10 @@ done statuses, sprint window — travel inside the feed as `config`).
   the supported `@forge/kvs` SDK (zlib-deflated, chunked under
   `raw-feed-v1-part-*` with commit marker `raw-feed-v1-meta`; values sit well
   inside the documented 240 KiB per-value and 4,000 r/w-per-minute limits).
+- Zephyr is fetched separately from the Forge raw Jira feed. The frontend calls
+  `invoke("getZephyrData")` after accepting the Jira feed, so slow or unavailable
+  Zephyr requests cannot hold up the initial dashboard response. Local mode uses
+  the `/api/jira?zephyr=1` route for the same background step.
 - The browser mirrors the feed in `sessionStorage` (`jira-raw-feed-v1`, tab
   scope, wiped on tab close), so page refresh renders instantly and
   revalidates quietly. The header chip shows the snapshot age and whether a
@@ -1107,6 +1111,8 @@ Important details:
 | Call | Payload | Result |
 |---|---|---|
 | `getDashboardData` | `{ podId, quarterId, sprintId }` | Dashboard data |
+| `getRawFeed` | `{ refresh?: boolean }` | Jira raw feed, without Zephyr |
+| `getZephyrData` | `{ refresh?: boolean }` | Optional Zephyr data for the Quality tab |
 | `getEvidence` | `{ issueKey }` | Single issue summary/status/dates/URL |
 | `getAdminConfig` | none | Current JQL + field ids |
 | `saveAdminConfig` | `{ jql, storyPointsField, sprintField, podField }` | `{ success: true }` |
