@@ -1127,6 +1127,7 @@ function calculateKPIs(
     { count: number; sp: number; doneSp: number; carriedSp: number; doneCount: number }
   >();
   const completionSprintCache = new Map<string, string | null>();
+  const carryoverCheckAt = Date.now();
   const completionSprintFor = (item: any): string | null => {
     if (!isDoneStatus(item.status)) return null;
     if (completionSprintCache.has(item.key)) return completionSprintCache.get(item.key) ?? null;
@@ -1168,6 +1169,36 @@ function calculateKPIs(
     completionSprintCache.set(item.key, fallback);
     return fallback;
   };
+  const isLaterSprintForItem = (item: any, candidate: string, source: string) => {
+    const candidateStart = Date.parse(sprintMeta[candidate]?.startDate || "");
+    const sourceStart = Date.parse(sprintMeta[source]?.startDate || "");
+    if (Number.isFinite(candidateStart) && Number.isFinite(sourceStart)) {
+      return candidateStart > sourceStart;
+    }
+    return item.sprints.indexOf(candidate) > item.sprints.indexOf(source);
+  };
+  const isCarryoverFromSprint = (item: any, source: string) => {
+    if (!item.sprints.includes(source)) return false;
+    const meta = sprintMeta[source];
+    let end = Date.parse(meta?.endDate || "");
+    if (meta?.endDate && /^\d{4}-\d{2}-\d{2}$/.test(meta.endDate) && Number.isFinite(end)) {
+      end += DAY_MS - 1;
+    }
+    const sourceEnded = String(meta?.state || "").toLowerCase() === "closed" ||
+      (Number.isFinite(end) && end <= carryoverCheckAt);
+    if (!sourceEnded) return false;
+    const movedToLaterSprint = item.sprints.some(
+      (sprint: string) => sprint !== source && isLaterSprintForItem(item, sprint, source),
+    );
+    if (!movedToLaterSprint) return false;
+    if (isDoneStatus(item.status)) {
+      const completionSprint = completionSprintFor(item);
+      return Boolean(
+        completionSprint && isLaterSprintForItem(item, completionSprint, source),
+      );
+    }
+    return true;
+  };
   for (const item of items) {
     for (const sprint of item.sprints) {
       if (filters.sprintId && filters.sprintId !== "all" && sprint !== filters.sprintId) continue;
@@ -1182,15 +1213,7 @@ function calculateKPIs(
         s.doneSp += sp;
         s.doneCount++;
       }
-      const completionSprint = completionSprintFor(item);
-      const completionStart = completionSprint ? Date.parse(sprintMeta[completionSprint]?.startDate || "") : Number.NaN;
-      const currentStart = Date.parse(sprintMeta[sprint]?.startDate || "");
-      const completedLater = isDoneStatus(item.status) && completionSprint !== null && (
-        !Number.isNaN(completionStart) && !Number.isNaN(currentStart)
-          ? completionStart > currentStart
-          : item.sprints.indexOf(completionSprint) > item.sprints.indexOf(sprint)
-      );
-      if (!isDoneStatus(item.status) || completedLater || !completionSprint) s.carriedSp += sp;
+      if (isCarryoverFromSprint(item, sprint)) s.carriedSp += sp;
     }
   }
 
@@ -1240,7 +1263,11 @@ function calculateKPIs(
 
   const totalCommittedSP = totalStoryPoints;
   const totalDoneSP = completedStoryPoints;
-  const totalCarriedSP = Math.max(totalCommittedSP - totalDoneSP, 0);
+  const totalCarriedSP = items
+    .filter((item) => item.sprints.some((sprint: string) =>
+      sprintMap.has(sprint) && isCarryoverFromSprint(item, sprint)
+    ))
+    .reduce((sum, item) => sum + (item.storyPoints || 0), 0);
   const isAllSprints = !filters.sprintId || filters.sprintId === "all";
   const scopeCommittedSP = isAllSprints ? totalCommittedSP : lastSprint?.storyPoints ?? 0;
   const scopeDoneSP = isAllSprints ? totalDoneSP : lastSprint?.doneStoryPoints ?? 0;

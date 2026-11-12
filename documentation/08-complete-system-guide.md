@@ -831,12 +831,17 @@ completes in only one source sprint.
 | Card | Formula |
 |---|---|
 | Say/Do Ratio | SP completed in the selected sprints / SP assigned to those sprints × 100 |
-| Sprint Carry Over | SP not delivered in the selection and carried from a started source sprint / selected committed SP × 100 |
+| Sprint Carry Over | SP left incomplete in an ended source sprint and assigned to a later sprint / selected committed SP × 100 |
 | Velocity | Normally, SP completed across the selected scope. When All Pods, All Quarters / PIs, and All Sprints are selected, calculate each pod's average completed SP per sprint, then average those pod averages equally. |
 | Feature Predictability | Uses the selected features and ancestors of selected work, with story delivery/due-date rules from `featureDelivery.ts` |
 
-A future source sprint contributes assigned work, but no carryover before it
-starts. Completed work attributed to an unselected sprint is not included in
+A future or active source sprint contributes assigned work, but no carryover
+until the source sprint has ended and the item is assigned to a later sprint.
+Carryover is attributed to the sprint the work was left in; work moved from a
+previous sprint into the selected current sprint is not carryover from that
+current sprint. Completed work counts as carryover only when it was completed
+in a later sprint. In an all-sprints total, each carried item is counted once.
+Completed work attributed to an unselected sprint is not included in
 selected-sprint velocity or Say/Do. Popup rows use the same `completedInScope`
 and `carriedInScope` flags as the card numerators. Feature details retain the
 full child-story rollup for each selected feature.
@@ -869,9 +874,10 @@ commitment across carry-over. A completed item contributes to `done` in only one
 the sprint whose start/end dates contain Jira's `resolutionDate`. If the date falls outside
 known sprint windows, the latest sprint that started before resolution is selected. When
 Jira does not provide usable resolution/sprint dates, the item's last listed sprint is the
-fallback. `carried` includes open items and items completed in a later sprint, so Sprint 0
-records the carry-over while Sprint 1 receives the completion. Executive All-Sprints cards
-continue to use de-duplicated summary totals.
+fallback. `carried` includes items that remain incomplete after a source sprint ends and
+are assigned to a later sprint, plus items completed in that later sprint. Sprint 0 records
+the carry-over while Sprint 1 receives the completion. Executive All-Sprints cards use
+de-duplicated carried-item totals.
 
 ### 9.6 Velocity and delivery charts
 

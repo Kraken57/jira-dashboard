@@ -995,13 +995,43 @@ export function computeDashboardData(
     return [...new Set(names.map((name) => name.trim()).filter(Boolean))].join(", ") || "Backlog";
   };
 
-  const canCarryInSprint = (item: JiraWorkItem, commonName: string) =>
-    (originalItemByKey.get(item.key)?.sprints || []).some((name) => {
-      if (commonized.aliases.get(name) !== commonName) return false;
+  const isCarryoverFromSprint = (item: JiraWorkItem, commonName: string) => {
+    const attachedSprints = originalItemByKey.get(item.key)?.sprints || [];
+    const sourceSprints = attachedSprints.filter(
+      (name) => (commonized.aliases.get(name) || name) === commonName,
+    );
+    if (!sourceSprints.length) return false;
+
+    // An open sprint's unfinished work is still in progress, not carryover.
+    // Prefer Jira's closed state; use the end date when state is unavailable.
+    const sourceEnded = sourceSprints.some((name) => {
       const meta = sprintMeta[name];
-      const start = Date.parse(meta?.startDate || "");
-      return meta?.state !== "future" && (!Number.isFinite(start) || start <= now);
+      if (String(meta?.state || "").toLowerCase() === "closed") return true;
+      let end = Date.parse(meta?.endDate || "");
+      if (meta?.endDate && /^\d{4}-\d{2}-\d{2}$/.test(meta.endDate) && Number.isFinite(end)) {
+        end += DAY_MS - 1;
+      }
+      return Number.isFinite(end) && end <= now;
     });
+    if (!sourceEnded) return false;
+
+    const sourceOrder = sprintOrderForItem(item, commonName);
+    const laterSprintExists = attachedSprints.some((name) => {
+      const mapped = commonized.aliases.get(name) || name;
+      return mapped !== commonName && sprintOrderForItem(item, mapped) > sourceOrder;
+    });
+    if (!laterSprintExists) return false;
+
+    // Completed work is carryover only when it was completed in a later sprint.
+    if (DONE_STATUSES.has(item.status)) {
+      const completionSprint = completionSprintFor(item);
+      return Boolean(
+        completionSprint &&
+          sprintOrderForItem(item, completionSprint) > sourceOrder,
+      );
+    }
+    return true;
+  };
 
   const buildSprintStat = (sprintName: string, pool: JiraWorkItem[]) => {
     const sprintItems = pool.filter((it) => matchesSprint(it.sprints, sprintName));
@@ -1022,11 +1052,7 @@ export function computeDashboardData(
         doneSP += sp;
         doneCount += 1;
       }
-      const completionIsLater = completionSprint !== null &&
-        sprintOrderForItem(it, completionSprint) > sprintOrderForItem(it, sprintName);
-      if (!completedHere && canCarryInSprint(it, sprintName) && (!isDone || completionIsLater || !completionSprint)) {
-        carriedSP += sp;
-      }
+      if (!completedHere && isCarryoverFromSprint(it, sprintName)) carriedSP += sp;
     });
 
     return {
@@ -1138,13 +1164,9 @@ export function computeDashboardData(
     const completion = completionSprintFor(item);
     return completion !== null && scopeNames.has(completion);
   }).map((item) => item.key));
-  const carriedScopeKeys = new Set(scopeItems.filter((item) => {
-    if (completedScopeKeys.has(item.key)) return false;
-    const completion = completionSprintFor(item);
-    return item.sprints.some((name) => scopeNames.has(name) && canCarryInSprint(item, name)
-      && (!DONE_STATUSES.has(item.status) || !completion
-        || sprintOrderForItem(item, completion) > sprintOrderForItem(item, name)));
-  }).map((item) => item.key));
+  const carriedScopeKeys = new Set(scopeItems.filter((item) =>
+    item.sprints.some((name) => scopeNames.has(name) && isCarryoverFromSprint(item, name))
+  ).map((item) => item.key));
   const scopeCommittedSP = scopeItems.reduce((sum, item) => sum + (item.storyPoints || 0), 0);
   const scopeDoneSP = scopeItems.filter((item) => completedScopeKeys.has(item.key))
     .reduce((sum, item) => sum + (item.storyPoints || 0), 0);
