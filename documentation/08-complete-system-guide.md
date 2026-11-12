@@ -694,11 +694,11 @@ Executive cards also pass `dashboardData.metricInsights[title]`, which is comput
 takeaways.
 
 The Velocity popup shows a pod-by-closed-sprint matrix for the current pod, quarter,
-sprint, and sprint-status filters. It displays up to the five latest closed sprint
-groups for one pod, or the three latest closed common sprint groups for All Pods.
-All Pods headers use the common sprint dropdown names and show the representative
-date range beneath each name. The table shows completed story points for each pod
-and that pod's average across the displayed sprints that contain its work.
+sprint, and sprint-status filters. It displays up to the three latest closed sprint
+groups. A single selected pod uses its Jira sprint names; selecting multiple pods
+uses common sprint dropdown names with the representative date range beneath each.
+The table shows completed story points for each pod and that pod's average across
+the displayed sprints that contain its work.
 
 ### 8.4 Metric definitions
 

@@ -1188,8 +1188,8 @@ export function computeDashboardData(
   );
   const closedVelocitySprints = sprintStats
     .filter((sprint) => closedSprintNames.has(sprint.fullName))
-    .slice(isAllSelection(podId) ? -3 : -5);
-  const allPodsSelected = isAllSelection(podId);
+    .slice(-3);
+  const useCommonSprintLabels = isAllSelection(podId) || filterValues(podId).length > 1;
   const sourceSprintNamesByGroup = new Map<string, Map<string, string>>();
   for (const item of scopedItems) {
     for (const sourceName of originalItemByKey.get(item.key)?.sprints || []) {
@@ -1222,11 +1222,11 @@ export function computeDashboardData(
     const candidates = [...(sourceSprintNamesByGroup.get(sprint.fullName)?.values() || [])]
       .sort((a, b) => rangeDistance(a) - rangeDistance(b)
         || a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
-    const sprintName = allPodsSelected
+    const sprintName = useCommonSprintLabels
       ? sprint.name
       : candidates[0] || sprint.fullName;
     const normalizedName = sprintName.toLocaleLowerCase().replace(/\s+/g, " ").trim();
-    const timeline = allPodsSelected && effectiveSprintMeta[sprint.fullName]?.startDate && effectiveSprintMeta[sprint.fullName]?.endDate
+    const timeline = useCommonSprintLabels && effectiveSprintMeta[sprint.fullName]?.startDate && effectiveSprintMeta[sprint.fullName]?.endDate
       ? formatSprintRange(
           effectiveSprintMeta[sprint.fullName].startDate!,
           effectiveSprintMeta[sprint.fullName].endDate!,
