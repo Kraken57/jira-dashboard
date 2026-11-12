@@ -319,7 +319,46 @@ export function IssuesModal({
           </p>
         )}
 
-        {detail.recent && detail.recent.length > 0 && (
+        {(title === "Velocity" || title === "Avg. Sprint Velocity" || title === "Total Sprint Velocity") && detail.velocitySprintTable ? (
+          <div>
+            <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-jira-text-muted">
+              Story points delivered by pod
+            </p>
+            {detail.velocitySprintTable.columns.length ? (
+              <div className="overflow-x-auto rounded-lg border border-jira-border bg-white">
+                <table className="w-full min-w-max text-left text-xs">
+                  <thead className="bg-jira-bg text-[10px] uppercase tracking-wide text-jira-text-muted">
+                    <tr>
+                      <th className="sticky left-0 z-10 min-w-36 bg-jira-bg px-3 py-2 font-semibold">Pod</th>
+                      {detail.velocitySprintTable.columns.map((column) => (
+                        <th key={column.sprintName} className="min-w-32 px-3 py-2 font-semibold">
+                          <span>{column.label}</span>
+                          <span className="mt-1 block normal-case font-normal text-jira-text-light">{column.sprintName}</span>
+                        </th>
+                      ))}
+                      <th className="min-w-32 px-3 py-2 font-semibold">Average SP / sprint</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-jira-border">
+                    {detail.velocitySprintTable.rows.map((row) => (
+                      <tr key={row.pod}>
+                        <th className="sticky left-0 bg-white px-3 py-2 text-left font-semibold text-jira-text">{row.pod}</th>
+                        {row.values.map((value, index) => (
+                          <td key={`${row.pod}-${index}`} className="px-3 py-2 font-bold text-jira-text">{value ?? "—"}</td>
+                        ))}
+                        <td className="px-3 py-2 font-bold text-jira-blue">{row.average ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="rounded-lg border border-jira-border bg-white px-3 py-4 text-xs text-jira-text-muted">
+                No closed sprints are available in the selected filters.
+              </p>
+            )}
+          </div>
+        ) : detail.recent && detail.recent.length > 0 && (
           <div>
             <p className="text-[11px] uppercase tracking-wider font-bold text-jira-text-muted mb-1.5">
               Recent sprints

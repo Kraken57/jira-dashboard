@@ -693,6 +693,11 @@ Executive cards also pass `dashboardData.metricInsights[title]`, which is comput
 `metricsEngine.ts` and contains the real numbers, trend, target, recent sprints, and
 takeaways.
 
+The Velocity popup shows a pod-by-closed-sprint matrix for the current pod, quarter,
+sprint, and sprint-status filters. It displays up to the five latest closed sprint
+groups, completed story points for each pod, and that pod's average across the
+displayed sprints that contain its work.
+
 ### 8.4 Metric definitions
 
 `src/lib/jira/metricDefinitions.ts` maps card titles to plain-language explanations.

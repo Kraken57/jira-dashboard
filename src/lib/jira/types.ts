@@ -50,6 +50,10 @@ export interface MetricInsight {
   target?: MetricInsightTarget;
   trend?: MetricInsightTrend;
   recent?: MetricInsightRecentRow[];
+  velocitySprintTable?: {
+    columns: { label: string; sprintName: string }[];
+    rows: { pod: string; values: (number | null)[]; average: number | null }[];
+  };
   takeaways?: string[];
 }
 

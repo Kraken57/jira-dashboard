@@ -1172,6 +1172,57 @@ export function computeDashboardData(
   const podVelocityBreakdown = podVelocityAverages
     .map((pod) => `${pod.name}: ${Math.round(pod.average * 10) / 10} SP/sprint`)
     .join(" · ");
+  const closedSourceSprintsByPod = new Map<string, Set<string>>();
+  for (const item of scopedItems) {
+    const sourceSprints = originalItemByKey.get(item.key)?.sprints || [];
+    for (const sourceName of sourceSprints) {
+      if (sprintMeta[sourceName]?.state !== "closed") continue;
+      const commonName = commonized.aliases.get(sourceName) || sourceName;
+      const podSprints = closedSourceSprintsByPod.get(item.podKey) || new Set<string>();
+      podSprints.add(commonName);
+      closedSourceSprintsByPod.set(item.podKey, podSprints);
+    }
+  }
+  const closedSprintNames = new Set(
+    [...closedSourceSprintsByPod.values()].flatMap((names) => [...names]),
+  );
+  const closedVelocitySprints = sprintStats
+    .filter((sprint) => closedSprintNames.has(sprint.fullName))
+    .slice(-5)
+    .reverse();
+  const velocitySprintTable = {
+    columns: closedVelocitySprints.map((sprint, index) => ({
+      label: index === 0
+        ? "Closed sprint"
+        : `Closed sprint -${index}`,
+      sprintName: sprint.name,
+    })),
+    rows: Array.from(new Set(scopedItems.map((item) => item.podKey)))
+      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
+      .map((podKey) => {
+        const podItems = scopedItems.filter((item) => item.podKey === podKey);
+        const closedSprintNamesForPod = closedSourceSprintsByPod.get(podKey) || new Set<string>();
+        const stats = closedVelocitySprints.map((sprint) => {
+          if (!closedSprintNamesForPod.has(sprint.fullName)) return null;
+          const closedItems = podItems.filter((item) =>
+            (originalItemByKey.get(item.key)?.sprints || []).some((sourceName) =>
+              (commonized.aliases.get(sourceName) || sourceName) === sprint.fullName
+              && sprintMeta[sourceName]?.state === "closed",
+            ),
+          );
+          return buildSprintStat(sprint.fullName, closedItems);
+        });
+        const values = stats.map((stat) => stat && stat.issueCount > 0 ? stat.done : null);
+        const populated = values.filter((value): value is number => value !== null);
+        return {
+          pod: podKey,
+          values,
+          average: populated.length
+            ? Math.round((populated.reduce((sum, value) => sum + value, 0) / populated.length) * 10) / 10
+            : null,
+        };
+      }),
+  };
 
   const sayDoOf = (s: typeof currentCompare | undefined) =>
     s && s.committed > 0 ? (s.done / s.committed) * 100 : 0;
@@ -1836,6 +1887,7 @@ export function computeDashboardData(
         value: `${s.done} SP`,
         detail: `${s.doneCount} of ${s.issueCount} items done`,
       })),
+      velocitySprintTable,
       takeaways: velocityUsesPodAverage
         ? [
             `Pod averages: ${podVelocityBreakdown || "No pod sprint data"}.`,
