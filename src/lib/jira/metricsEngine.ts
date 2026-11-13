@@ -2134,6 +2134,7 @@ export function computeDashboardData(
       : DONE_STATUSES.has(it.status),
     originalEstimateHours: estimateHours(it.originalEstimateSeconds),
     loggedEffortHours: estimateHours(it.timeSpentSeconds),
+    hasOriginalEstimate: it.hasOriginalEstimate ?? (it.originalEstimateSeconds || 0) > 0,
     isSubtask: /^sub-?task$/i.test(it.workType),
   }));
 

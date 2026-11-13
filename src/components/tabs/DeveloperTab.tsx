@@ -47,9 +47,6 @@ export function DeveloperTab({
   const totalOriginalHours = Math.round(
     developers.reduce((acc, d) => acc + d.originalEstimateHours, 0) * 10
   ) / 10;
-  const totalCompletedHours = Math.round(
-    developers.reduce((acc, d) => acc + d.completedEstimateHours, 0) * 10
-  ) / 10;
   const totalLoggedHours = Math.round(
     developers.reduce((acc, d) => acc + (d.loggedHours ?? 0), 0) * 10
   ) / 10;
@@ -190,9 +187,9 @@ export function DeveloperTab({
                   </span>
                 </th>
                 <th className="px-6 py-3 text-right">
-                  <span className="block">Hours</span>
+                  <span className="block">Logged Effort / Original Estimate</span>
                   <span className="block text-[10px] font-medium normal-case tracking-normal text-jira-text-light">
-                    Completed estimate / Original estimate
+                    Logged hours / Estimated hours
                   </span>
                 </th>
                 <th className="px-6 py-3 text-right">Completion Rate</th>
@@ -248,11 +245,14 @@ export function DeveloperTab({
                     </p>
                   </td>
                   <td className="px-6 py-3 text-right">
-                    <p className="text-sm font-bold text-jira-green">{dev.completedEstimateHours} hrs</p>
-                    <p className="text-[11px] text-jira-text-muted mt-0.5">
-                      of <span className="font-semibold text-jira-text">{dev.originalEstimateHours} hrs</span> original
+                    <p className="text-sm font-bold text-jira-green">
+                      {dev.loggedHours ?? 0} / {dev.originalEstimateHours} hrs
                     </p>
-                    <p className="text-[11px] text-jira-text-muted">{dev.loggedHours ?? 0} hrs logged · {dev.unestimatedIssues ?? 0} without estimate</p>
+                    {(dev.unestimatedIssues ?? 0) > 0 && (
+                      <p className="text-[11px] text-jira-text-muted mt-0.5">
+                        {dev.unestimatedIssues} without estimate
+                      </p>
+                    )}
                   </td>
                   <td className="px-6 py-3 text-right">
                     <div className="flex items-center justify-end gap-2">
@@ -303,7 +303,7 @@ export function DeveloperTab({
                   {totalDelivered} / {totalAssignedSP} SP
                 </td>
                 <td className="px-6 py-3 text-right text-jira-green">
-                  {totalCompletedHours} / {totalOriginalHours} hrs
+                  {totalLoggedHours} / {totalOriginalHours} hrs
                 </td>
                 <td className="px-6 py-3 text-right">{overallCompletion}%</td>
                 <td className="px-6 py-3 text-right text-jira-blue">
@@ -333,10 +333,10 @@ export function DeveloperTab({
                   ["Open work items", String(focusedDeveloper.assignedIssues - focusedDeveloper.completedIssues)],
                   ["Delivered / assigned SP", `${focusedDeveloper.deliveredSP} / ${focusedDeveloper.totalSP}`],
                   ["Completion rate", `${focusedDeveloper.completionRate}%`],
-                  ["Original estimate", `${focusedDeveloper.originalEstimateHours} hrs`],
-                  ["Open work estimate", `${Math.round((focusedDeveloper.originalEstimateHours - focusedDeveloper.completedEstimateHours) * 10) / 10} hrs`],
-                  ["Logged time", `${focusedDeveloper.loggedHours ?? 0} hrs`],
-                  ["Items without estimate", String(focusedDeveloper.unestimatedIssues ?? 0)],
+                  ["Logged Effort / Original Estimate", `${focusedDeveloper.loggedHours ?? 0} / ${focusedDeveloper.originalEstimateHours} hrs`],
+                  ...((focusedDeveloper.unestimatedIssues ?? 0) > 0
+                    ? [["Items without estimate", String(focusedDeveloper.unestimatedIssues ?? 0)]]
+                    : []),
                 ].map(([label, value]) => <div key={label} className="rounded border border-jira-border bg-white p-3"><p className="text-xs text-jira-text-muted">{label}</p><p className="mt-1 font-semibold text-jira-text">{value}</p></div>)}
               </div>
               <p className="mt-3 text-xs text-jira-text-muted">{focusedDeveloper.team} · Stories and subtasks in the selected filters. Utilization is Jira time logged divided by available sprint hours, using 6 effective hours × 10 weekdays (60 hours) for each selected sprint. A missing worklog counts as 0 logged hours.</p>

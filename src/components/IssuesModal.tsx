@@ -76,9 +76,15 @@ export function IssuesModal({
   const totalHours = Math.round(
     issues.reduce((a, i) => a + (i.originalEstimateHours || 0), 0) * 10
   ) / 10;
+  const loggedHoursTotal = Math.round(
+    issues.reduce((a, i) => a + (i.loggedEffortHours || 0), 0) * 10
+  ) / 10;
   const completedHours = Math.round(
     doneIssues.reduce((a, i) => a + (i.originalEstimateHours || 0), 0) * 10
   ) / 10;
+  const unestimatedCount = issues.filter(
+    (i) => !(i.hasOriginalEstimate ?? (i.originalEstimateHours || 0) > 0),
+  ).length;
   const hasHours = totalHours > 0;
   const completion = issues.length > 0 ? Math.round((doneIssues.length / issues.length) * 100) : 0;
   const hasReason = issues.some((i) => i.reason);
@@ -456,7 +462,19 @@ export function IssuesModal({
         <span>
           <strong className="text-jira-green">{doneSP}</strong> SP delivered
         </span>
-        {hasHours && (
+        {developerEffortColumns ? (
+          <>
+            <span>
+              <strong className="text-jira-green">{loggedHoursTotal}</strong> /{" "}
+              <strong className="text-jira-text">{totalHours}</strong> hrs · Logged Effort / Original Estimate
+            </span>
+            {unestimatedCount > 0 && (
+              <span>
+                <strong className="text-jira-text">{unestimatedCount}</strong> items without estimate
+              </span>
+            )}
+          </>
+        ) : hasHours && (
           <>
             <span>
               <strong className="text-jira-text">{totalHours}</strong> hrs original

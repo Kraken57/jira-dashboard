@@ -310,6 +310,7 @@ export interface IssueRow {
   carriedInScope?: boolean;
   originalEstimateHours?: number;
   loggedEffortHours?: number;
+  hasOriginalEstimate?: boolean;
   isSubtask?: boolean;
   reason?: string;
 }

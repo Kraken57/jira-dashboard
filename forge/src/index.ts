@@ -1526,6 +1526,7 @@ function calculateKPIs(
       : isDoneStatus(i.status),
     originalEstimateHours: estimateHours(i.originalEstimateSeconds),
     loggedEffortHours: estimateHours(i.timeSpentSeconds),
+    hasOriginalEstimate: i.hasOriginalEstimate ?? (i.originalEstimateSeconds || 0) > 0,
     isSubtask: /^sub-?task$/i.test(i.workType),
   }));
 

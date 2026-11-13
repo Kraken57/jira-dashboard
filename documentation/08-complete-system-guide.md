@@ -513,8 +513,8 @@ the table:
 | Table row | Story + Sub-task items assigned to that developer |
 
 The table counts **Story + Sub-task** and shows the split in each cell. Other work types are excluded from Capacity View.
-The table now has separate **Story Points** (`Delivered / Assigned`) and **Hours**
-(`Completed / Original estimate`) columns, plus a team-total footer. Hours come from
+The table now has separate **Story Points** (`Delivered / Assigned`) and
+**Logged Effort / Original Estimate** columns (`logged hours / estimated hours`), plus a team-total footer. Hours come from
 Jira’s `timeoriginalestimate` or `timetracking.originalEstimateSeconds`, both in seconds, divided by 3600. The Jira display text (for example, `1d 2h`) is not parsed, so the site’s hours-per-day configuration is respected. Logged hours use `timespent`; completed estimate hours are not actual logged hours. Missing estimates are counted separately. Completion rate is completed items ÷ assigned items.
 Developer rows are tinted **yellow above 70%** and **red at 70% or below**.
 
@@ -532,8 +532,7 @@ Sub-task completion also accepts `JIRA_SUBTASK_DONE_STATUSES` (default
 `Done,Closed,Resolved,Completed,Released,Accepted`), because a site may only count
 `Accepted` as done for stories.
 
-The Developer popup adds an **Hours** column and hour totals. Each row shows the
-original estimate and whether those hours are completed.
+The Developer popup shows **Logged Effort** and **Original Estimate** separately for each work item.
 
 The Developer dropdown supports searching names without changing selections. Clicking a contributor opens an overview of assigned/completed/open work, story points, estimates, logged time and estimate coverage, followed by the same work-item list. These figures describe current assignees and the fetched filter scope, not historical authorship or remaining availability. A missing parent in the fetched Jira feed prevents subtask sprint/quarter inheritance; include parent issues in the configured JQL.
 
