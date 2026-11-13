@@ -147,6 +147,9 @@ export function IssuesModal({
     filtered.reduce((a, i) => a + (i.originalEstimateHours || 0), 0) * 10
   ) / 10;
   const totalAttributedSP = issues.reduce((sum, issue) => sum + (issue.attributedStoryPoints || 0), 0);
+  const formatAttributedSP = (value: number) => value > 0
+    ? (Number(value.toFixed(2)) === 0 ? "<0.01" : value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
+    : "N/A";
   useEffect(() => {
     const viewport = tableViewportRef.current;
     const table = viewport?.firstElementChild;
@@ -470,7 +473,7 @@ export function IssuesModal({
               <strong className="text-jira-green">{loggedHoursTotal}</strong> /{" "}
               <strong className="text-jira-text">{totalHours}</strong> hrs · Logged Effort / Original Estimate
             </span>
-            <span><strong className="text-jira-blue">{totalAttributedSP.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong> Attributed Story Points</span>
+            <span><strong className="text-jira-blue">{formatAttributedSP(totalAttributedSP)}</strong> Attributed Story Points</span>
             {unestimatedCount > 0 && (
               <span>
                 <strong className="text-jira-text">{unestimatedCount}</strong> items without estimate
@@ -678,11 +681,11 @@ export function IssuesModal({
                       <td className="px-4 py-2.5 text-center text-xs whitespace-nowrap">
                         {issue.loggedEffortHours ?? 0} hrs
                       </td>
-                      <td className="px-4 py-2.5 text-center text-xs tabular-nums whitespace-nowrap" title={issue.attributedStoryPoints == null ? "Story ownership does not allocate individual points; points are attributed through subtasks." : issue.attributedStoryPoints === 0 ? "No completed parent-story points are allocated to this subtask in the selected scope." : "This subtask’s estimate share multiplied by its completed parent story’s points."}>
-                        {issue.attributedStoryPoints == null ? "—" : <>
-                          <span className="font-semibold">{issue.attributedStoryPoints.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      <td className="px-2 py-2.5 text-center text-xs tabular-nums whitespace-nowrap" title={issue.attributedStoryPoints == null ? "Story ownership does not allocate individual points; points are attributed through subtasks." : issue.attributedStoryPoints <= 0 ? "N/A: no positive estimate-based points from a completed parent story in the selected scope." : "This subtask’s estimate share multiplied by its completed parent story’s points."}>
+                        {issue.attributedStoryPoints == null || issue.attributedStoryPoints <= 0 ? "N/A" : <>
+                          <span className="font-semibold">{formatAttributedSP(issue.attributedStoryPoints)}</span>
                           {issue.attributedStoryPointCalculation && <span className="mt-0.5 block text-[9px] text-jira-text-muted" title="Subtask Original Estimate ÷ total story subtask Original Estimates × Story Points">
-                            {issue.attributedStoryPointCalculation.subtaskEstimateHours.toLocaleString(undefined, { maximumFractionDigits: 2 })} ÷ {issue.attributedStoryPointCalculation.totalStoryEstimateHours.toLocaleString(undefined, { maximumFractionDigits: 2 })} × {issue.attributedStoryPointCalculation.storyPoints} SP
+                            {issue.attributedStoryPointCalculation.subtaskEstimateHours.toLocaleString(undefined, { maximumFractionDigits: 3 })} ÷ {issue.attributedStoryPointCalculation.totalStoryEstimateHours.toLocaleString(undefined, { maximumFractionDigits: 3 })} × {issue.attributedStoryPointCalculation.storyPoints} SP
                           </span>}
                         </>}
                       </td>

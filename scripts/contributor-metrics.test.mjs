@@ -112,6 +112,14 @@ test('open stories can have estimates and logged hours but correctly earn zero p
   assert.equal(qa.attributedStoryPoints, 0);
   assert.equal(qa.efficiency, 0);
   assert.equal(qa.sprintDetails[0].allocations.length, 0);
+  const React = require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const { IssuesModal } = loadTs('src/components/IssuesModal.tsx');
+  const html = renderToStaticMarkup(React.createElement(IssuesModal, {
+    title: 'Work items · QA', issues: data.developerIssueList, developerEffortColumns: true, onClose() {},
+  }));
+  assert.match(html, /N\/A/);
+  assert.doesNotMatch(html, /0\s*÷\s*0\s*×\s*0 SP/);
 });
 
 test('counts and hour totals match Capacity View for the same filters', () => {
