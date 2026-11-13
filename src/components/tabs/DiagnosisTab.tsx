@@ -4,6 +4,7 @@ import { useState } from "react";
 import { DiagnosisData, IssueRow, MetricInsight, UnfinishedIssue } from "@/lib/jira/types";
 import { IssuesModal } from "@/components/IssuesModal";
 import { ContributorSummary } from "@/components/ContributorSummary";
+import { JiraWorkLink } from "@/components/JiraWorkLink";
 
 interface DiagnosisTabProps {
   data: DiagnosisData;
@@ -262,21 +263,12 @@ export function DiagnosisTab({ data, podName, jiraDomain, statusFilter, scopeLab
                 byStatus.map((issue) => (
                   <tr key={issue.key} className="hover:bg-jira-bg/30 transition-colors">
                     <td className="px-5 py-3 font-semibold text-xs whitespace-nowrap">
-                      <a
-                        href={
-                          jiraDomain
-                            ? `${jiraDomain}/browse/${issue.key}`
-                            : undefined
-                        }
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-jira-blue hover:underline inline-flex items-center gap-1"
-                      >
+                      <JiraWorkLink issueKey={issue.key} jiraDomain={jiraDomain}>
                         {issue.key}
                         <svg className="w-3 h-3 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                         </svg>
-                      </a>
+                      </JiraWorkLink>
                     </td>
                     <td className="px-5 py-3 whitespace-nowrap">
                       <span

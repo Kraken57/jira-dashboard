@@ -17,7 +17,11 @@ function loadTs(file) {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true, jsx: ts.JsxEmit.ReactJSX,
   } }).outputText;
   vm.runInNewContext(js, { module, exports: module.exports, process, console,
-    require: (name) => name.startsWith('.') ? loadTs(resolve(dirname(path), `${name}${existsSync(resolve(dirname(path), `${name}.ts`)) ? '.ts' : '.tsx'}`)) : require(name),
+    require: (name) => {
+      if (!name.startsWith('.') && !name.startsWith('@/')) return require(name);
+      const base = name.startsWith('@/') ? resolve(process.cwd(), 'src', name.slice(2)) : resolve(dirname(path), name);
+      return loadTs(`${base}${existsSync(`${base}.ts`) ? '.ts' : '.tsx'}`);
+    },
   }, { filename: path });
   return module.exports;
 }
@@ -118,6 +122,27 @@ test('counts and hour totals match Capacity View for the same filters', () => {
     assert.equal(person.originalEstimateHours, dev.originalEstimateHours);
     assert.equal(person.loggedEffortHours, dev.loggedHours);
   }
+});
+
+test('capacity popup rows receive each completed story point share on its subtasks', () => {
+  const rows = compute().developerIssueList;
+  const storyRow = rows.find((row) => row.key === 'ERP-1');
+  assert.equal(storyRow.attributedStoryPoints, null);
+  close(rows.find((row) => row.key === 'ERP-2').attributedStoryPoints, 6 / 39 * 5);
+  close(rows.find((row) => row.key === 'ERP-3').attributedStoryPoints, 12 / 39 * 5);
+  close(rows.find((row) => row.key === 'ERP-5').attributedStoryPoints, 4 / 39 * 5);
+  close(rows.reduce((sum, row) => sum + (row.attributedStoryPoints || 0), 0), 5);
+
+  const React = require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const { IssuesModal } = loadTs('src/components/IssuesModal.tsx');
+  const html = renderToStaticMarkup(React.createElement(IssuesModal, {
+    title: 'Work items · QA', issues: rows, jiraDomain: 'https://example.atlassian.net',
+    developerEffortColumns: true, onClose() {},
+  }));
+  assert.ok(html.indexOf('Attributed SP') < html.indexOf('>Sprint</th>'));
+  assert.match(html, /4\s*÷\s*39\s*×\s*5 SP/);
+  assert.match(html, /target="_blank"/);
 });
 
 test('summary renders only 20 of 81 names while totaling all 81 contributors', () => {
@@ -232,9 +257,9 @@ test('Jira link opens through the Forge router in Forge and the browser locally'
   const { openJiraWorkLink } = loadTs('src/components/JiraWorkLink.tsx');
   const calls = [];
   const href = 'https://example.atlassian.net/browse/ERP-5';
-  await openJiraWorkLink(href, true, (url) => calls.push(['browser', url]), async (url) => { calls.push(['forge', url]); });
-  await openJiraWorkLink(href, false, (url) => calls.push(['browser', url]), async (url) => { calls.push(['forge', url]); });
-  assert.deepEqual(calls, [['forge', href], ['browser', href]]);
+  await openJiraWorkLink(href, 'ERP-5', true, (url) => calls.push(['browser', url]), async (key) => { calls.push(['forge', key]); });
+  await openJiraWorkLink(href, 'ERP-5', false, (url) => calls.push(['browser', url]), async (key) => { calls.push(['forge', key]); });
+  assert.deepEqual(calls, [['forge', 'ERP-5'], ['browser', href]]);
 });
 
 test('multiple pods get separate cards with exact timelines, and pod filters remove other cards', () => {

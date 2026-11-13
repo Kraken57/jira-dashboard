@@ -532,7 +532,9 @@ Sub-task completion also accepts `JIRA_SUBTASK_DONE_STATUSES` (default
 `Done,Closed,Resolved,Completed,Released,Accepted`), because a site may only count
 `Accepted` as done for stories.
 
-The Developer popup shows **Logged Effort** and **Original Estimate** separately for each work item.
+The Developer popup shows **Logged Effort** and **Original Estimate** separately for each work item, plus **Attributed SP** immediately before Sprint. A Story row shows a dash because story ownership does not assign an individual share. Each Sub-task row shows its estimate-share points and the calculation (`subtask estimate ÷ all noncanceled subtask estimates on its completed parent story × story points`). Points appear only when the parent story is completed in the selected filter scope.
+
+Jira issue-key links use the Forge bridge's issue-opening action inside the Atlassian iframe, so one regular click opens the issue in a new tab. Local links use a normal `target="_blank"` anchor.
 
 The Developer dropdown supports searching names without changing selections. Clicking a contributor opens an overview of assigned/completed/open work, story points, estimates, logged time and estimate coverage, followed by the same work-item list. These figures describe current assignees and the fetched filter scope, not historical authorship or remaining availability. A missing parent in the fetched Jira feed prevents subtask sprint/quarter inheritance; include parent issues in the configured JQL.
 

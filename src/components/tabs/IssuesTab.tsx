@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { computeDashboardData } from "@/lib/jira/metricsEngine";
 import { DetailModal } from "@/components/DetailModal";
+import { JiraWorkLink } from "@/components/JiraWorkLink";
 import { DashboardFilters, IssueRow, JiraWorkItem, SprintMeta } from "@/lib/jira/types";
 
 interface IssuesTabProps {
@@ -319,21 +320,12 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
                   return (
                     <tr key={issue.key} className="hover:bg-jira-bg/30 transition-colors">
                       <td className="px-5 py-3 font-semibold text-xs whitespace-nowrap">
-                        <a
-                          href={
-                            jiraDomain
-                              ? `${jiraDomain}/browse/${issue.key}`
-                              : undefined
-                          }
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-jira-blue hover:underline inline-flex items-center gap-1"
-                        >
+                        <JiraWorkLink issueKey={issue.key} jiraDomain={jiraDomain}>
                           {issue.key}
                           <svg className="w-3 h-3 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                           </svg>
-                        </a>
+                        </JiraWorkLink>
                       </td>
                       <td className="px-5 py-3 whitespace-nowrap">
                         <span
@@ -446,7 +438,7 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
                 <article key={issue.key} className="p-4 sm:px-5">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <a href={jiraDomain ? `${jiraDomain}/browse/${issue.key}` : undefined} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-jira-blue hover:underline">{issue.key}</a>
+                      <JiraWorkLink issueKey={issue.key} jiraDomain={jiraDomain}>{issue.key}</JiraWorkLink>
                       <h3 className="mt-1 text-sm font-semibold text-slate-900" title={issue.summary}>{issue.summary}</h3>
                     </div>
                     <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-700">{issue.status}</span>

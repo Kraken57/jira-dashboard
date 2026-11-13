@@ -2,6 +2,7 @@
 
 import { featureDelivery } from "@/lib/jira/featureDelivery";
 import { DetailModal } from "./DetailModal";
+import { JiraWorkLink } from "./JiraWorkLink";
 import { IssueRow, JiraWorkItem } from "@/lib/jira/types";
 import { useMemo, useState } from "react";
 
@@ -53,7 +54,7 @@ export function FeatureDetailsModal({ features, items, doneStatuses, jiraDomain,
             const completed = detail?.completed ?? 0;
             const hours = detail?.hours ?? 0;
             return <tr key={feature.key} className="border-b hover:bg-slate-50 [&>td]:px-2 [&>td]:py-3">
-              <td><a className="block truncate font-medium text-jira-blue" title={feature.key} href={jiraDomain ? `${jiraDomain}/browse/${feature.key}` : undefined} target="_blank" rel="noreferrer">{feature.key}</a></td>
+              <td><JiraWorkLink issueKey={feature.key} jiraDomain={jiraDomain}>{feature.key}</JiraWorkLink></td>
               <td className="truncate" title={feature.summary}>{feature.summary || "—"}</td>
               <td className="whitespace-nowrap tabular-nums">{feature.dueDate?.slice(0, 10) || "No due date"}</td>
               <td className="tabular-nums">{detail?.storyPoints ?? 0}</td><td className="tabular-nums">{hours}</td>

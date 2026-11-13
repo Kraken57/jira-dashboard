@@ -1,4 +1,4 @@
-import { buildContributorMetrics } from "./contributorMetrics";
+import { attributeStoryPointsBySubtask, buildContributorMetrics } from "./contributorMetrics";
 import { featureDelivery } from "./featureDelivery";
 import {
   ContributorSlippage,
@@ -1759,6 +1759,7 @@ export function computeDashboardData(
       && (!filters.sprintStatus || filters.sprintStatus === "all");
     return matchesSprintQuarter(completion) && (allSprintsSelected || selectedSprints.includes(completion));
   });
+  const attributedPointsBySubtask = attributeStoryPointsBySubtask(contributionStories, eligibleItems);
   const contributionSprintSources = new Map<string, { names: Set<string>; ranges: Map<string, { startDate: string; endDate: string }> }>();
   for (const item of eligibleItems) for (const originalName of item.sprints || []) {
     if (filters.sprintStatus && filters.sprintStatus !== "all" && sprintLifecycle(sprintMeta[originalName]) !== filters.sprintStatus) continue;
@@ -2171,6 +2172,16 @@ export function computeDashboardData(
       : DONE_STATUSES.has(it.status),
     originalEstimateHours: estimateHours(it.originalEstimateSeconds),
     loggedEffortHours: estimateHours(it.timeSpentSeconds),
+    attributedStoryPoints: /^sub-?task$/i.test(it.workType)
+      ? attributedPointsBySubtask.get(it.key)?.attributedStoryPoints || 0
+      : null,
+    attributedStoryPointCalculation: attributedPointsBySubtask.get(it.key)
+      ? {
+        subtaskEstimateHours: attributedPointsBySubtask.get(it.key)!.subtaskEstimateHours,
+        totalStoryEstimateHours: attributedPointsBySubtask.get(it.key)!.totalStoryEstimateHours,
+        storyPoints: attributedPointsBySubtask.get(it.key)!.storyPoints,
+      }
+      : undefined,
     hasOriginalEstimate: it.hasOriginalEstimate ?? (it.originalEstimateSeconds || 0) > 0,
     isSubtask: /^sub-?task$/i.test(it.workType),
   }));

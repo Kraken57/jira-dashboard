@@ -310,6 +310,13 @@ export interface IssueRow {
   carriedInScope?: boolean;
   originalEstimateHours?: number;
   loggedEffortHours?: number;
+  /** The share of a completed parent story's points allocated to this sub-task. Null on story rows. */
+  attributedStoryPoints?: number | null;
+  attributedStoryPointCalculation?: {
+    subtaskEstimateHours: number;
+    totalStoryEstimateHours: number;
+    storyPoints: number;
+  };
   hasOriginalEstimate?: boolean;
   isSubtask?: boolean;
   reason?: string;

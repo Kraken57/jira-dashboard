@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { DetailModal } from "./DetailModal";
 import { IssueRow, MetricInsight } from "@/lib/jira/types";
 import { getMetricDefinition } from "@/lib/jira/metricDefinitions";
+import { JiraWorkLink } from "./JiraWorkLink";
 
 interface IssuesModalProps {
   overview?: ReactNode;
@@ -145,6 +146,7 @@ export function IssuesModal({
   const filteredHours = Math.round(
     filtered.reduce((a, i) => a + (i.originalEstimateHours || 0), 0) * 10
   ) / 10;
+  const totalAttributedSP = issues.reduce((sum, issue) => sum + (issue.attributedStoryPoints || 0), 0);
   useEffect(() => {
     const viewport = tableViewportRef.current;
     const table = viewport?.firstElementChild;
@@ -468,6 +470,7 @@ export function IssuesModal({
               <strong className="text-jira-green">{loggedHoursTotal}</strong> /{" "}
               <strong className="text-jira-text">{totalHours}</strong> hrs · Logged Effort / Original Estimate
             </span>
+            <span><strong className="text-jira-blue">{totalAttributedSP.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong> Attributed Story Points</span>
             {unestimatedCount > 0 && (
               <span>
                 <strong className="text-jira-text">{unestimatedCount}</strong> items without estimate
@@ -624,6 +627,7 @@ export function IssuesModal({
               <th className="px-4 py-2.5 text-center">SP</th>
               {developerEffortColumns && <th className="px-4 py-2.5 text-center">Original Estimate</th>}
               {developerEffortColumns && <th className="px-4 py-2.5 text-center">Logged Effort</th>}
+              {developerEffortColumns && <th className="px-4 py-2.5 text-center whitespace-nowrap" title="This contributor’s share of completed parent-story points">Attributed SP</th>}
               {hasDueDate && <th className="px-4 py-2.5">Due Date</th>}
               {!developerEffortColumns && hasHours && <th className="px-4 py-2.5 text-center">Hours</th>}
               {!developerEffortColumns && <th className="px-4 py-2.5">Assignee</th>}
@@ -635,7 +639,7 @@ export function IssuesModal({
             {filtered.length === 0 ? (
               <tr>
                 <td
-                  colSpan={7 + (developerEffortColumns ? 1 : 0) + (!developerEffortColumns && hasHours ? 1 : 0) + (hasReason ? 1 : 0) + (hasDueDate ? 1 : 0)}
+                  colSpan={7 + (developerEffortColumns ? 2 : 0) + (!developerEffortColumns && hasHours ? 1 : 0) + (hasReason ? 1 : 0) + (hasDueDate ? 1 : 0)}
                   className="px-5 py-10 text-center text-jira-text-muted"
                 >
                   {hasFilters
@@ -647,18 +651,7 @@ export function IssuesModal({
               filtered.map((issue) => (
                 <tr key={issue.key} className="hover:bg-jira-bg/30">
                   <td className="px-4 py-2.5 font-semibold text-xs whitespace-nowrap">
-                    {jiraDomain ? (
-                      <a
-                        href={`${jiraDomain}/browse/${issue.key}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-jira-blue hover:underline"
-                      >
-                        {issue.key}
-                      </a>
-                    ) : (
-                      issue.key
-                    )}
+                    <JiraWorkLink issueKey={issue.key} jiraDomain={jiraDomain} />
                   </td>
                   <td className="px-4 py-2.5 text-xs whitespace-nowrap">{issue.workType}</td>
                   <td className="px-4 py-2.5 text-xs text-jira-text">
@@ -684,6 +677,14 @@ export function IssuesModal({
                       </td>
                       <td className="px-4 py-2.5 text-center text-xs whitespace-nowrap">
                         {issue.loggedEffortHours ?? 0} hrs
+                      </td>
+                      <td className="px-4 py-2.5 text-center text-xs tabular-nums whitespace-nowrap" title={issue.attributedStoryPoints == null ? "Story ownership does not allocate individual points; points are attributed through subtasks." : issue.attributedStoryPoints === 0 ? "No completed parent-story points are allocated to this subtask in the selected scope." : "This subtask’s estimate share multiplied by its completed parent story’s points."}>
+                        {issue.attributedStoryPoints == null ? "—" : <>
+                          <span className="font-semibold">{issue.attributedStoryPoints.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          {issue.attributedStoryPointCalculation && <span className="mt-0.5 block text-[9px] text-jira-text-muted" title="Subtask Original Estimate ÷ total story subtask Original Estimates × Story Points">
+                            {issue.attributedStoryPointCalculation.subtaskEstimateHours.toLocaleString(undefined, { maximumFractionDigits: 2 })} ÷ {issue.attributedStoryPointCalculation.totalStoryEstimateHours.toLocaleString(undefined, { maximumFractionDigits: 2 })} × {issue.attributedStoryPointCalculation.storyPoints} SP
+                          </span>}
+                        </>}
                       </td>
                     </>
                   )}

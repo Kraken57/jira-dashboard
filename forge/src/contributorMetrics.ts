@@ -87,12 +87,52 @@ export interface ContributorMetrics {
   unassignedStoryPoints: number;
 }
 
+export interface SubtaskStoryPointAttribution {
+  attributedStoryPoints: number;
+  subtaskEstimateHours: number;
+  totalStoryEstimateHours: number;
+  storyPoints: number;
+}
+
+/** Allocate each completed story's points to its subtasks by positive original estimate. */
+export function attributeStoryPointsBySubtask(
+  completedStories: ContributionItem[],
+  allItems: ContributionItem[],
+): Map<string, SubtaskStoryPointAttribution> {
+  const childrenByStory = new Map<string, ContributionItem[]>();
+  for (const item of new Map(allItems.map((row) => [row.key, row])).values()) {
+    if (!/^sub-?task$/i.test(item.workType) || !item.parentKey || /^cancel{1,2}ed$/i.test(item.status.trim())) continue;
+    childrenByStory.set(item.parentKey, [...(childrenByStory.get(item.parentKey) || []), item]);
+  }
+  const attributed = new Map<string, SubtaskStoryPointAttribution>();
+  for (const story of new Map(completedStories.map((row) => [row.key, row])).values()) {
+    if (!/^story$/i.test(story.workType) || /^cancel{1,2}ed$/i.test(story.status.trim())) continue;
+    const children = childrenByStory.get(story.key) || [];
+    const estimateSeconds = (item: ContributionItem) => Number.isFinite(item.originalEstimateSeconds)
+      ? Math.max(0, item.originalEstimateSeconds || 0) : 0;
+    const totalEstimate = children.reduce((sum, item) => sum + estimateSeconds(item), 0);
+    if (totalEstimate <= 0) continue;
+    const storyPoints = Math.max(0, story.storyPoints || 0);
+    for (const child of children) {
+      const estimate = estimateSeconds(child);
+      if (estimate > 0) attributed.set(child.key, {
+        attributedStoryPoints: estimate / totalEstimate * storyPoints,
+        subtaskEstimateHours: estimate / 3600,
+        totalStoryEstimateHours: totalEstimate / 3600,
+        storyPoints,
+      });
+    }
+  }
+  return attributed;
+}
+
 export function buildContributorMetrics(
   capacityPeople: CapacityPerson[],
   completedStories: ContributionItem[],
   allItems: ContributionItem[],
   context?: ContributionDetailContext,
 ): ContributorMetrics {
+  const attributedBySubtask = attributeStoryPointsBySubtask(completedStories, allItems);
   const detailByPerson = new Map<string, Map<string, ContributorSprintDetail>>();
   const contributorsByGroup = new Map<string, Set<string>>();
   const workDetail = (item: ContributionItem): ContributionWorkDetail => ({
@@ -158,7 +198,7 @@ export function buildContributorMetrics(
     if (!totalSeconds) { storiesWithoutEstimates++; continue; }
     const allocations = new Map<string, StoryAllocationDetail>();
     for (const subtask of subtasks) {
-      const points = (positiveEstimate(subtask) / totalSeconds) * Math.max(0, story.storyPoints || 0);
+      const points = attributedBySubtask.get(subtask.key)?.attributedStoryPoints || 0;
       const name = subtask.assignee || "Unassigned";
       if (name === "Unassigned") { unassignedStoryPoints += points; continue; }
       if (context) {
