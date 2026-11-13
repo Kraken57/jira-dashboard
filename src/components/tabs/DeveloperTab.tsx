@@ -187,12 +187,12 @@ export function DeveloperTab({
                   </span>
                 </th>
                 <th className="px-6 py-3 text-right">
-                  <span className="block">Logged Effort / Original Estimate</span>
+                  <span className="block">Hours</span>
                   <span className="block text-[10px] font-medium normal-case tracking-normal text-jira-text-light">
-                    Logged hours / Estimated hours
+                    Logged Effort / Original Estimate
                   </span>
                 </th>
-                <th className="px-6 py-3 text-right">Completion Rate</th>
+                <th className="px-6 py-3 text-right">Work Completion Status</th>
                 <th className="px-6 py-3 text-right">
                   <span className="block">Utilization</span>
                   <span className="block text-[10px] font-medium normal-case tracking-normal text-jira-text-light">
