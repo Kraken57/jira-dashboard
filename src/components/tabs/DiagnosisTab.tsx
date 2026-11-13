@@ -3,15 +3,17 @@
 import { useState } from "react";
 import { DiagnosisData, IssueRow, MetricInsight, UnfinishedIssue } from "@/lib/jira/types";
 import { IssuesModal } from "@/components/IssuesModal";
+import { ContributorSummary } from "@/components/ContributorSummary";
 
 interface DiagnosisTabProps {
   data: DiagnosisData;
   podName: string;
   jiraDomain?: string;
   statusFilter?: string;
+  scopeLabel?: string;
 }
 
-export function DiagnosisTab({ data, podName, jiraDomain, statusFilter }: DiagnosisTabProps) {
+export function DiagnosisTab({ data, podName, jiraDomain, statusFilter, scopeLabel }: DiagnosisTabProps) {
   const [selectedContributor, setSelectedContributor] = useState<string | null>(null);
   const [cardModal, setCardModal] = useState<{
     title: string;
@@ -136,6 +138,8 @@ export function DiagnosisTab({ data, podName, jiraDomain, statusFilter }: Diagno
           <p className="text-xs text-jira-text-light mt-1">Open issues needing resolution</p>
         </button>
       </div>
+
+      {data.individualContribution && <ContributorSummary key={scopeLabel || podName} data={data.individualContribution} scopeLabel={scopeLabel || podName} />}
 
       {/* Contributor Slippage Section */}
       <div className="bg-white border border-jira-border rounded-lg overflow-hidden shadow-sm">

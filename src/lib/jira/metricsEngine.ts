@@ -1,3 +1,4 @@
+import { buildContributorMetrics } from "./contributorMetrics";
 import { featureDelivery } from "./featureDelivery";
 import {
   ContributorSlippage,
@@ -1751,6 +1752,15 @@ export function computeDashboardData(
     },
   };
 
+  const contributionStories = activeItems.filter((item) => {
+    if (!/^story$/i.test(item.workType) || !DONE_STATUSES.has(item.status)) return false;
+    const completion = completionSprintFor(item);
+    if (!completion) return allSprintsSelected && isAllSelection(quarterId)
+      && (!filters.sprintStatus || filters.sprintStatus === "all");
+    return matchesSprintQuarter(completion) && (allSprintsSelected || selectedSprints.includes(completion));
+  });
+  const individualContribution = buildContributorMetrics(developers, contributionStories, eligibleItems);
+
   // 12. Delivery Diagnosis & Root Cause Analysis
   const unfinishedItems = activeItems.filter((it) => !DONE_STATUSES.has(it.status));
 
@@ -2194,7 +2204,7 @@ export function computeDashboardData(
     zephyr,
     predictability,
     trends,
-    diagnosis,
+    diagnosis: { ...diagnosis, individualContribution },
     issueList,
     developerIssueList,
     podFeatureList,

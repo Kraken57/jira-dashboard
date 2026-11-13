@@ -340,6 +340,7 @@ export interface UnfinishedIssue {
 }
 
 export interface DiagnosisData {
+  individualContribution?: import("./contributorMetrics").ContributorMetrics;
   slippageSP: number;
   slippagePct: number;
   primaryDriver: string;

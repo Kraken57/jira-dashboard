@@ -10,6 +10,7 @@ import { kvs } from "./kvsClient";
 import zlib from "node:zlib";
 import { createHash } from "node:crypto";
 import { JiraClient } from "./api/jiraClient";
+import { buildContributorMetrics } from "./contributorMetrics";
 
 const resolver = new Resolver();
 const jiraClient = new JiraClient();
@@ -1082,7 +1083,8 @@ function calculateKPIs(
   developerSource: any[] = items,
   forecastSource: any[] = items,
   forecastChildSource: any[] = forecastSource,
-  sprintMeta: Record<string, any> = {}
+  sprintMeta: Record<string, any> = {},
+  contributionItems: any[] = developerSource
 ) {
   const totalIssues = items.length;
   const totalStoryPoints = items.reduce(
@@ -1697,6 +1699,14 @@ function calculateKPIs(
       },
     },
     diagnosis: {
+      individualContribution: buildContributorMetrics(developers, items.filter((item) => {
+        if (!/^story$/i.test(item.workType) || !isDoneStatus(item.status)) return false;
+        const completedSprint = completionSprintFor(item);
+        if (filters.sprintId && filters.sprintId !== "all" && completedSprint !== filters.sprintId) return false;
+        if (filters.quarterId && filters.quarterId !== "all" && completedSprint
+          && quarterFromSprint(completedSprint) !== filters.quarterId) return false;
+        return true;
+      }), contributionItems),
       slippageSP: totalStoryPoints - completedStoryPoints,
       slippagePct: carryover * 100,
       primaryDriver: "Incomplete work",
@@ -2045,7 +2055,8 @@ resolver.define("getDashboardData", async (req) => {
       filteredAll,
       forecastScope,
       forecastChildSource,
-      collectSprintMeta(issues, config.sprintField)
+      collectSprintMeta(issues, config.sprintField),
+      allItems
     );
 
     return {

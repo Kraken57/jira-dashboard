@@ -585,6 +585,39 @@ page.
 
 The Status filter applies to the cards and the bottom table.
 
+The **Contribution & Efficiency** table sits between the four cards
+and Contributor Slippage & Root Causes. It has name search, efficiency/name/points
+sorting, and 20 contributors per page. The footer covers all matching pages and
+uses total attributed SP divided by total logged hours (never an average of ratios).
+
+Subtask Count, Original Estimates and Logged Effort reuse the Capacity View values
+for the same Pod/Quarter/Sprint/Sprint Status scope, including both story and subtask
+hours. These are current-assignee work-item totals, not worklog-author attribution.
+The slippage-only Status filter does not change this table.
+
+Attributed Story Points are computed once per completed Story in its completion
+sprint: each person's positive subtask original estimates divided by all fetched,
+noncanceled subtask estimates on that story, multiplied by the story's points.
+Parent-story estimates and ownership do not allocate points. A person's multiple
+subtask shares are summed without rounding until display. The denominator always
+uses the full fetched story breakdown, not just children matching an individual
+person or sprint filter. Missing estimates receive no arbitrary share; stories
+without subtasks or a positive total estimate are excluded from allocation and
+reported in a concise note. Unassigned shares are reported separately.
+
+Efficiency uses attributed SP divided by the displayed Logged Effort, with N/A for
+zero logged effort. The hour columns include all selected work, while attributed
+points require a completed parent story. If a child belonged to an earlier sprint,
+its owner can receive completed-story credit now with no work hours in the selected
+sprint; the table preserves that credit and shows N/A when the scoped hours are zero.
+Only fetched Jira items can participate; incomplete configured JQL limits the result.
+
+This addition makes no new API requests. Local and Forge raw feeds use the same
+browser computation; the legacy Forge KPI resolver mirrors the pure attribution
+helper in `forge/src/contributorMetrics.ts`. Keep that file and
+`src/lib/jira/contributorMetrics.ts` synchronized. Run the focused checks using
+`node scripts/contributor-metrics.test.mjs`. Contributor detail navigation is deferred.
+
 ### 7.7 Executive charts (`TrendsCharts`)
 
 The Executive Summary shows four charts in a two-column grid:
