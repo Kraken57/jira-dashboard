@@ -63,7 +63,21 @@ export function ContributorDetailsModal({ person, scopeLabel, jiraDomain, onClos
                 ["Logged Effort", `${number(card.loggedEffortHours)} hrs`],
                 ["Attributed Story Points", number(card.attributedStoryPoints)],
                 ["Efficiency", card.efficiency === null ? "N/A" : `${rate(card.efficiency)} SP/hour`],
-              ].map(([label, value]) => <div key={label} className="rounded-lg border border-jira-border bg-slate-50 px-3 py-3"><p className="text-[11px] text-jira-text-muted">{label}</p><p className="mt-1 text-sm font-bold tabular-nums text-jira-text">{value}</p></div>)}
+              ].map(([label, value]) => {
+                const isEfficiency = label === "Efficiency";
+                const efficiencyBand = !isEfficiency || card.efficiency === null
+                  ? "neutral"
+                  : card.efficiency < 0.125 ? "low" : "good";
+                const tileTone = efficiencyBand === "low"
+                  ? "border-orange-200 bg-orange-50 text-orange-900"
+                  : efficiencyBand === "good"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                    : "border-jira-border bg-slate-50 text-jira-text";
+                return <div key={label} data-efficiency-band={isEfficiency ? efficiencyBand : undefined} className={`rounded-lg border px-3 py-3 ${tileTone}`}>
+                  <p className="text-[11px] text-jira-text-muted">{label}</p>
+                  <p className="mt-1 text-sm font-bold tabular-nums">{value}</p>
+                </div>;
+              })}
             </div>
             <div className="space-y-4 px-4 pb-4">
               <div className="rounded-lg bg-blue-50 px-3 py-3 text-xs leading-relaxed text-jira-text-muted">

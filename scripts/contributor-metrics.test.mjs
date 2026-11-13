@@ -261,6 +261,20 @@ test('popup renders formula, pod, dates, work-item summaries and real browse lin
   assert.doesNotMatch(html, /NaN|Infinity/);
 });
 
+test('contributor efficiency tile uses amber-red below 0.125 and green at or above it', () => {
+  const React = require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const { ContributorDetailsModal } = loadTs('src/components/ContributorDetailsModal.tsx');
+  const person = compute().diagnosis.individualContribution.people.find((person) => person.name === 'QA');
+  const renderBand = (efficiency) => {
+    const adjusted = { ...person, sprintDetails: person.sprintDetails.map((card, index) => index === 0 ? { ...card, efficiency } : card) };
+    return renderToStaticMarkup(React.createElement(ContributorDetailsModal, { person: adjusted, scopeLabel: 'Selected filters', onClose() {} }));
+  };
+  assert.match(renderBand(0.1249), /data-efficiency-band="low" class="rounded-lg border px-3 py-3 border-orange-200 bg-orange-50 text-orange-900"/);
+  assert.match(renderBand(0.125), /data-efficiency-band="good" class="rounded-lg border px-3 py-3 border-emerald-200 bg-emerald-50 text-emerald-900"/);
+  assert.match(renderBand(null), /data-efficiency-band="neutral" class="rounded-lg border px-3 py-3 border-jira-border bg-slate-50 text-jira-text"/);
+});
+
 test('Jira link opens through the Forge router in Forge and the browser locally', async () => {
   const { openJiraWorkLink } = loadTs('src/components/JiraWorkLink.tsx');
   const calls = [];
