@@ -62,13 +62,13 @@ export function ContributorSummary({ data, scopeLabel, jiraDomain }: { data: Con
             <td className="px-4 py-3 font-semibold text-jira-blue">{person.name}</td><td className="px-4 py-3 text-right tabular-nums">{person.subtaskCount}</td>
             <td className="px-4 py-3 text-right tabular-nums">{format(person.originalEstimateHours)}</td><td className="px-4 py-3 text-right tabular-nums">{format(person.loggedEffortHours)}</td>
             <td className="px-4 py-3 text-right font-semibold tabular-nums text-jira-blue">{format(person.attributedStoryPoints)}</td>
-            <td className="px-4 py-3 text-right tabular-nums" title={person.efficiency === null ? "No logged effort in the selected scope" : person.attributedStoryPoints === 0 ? "No attributed points from completed stories in this scope; logged effort is present" : "Attributed Story Points divided by Logged Effort"}>{person.efficiency === null ? "N/A" : rate(person.efficiency)}</td>
+            <td className={`px-4 py-3 text-right tabular-nums font-semibold ${person.efficiency === null || person.efficiency < 0.125 ? "text-red-700" : "text-green-700"}`} title={person.efficiency === null ? "No logged effort in the selected scope" : person.attributedStoryPoints === 0 ? "No attributed points from completed stories in this scope; logged effort is present" : "Attributed Story Points divided by Logged Effort"}>{person.efficiency === null ? "N/A" : rate(person.efficiency)}</td>
           </tr>)}
         </tbody>
         <tfoot className="border-t-2 border-jira-border bg-jira-bg/60 font-semibold"><tr>
           <td className="px-4 py-3">{search.trim() ? "Matching contributors total" : "Overall total"}</td><td className="px-4 py-3 text-right tabular-nums">{total.subtasks}</td>
           <td className="px-4 py-3 text-right tabular-nums">{format(total.estimate)}</td><td className="px-4 py-3 text-right tabular-nums">{format(total.logged)}</td>
-          <td className="px-4 py-3 text-right tabular-nums">{format(total.points)}</td><td className="px-4 py-3 text-right tabular-nums">{total.logged > 0 ? format(total.points / total.logged, 3) : "N/A"}</td>
+          <td className="px-4 py-3 text-right tabular-nums">{format(total.points)}</td><td className={`px-4 py-3 text-right tabular-nums font-semibold ${total.logged <= 0 || total.points / total.logged < 0.125 ? "text-red-700" : "text-green-700"}`}>{total.logged > 0 ? format(total.points / total.logged, 3) : "N/A"}</td>
         </tr></tfoot>
       </table>
     </div>

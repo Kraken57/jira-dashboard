@@ -65,9 +65,9 @@ export function ContributorDetailsModal({ person, scopeLabel, jiraDomain, onClos
                 ["Efficiency", card.efficiency === null ? "N/A" : `${rate(card.efficiency)} SP/hour`],
               ].map(([label, value]) => {
                 const isEfficiency = label === "Efficiency";
-                const efficiencyBand = !isEfficiency || card.efficiency === null
+                const efficiencyBand = !isEfficiency
                   ? "neutral"
-                  : card.efficiency < 0.125 ? "low" : "good";
+                  : card.efficiency === null || card.efficiency < 0.125 ? "low" : "good";
                 const tileTone = efficiencyBand === "low"
                   ? "border-orange-200 bg-orange-50 text-orange-900"
                   : efficiencyBand === "good"

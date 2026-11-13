@@ -261,7 +261,7 @@ test('popup renders formula, pod, dates, work-item summaries and real browse lin
   assert.doesNotMatch(html, /NaN|Infinity/);
 });
 
-test('contributor efficiency tile uses amber-red below 0.125 and green at or above it', () => {
+test('popup efficiency tile uses amber-red below 0.125 including N/A, and green at or above it', () => {
   const React = require('react');
   const { renderToStaticMarkup } = require('react-dom/server');
   const { ContributorDetailsModal } = loadTs('src/components/ContributorDetailsModal.tsx');
@@ -272,7 +272,22 @@ test('contributor efficiency tile uses amber-red below 0.125 and green at or abo
   };
   assert.match(renderBand(0.1249), /data-efficiency-band="low" class="rounded-lg border px-3 py-3 border-orange-200 bg-orange-50 text-orange-900"/);
   assert.match(renderBand(0.125), /data-efficiency-band="good" class="rounded-lg border px-3 py-3 border-emerald-200 bg-emerald-50 text-emerald-900"/);
-  assert.match(renderBand(null), /data-efficiency-band="neutral" class="rounded-lg border px-3 py-3 border-jira-border bg-slate-50 text-jira-text"/);
+  assert.match(renderBand(null), /data-efficiency-band="low" class="rounded-lg border px-3 py-3 border-orange-200 bg-orange-50 text-orange-900"/);
+});
+
+test('main contributor efficiency values are red below 0.125 or N/A and green from 0.125', () => {
+  const React = require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const { ContributorSummary } = loadTs('src/components/ContributorSummary.tsx');
+  const data = { people: [
+    { name: 'Low', subtaskCount: 1, originalEstimateHours: 1, loggedEffortHours: 1, attributedStoryPoints: 0.12, efficiency: 0.12 },
+    { name: 'At threshold', subtaskCount: 1, originalEstimateHours: 1, loggedEffortHours: 8, attributedStoryPoints: 1, efficiency: 0.125 },
+    { name: 'Unavailable', subtaskCount: 1, originalEstimateHours: 1, loggedEffortHours: 0, attributedStoryPoints: 0, efficiency: null },
+  ], storiesWithoutSubtasks: 0, storiesWithoutEstimates: 0, subtasksWithoutEstimates: 0, unassignedStoryPoints: 0 };
+  const html = renderToStaticMarkup(React.createElement(ContributorSummary, { data, scopeLabel: 'Selected filters' }));
+  assert.match(html, /text-red-700[^>]*title="Attributed Story Points divided by Logged Effort">0\.120/);
+  assert.match(html, /text-green-700[^>]*title="Attributed Story Points divided by Logged Effort">0\.125/);
+  assert.match(html, /text-red-700[^>]*title="No logged effort in the selected scope">N\/A/);
 });
 
 test('Jira link opens through the Forge router in Forge and the browser locally', async () => {
