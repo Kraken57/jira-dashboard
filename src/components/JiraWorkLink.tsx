@@ -8,7 +8,7 @@ export async function openJiraWorkLink(
   issueKey: string,
   inForge: boolean,
   openLocal = (url: string) => { window.open(url, "_blank", "noopener,noreferrer"); },
-  openForge = async (key: string) => { const { router } = await import("@forge/bridge"); await router.open({ target: "issue", issueKey: key }); },
+  openForge = async (key: string) => { const { router } = await import("@forge/bridge"); await router.open(`/browse/${encodeURIComponent(key)}`); },
 ) {
   if (inForge) await openForge(issueKey);
   else openLocal(href);
