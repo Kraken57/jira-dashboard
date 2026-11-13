@@ -340,6 +340,8 @@ export interface UnfinishedIssue {
 }
 
 export interface DiagnosisData {
+  /** Step-one source records, before point allocation or efficiency calculations. */
+  contributionSources?: ContributionStorySource[];
   slippageSP: number;
   slippagePct: number;
   primaryDriver: string;
@@ -394,6 +396,9 @@ export interface JiraWorkItem {
   projectKey?: string;
   projectName?: string;
   assignee?: string;
+  assigneeAccountId?: string;
+  /** Jira's child list distinguishes no subtasks from children outside the feed. */
+  subtaskKeys?: string[];
   reporter?: string;
   priority?: string;
   parentKey?: string;
@@ -407,4 +412,29 @@ export interface JiraWorkItem {
   timeSpentSeconds?: number;
   hasOriginalEstimate?: boolean;
   startDate?: string;
+}
+
+export interface ContributionStorySource {
+  story: JiraWorkItem;
+  subtasks: JiraWorkItem[];
+  missingSubtaskKeys: string[];
+  childListKnown: boolean;
+  completionSprint: string | null;
+  completionSprintLabel: string;
+  completionDateConfirmed: boolean;
+}
+
+export interface ContributionWorklog {
+  id: string;
+  authorAccountId: string | null;
+  authorName: string;
+  started: string | null;
+  timeSpentSeconds: number;
+}
+
+export interface ContributionWorklogPage {
+  issueKey: string;
+  startAt: number;
+  total: number;
+  worklogs: ContributionWorklog[];
 }
