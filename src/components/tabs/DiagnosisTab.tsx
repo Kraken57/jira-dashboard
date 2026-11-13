@@ -139,7 +139,7 @@ export function DiagnosisTab({ data, podName, jiraDomain, statusFilter, scopeLab
         </button>
       </div>
 
-      {data.individualContribution && <ContributorSummary key={scopeLabel || podName} data={data.individualContribution} scopeLabel={scopeLabel || podName} />}
+      {data.individualContribution && <ContributorSummary key={scopeLabel || podName} data={data.individualContribution} scopeLabel={scopeLabel || podName} jiraDomain={jiraDomain} />}
 
       {/* Contributor Slippage Section */}
       <div className="bg-white border border-jira-border rounded-lg overflow-hidden shadow-sm">

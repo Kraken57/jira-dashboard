@@ -1706,7 +1706,20 @@ function calculateKPIs(
         if (filters.quarterId && filters.quarterId !== "all" && completedSprint
           && quarterFromSprint(completedSprint) !== filters.quarterId) return false;
         return true;
-      }), contributionItems),
+      }), contributionItems, {
+        scopedWork: devItems,
+        completionSprint: completionSprintFor,
+        includeSprint: (sprint) => (!filters.sprintId || filters.sprintId === "all" || filters.sprintId === sprint)
+          && (!filters.quarterId || filters.quarterId === "all" || quarterFromSprint(sprint) === filters.quarterId)
+          && (!filters.sprintStatus || filters.sprintStatus === "all"
+            || (filters.sprintStatus === "closed" ? sprintMeta[sprint]?.state === "closed" : ["active", "future"].includes(sprintMeta[sprint]?.state))),
+        sprintInfo: (sprint) => {
+          const meta = sprintMeta[sprint];
+          return { name: sprint || "No sprint assigned", dateRanges: meta?.startDate && meta.endDate
+            && Number.isFinite(Date.parse(meta.startDate)) && Number.isFinite(Date.parse(meta.endDate))
+            ? [{ startDate: meta.startDate, endDate: meta.endDate }] : [] };
+        },
+      }),
       slippageSP: totalStoryPoints - completedStoryPoints,
       slippagePct: carryover * 100,
       primaryDriver: "Incomplete work",

@@ -587,7 +587,7 @@ The Status filter applies to the cards and the bottom table.
 
 The **Contribution & Efficiency** table sits between the four cards
 and Contributor Slippage & Root Causes. It has name search, efficiency/name/points
-sorting, and 20 contributors per page. The footer covers all matching pages and
+sorting (Name A–Z by default), and 20 contributors per page. The footer covers all matching pages and
 uses total attributed SP divided by total logged hours (never an average of ratios).
 
 Subtask Count, Original Estimates and Logged Effort reuse the Capacity View values
@@ -616,7 +616,29 @@ This addition makes no new API requests. Local and Forge raw feeds use the same
 browser computation; the legacy Forge KPI resolver mirrors the pure attribution
 helper in `forge/src/contributorMetrics.ts`. Keep that file and
 `src/lib/jira/contributorMetrics.ts` synchronized. Run the focused checks using
-`node scripts/contributor-metrics.test.mjs`. Contributor detail navigation is deferred.
+`node scripts/contributor-metrics.test.mjs`.
+
+Selecting a contributor opens `ContributorDetailsModal`, entirely from the computed
+feed (no popup-time requests). A card represents one pod and one sprint; cards are
+ordered by actual Jira start date, oldest first, with natural sprint-name ordering
+when dates are missing. No-sprint work is shown separately with unavailable dates.
+Previous/Next buttons and a direct selector navigate the filtered cards. A short
+directional arc animation is disabled for reduced-motion preferences. The navigation
+stays visible while scrolling the popup.
+
+Each card shows the pod name/key, original Jira sprint name, actual source date
+range(s) in UTC, contributors in that pod/sprint, Subtask Count, Original Estimates,
+Logged Effort, Attributed Story Points, and Efficiency. Expand a completed-story
+calculation to see the person's estimate share, full fetched story denominator,
+story points, attributed result, and contributing subtasks. The assigned-work list
+shows real summaries, statuses and separate estimate/logged values. Story/subtask
+keys use native new-tab anchors locally and `@forge/bridge` `router.open` in Forge.
+
+Sprint cards deliberately retain the same work snapshots as selecting that sprint
+in Capacity View. Carried work can appear in multiple cards, so their hour totals
+are not additive; the overall selected-filter total still deduplicates work items.
+Completed-story point credit occurs in just the completion card. These differences
+are explained in the popup. Existing summary calculations are preserved.
 
 ### 7.7 Executive charts (`TrendsCharts`)
 

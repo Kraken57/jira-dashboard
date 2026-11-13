@@ -1759,7 +1759,34 @@ export function computeDashboardData(
       && (!filters.sprintStatus || filters.sprintStatus === "all");
     return matchesSprintQuarter(completion) && (allSprintsSelected || selectedSprints.includes(completion));
   });
-  const individualContribution = buildContributorMetrics(developers, contributionStories, eligibleItems);
+  const contributionSprintSources = new Map<string, { names: Set<string>; ranges: Map<string, { startDate: string; endDate: string }> }>();
+  for (const item of eligibleItems) for (const originalName of item.sprints || []) {
+    if (filters.sprintStatus && filters.sprintStatus !== "all" && sprintLifecycle(sprintMeta[originalName]) !== filters.sprintStatus) continue;
+    const sprint = commonized.aliases.get(originalName) || originalName;
+    const key = JSON.stringify([item.podKey, sprint]);
+    const source = contributionSprintSources.get(key) || { names: new Set<string>(), ranges: new Map<string, { startDate: string; endDate: string }>() };
+    source.names.add(originalName);
+    const meta = sprintMeta[originalName];
+    if (meta?.startDate && meta.endDate && Number.isFinite(Date.parse(meta.startDate)) && Number.isFinite(Date.parse(meta.endDate))) {
+      const rangeKey = `${new Date(meta.startDate).toISOString().slice(0, 10)}/${new Date(meta.endDate).toISOString().slice(0, 10)}`;
+      if (!source.ranges.has(rangeKey)) source.ranges.set(rangeKey, { startDate: meta.startDate, endDate: meta.endDate });
+    }
+    contributionSprintSources.set(key, source);
+  }
+  const individualContribution = buildContributorMetrics(developers, contributionStories, eligibleItems, {
+    scopedWork: developerItems,
+    completionSprint: (story) => completionSprintFor(originalItemByKey.get(story.key)!),
+    includeSprint: (sprint) => sprint
+      ? matchesSprintQuarter(sprint) && (allSprintsSelected || selectedSprints.includes(sprint))
+      : allSprintsSelected && (!filters.sprintStatus || filters.sprintStatus === "all"),
+    sprintInfo: (sprint, podKey) => {
+      const source = contributionSprintSources.get(JSON.stringify([podKey, sprint]));
+      return {
+        name: source ? [...source.names].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).join(" · ") : sprint ? sprintDisplayName(sprint) : "No sprint assigned",
+        dateRanges: source ? [...source.ranges.values()].sort((a, b) => Date.parse(a.startDate) - Date.parse(b.startDate)) : [],
+      };
+    },
+  });
 
   // 12. Delivery Diagnosis & Root Cause Analysis
   const unfinishedItems = activeItems.filter((it) => !DONE_STATUSES.has(it.status));

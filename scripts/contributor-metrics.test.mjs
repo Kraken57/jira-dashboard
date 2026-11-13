@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { resolve, dirname } from 'node:path';
 import vm from 'node:vm';
@@ -17,7 +17,7 @@ function loadTs(file) {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true, jsx: ts.JsxEmit.ReactJSX,
   } }).outputText;
   vm.runInNewContext(js, { module, exports: module.exports, process, console,
-    require: (name) => name.startsWith('.') ? loadTs(resolve(dirname(path), `${name}.ts`)) : require(name),
+    require: (name) => name.startsWith('.') ? loadTs(resolve(dirname(path), `${name}${existsSync(resolve(dirname(path), `${name}.ts`)) ? '.ts' : '.tsx'}`)) : require(name),
   }, { filename: path });
   return module.exports;
 }
@@ -121,4 +121,138 @@ test('summary renders only 20 of 81 names while totaling all 81 contributors', (
   assert.match(html, /of 81 contributors/);
   assert.match(html, /Overall total/);
   assert.doesNotMatch(html, /NaN|Infinity/);
+});
+
+
+test('summary defaults to alphabetical names with accessible detail buttons', () => {
+  const React = require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const { ContributorSummary } = loadTs('src/components/ContributorSummary.tsx');
+  const { buildContributorMetrics } = loadTs('src/lib/jira/contributorMetrics.ts');
+  const data = buildContributorMetrics(people, [story], children);
+  const html = renderToStaticMarkup(React.createElement(ContributorSummary, { data, scopeLabel: 'All work' }));
+  const body = html.split('<tbody')[1].split('</tbody>')[0];
+  assert.ok(body.indexOf('>BA</button>') < body.indexOf('>Dev 1</button>'));
+  assert.ok(body.indexOf('>Dev 1</button>') < body.indexOf('>Dev 2</button>'));
+  assert.ok(body.indexOf('>Dev 2</button>') < body.indexOf('>QA</button>'));
+  assert.match(html, /Name: A–Z<\/option>/);
+  assert.match(html, /View contribution details for QA/);
+});
+
+for (const path of ['src/lib/jira/contributorMetrics.ts', 'forge/src/contributorMetrics.ts']) {
+  test(`${path}: detail cards preserve per-story formulas and list QA's subtasks`, () => {
+    const { buildContributorMetrics } = loadTs(path);
+    const s = { ...story, sprints: ['sprint-1'] };
+    const subs = children.map((item) => ({ ...item, sprints: ['sprint-1'] }));
+    const context = { scopedWork: subs, completionSprint: () => 'sprint-1', includeSprint: () => true,
+      sprintInfo: () => ({ name: 'ERP-2026-Q4-S3', dateRanges: [{ startDate: '2026-11-04T00:00:00Z', endDate: '2026-11-18T00:00:00Z' }] }) };
+    const result = buildContributorMetrics(people, [s], subs, context);
+    const qa = result.people.find((person) => person.name === 'QA');
+    const card = qa.sprintDetails[0];
+    assert.equal(card.podName, 'Finance');
+    assert.equal(card.subtaskCount, 3);
+    assert.equal(card.contributorCount, 4);
+    close(card.originalEstimateHours, 13);
+    close(card.loggedEffortHours, 10);
+    close(card.efficiency, 13 / 39 * 5 / 10);
+    assert.equal(card.allocations[0].subtasks.length, 3);
+    close(card.allocations[0].originalEstimateHours, 13);
+    close(card.allocations[0].totalStoryEstimateHours, 39);
+    close(card.allocations[0].share, 13 / 39);
+    close(card.attributedStoryPoints, qa.attributedStoryPoints);
+  });
+
+  test(`${path}: card context does not change existing summary totals`, () => {
+    const { buildContributorMetrics } = loadTs(path);
+    const subs = children.map((item) => ({ ...item, sprints: ['old', 'new'] }));
+    const before = buildContributorMetrics(people, [story], subs);
+    const after = buildContributorMetrics(people, [story], subs, {
+      scopedWork: subs, completionSprint: () => 'new', includeSprint: () => true,
+      sprintInfo: (id) => ({ name: id, dateRanges: [{ startDate: id === 'old' ? '2026-10-01' : '2026-11-01', endDate: id === 'old' ? '2026-10-14' : '2026-11-14' }] }),
+    });
+    for (const person of after.people) {
+      const previous = before.people.find((row) => row.name === person.name);
+      assert.equal(person.originalEstimateHours, previous.originalEstimateHours);
+      assert.equal(person.loggedEffortHours, previous.loggedEffortHours);
+      assert.equal(person.attributedStoryPoints, previous.attributedStoryPoints);
+      assert.equal(person.efficiency, previous.efficiency);
+      assert.equal(person.sprintDetails[0].sprintId, 'old');
+      assert.equal(person.sprintDetails[1].sprintId, 'new');
+      close(person.sprintDetails[0].attributedStoryPoints, 0);
+      close(person.sprintDetails[1].attributedStoryPoints, person.attributedStoryPoints);
+    }
+  });
+}
+
+test('shared filters: details show only the selected pod/sprint and preserve exact Jira dates', () => {
+  const all = compute();
+  const completion = all.issueList.find((item) => item.key === story.key).completionSprint;
+  const data = compute({ sprintId: completion, quarterId: 'CY26 PI.4', podId: 'ERP' });
+  const qa = data.diagnosis.individualContribution.people.find((person) => person.name === 'QA');
+  assert.equal(qa.sprintDetails.length, 1);
+  assert.equal(qa.sprintDetails[0].sprintName, current);
+  assert.equal(qa.sprintDetails[0].podKey, 'ERP');
+  assert.equal(qa.sprintDetails[0].dateRanges[0].startDate, metadata[current].startDate);
+  assert.equal(qa.sprintDetails[0].workItems.length, 3);
+});
+
+test('popup renders formula, pod, dates, work-item summaries and real browse links', () => {
+  const React = require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const { ContributorDetailsModal } = loadTs('src/components/ContributorDetailsModal.tsx');
+  const data = compute();
+  const person = data.diagnosis.individualContribution.people.find((person) => person.name === 'QA');
+  const html = renderToStaticMarkup(React.createElement(ContributorDetailsModal, {
+    person, scopeLabel: 'All work', jiraDomain: 'https://example.atlassian.net', onClose() {},
+  }));
+  assert.match(html, /Finance/);
+  assert.match(html, /SEP 16, 2026/);
+  assert.match(html, /ERP-5/);
+  assert.match(html, /https:\/\/example.atlassian.net\/browse\/ERP-5/);
+  assert.match(html, /Original Estimates/);
+  assert.match(html, /Next sprint card/);
+  assert.doesNotMatch(html, /NaN|Infinity/);
+});
+
+test('Jira link opens through the Forge router in Forge and the browser locally', async () => {
+  const { openJiraWorkLink } = loadTs('src/components/JiraWorkLink.tsx');
+  const calls = [];
+  const href = 'https://example.atlassian.net/browse/ERP-5';
+  await openJiraWorkLink(href, true, (url) => calls.push(['browser', url]), async (url) => { calls.push(['forge', url]); });
+  await openJiraWorkLink(href, false, (url) => calls.push(['browser', url]), async (url) => { calls.push(['forge', url]); });
+  assert.deepEqual(calls, [['forge', href], ['browser', href]]);
+});
+
+test('multiple pods get separate cards with exact timelines, and pod filters remove other cards', () => {
+  const dtrSprint = 'DTR-2026-Q4-S0';
+  const financeChildren = children.map((row) => ({ ...row, sprints: [current] }));
+  const dtrStory = item('DTR-1', { podKey: 'DTR', podName: 'Deal to Revenue', sprints: [dtrSprint], resolutionDate: '2026-10-05T12:00:00Z' });
+  const dtrChild = { ...child('DTR-2', 'QA', 2, 1), parentKey: 'DTR-1', podKey: 'DTR', podName: 'Deal to Revenue', sprints: [dtrSprint] };
+  const meta = { ...metadata, [dtrSprint]: { name: dtrSprint, state: 'closed', startDate: '2026-10-01T00:00:00Z', endDate: '2026-10-15T00:00:00Z' } };
+  const source = [completed, ...financeChildren, dtrStory, dtrChild];
+  const run = (podId) => computeDashboardData(source, { podId, quarterId: 'CY26 PI.4', sprintId: 'all', sprintStatus: 'closed' }, meta, config);
+  const both = run(['ERP', 'DTR']).diagnosis.individualContribution.people.find((person) => person.name === 'QA');
+  assert.equal(both.sprintDetails.length, 2);
+  assert.equal(both.sprintDetails[0].podKey, 'ERP');
+  assert.equal(both.sprintDetails[0].sprintName, current);
+  assert.equal(both.sprintDetails[1].podKey, 'DTR');
+  assert.equal(both.sprintDetails[1].dateRanges[0].endDate, meta[dtrSprint].endDate);
+  assert.equal(both.sprintDetails[1].subtaskCount, 1);
+  const onlyDtr = run('DTR').diagnosis.individualContribution.people.find((person) => person.name === 'QA');
+  assert.equal(onlyDtr.sprintDetails.length, 1);
+  assert.equal(onlyDtr.sprintDetails[0].podKey, 'DTR');
+});
+
+test('no-sprint work has an explicit undated card without invented dates or point allocation', () => {
+  const { buildContributorMetrics } = loadTs('src/lib/jira/contributorMetrics.ts');
+  const zero = child('ERP-2', 'QA', 0, 0);
+  const result = buildContributorMetrics([{ name: 'QA', assignedSubtasks: 1, originalEstimateHours: 0, loggedHours: 0 }], [], [zero], {
+    scopedWork: [zero], completionSprint: () => null, includeSprint: () => true,
+    sprintInfo: () => ({ name: 'No sprint assigned', dateRanges: [] }),
+  });
+  const card = result.people[0].sprintDetails[0];
+  assert.equal(card.sprintId, '');
+  assert.equal(card.dateRanges.length, 0);
+  assert.equal(card.efficiency, null);
+  assert.equal(card.workItems[0].key, 'ERP-2');
 });

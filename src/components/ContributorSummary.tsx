@@ -2,13 +2,15 @@
 
 import { useState } from "react";
 import type { ContributorMetrics } from "@/lib/jira/contributorMetrics";
+import { ContributorDetailsModal } from "./ContributorDetailsModal";
 
 const format = (value: number, digits = 2) => value.toLocaleString(undefined, { maximumFractionDigits: digits });
 const PAGE_SIZE = 20;
 
-export function ContributorSummary({ data, scopeLabel }: { data: ContributorMetrics; scopeLabel: string }) {
+export function ContributorSummary({ data, scopeLabel, jiraDomain }: { data: ContributorMetrics; scopeLabel: string; jiraDomain?: string }) {
   const [search, setSearch] = useState("");
-  const [sort, setSort] = useState("efficiency-desc");
+  const [sort, setSort] = useState("name");
+  const [selectedName, setSelectedName] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const people = data.people.filter((person) => person.name.toLowerCase().includes(search.trim().toLowerCase())).sort((a, b) => {
     if (sort === "name") return a.name.localeCompare(b.name);
@@ -24,6 +26,7 @@ export function ContributorSummary({ data, scopeLabel }: { data: ContributorMetr
     logged: sum.logged + person.loggedEffortHours,
     points: sum.points + person.attributedStoryPoints,
   }), { subtasks: 0, estimate: 0, logged: 0, points: 0 });
+  const selectedPerson = data.people.find((person) => person.name === selectedName);
 
   return <section className="overflow-hidden rounded-lg border border-jira-border bg-white shadow-sm" aria-label="Contributor contribution and efficiency">
     <div className="border-b border-jira-border px-5 py-4">
@@ -40,10 +43,10 @@ export function ContributorSummary({ data, scopeLabel }: { data: ContributorMetr
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-jira-border px-5 py-3">
       <input type="search" value={search} onChange={(event) => { setSearch(event.target.value); setPage(0); }} placeholder="Search contributors…" aria-label="Search contributors" className="min-w-48 rounded border border-jira-border px-3 py-2 text-xs" />
       <select value={sort} aria-label="Sort contributors" className="rounded border border-jira-border bg-white px-3 py-2 text-xs" onChange={(event) => { setSort(event.target.value); setPage(0); }}>
+        <option value="name">Name: A–Z</option>
         <option value="efficiency-desc">Efficiency: highest first</option>
         <option value="efficiency-asc">Efficiency: lowest first</option>
         <option value="points">Attributed SP: highest first</option>
-        <option value="name">Name: A–Z</option>
       </select>
     </div>
     <div className="overflow-x-auto">
@@ -57,7 +60,7 @@ export function ContributorSummary({ data, scopeLabel }: { data: ContributorMetr
         <tbody className="divide-y divide-jira-border">
           {!people.length && <tr><td colSpan={6} className="px-4 py-8 text-center text-jira-text-muted">No contributors match this selection.</td></tr>}
           {people.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE).map((person) => <tr key={person.name} className="hover:bg-jira-bg/40">
-            <td className="px-4 py-3 font-semibold text-jira-text">{person.name}</td><td className="px-4 py-3 text-right tabular-nums">{person.subtaskCount}</td>
+            <td className="px-4 py-3 font-semibold text-jira-text"><button type="button" onClick={() => setSelectedName(person.name)} aria-haspopup="dialog" aria-label={`View contribution details for ${person.name}`} className="cursor-pointer text-left text-jira-blue hover:underline focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-jira-blue">{person.name}</button></td><td className="px-4 py-3 text-right tabular-nums">{person.subtaskCount}</td>
             <td className="px-4 py-3 text-right tabular-nums">{format(person.originalEstimateHours)}</td><td className="px-4 py-3 text-right tabular-nums">{format(person.loggedEffortHours)}</td>
             <td className="px-4 py-3 text-right font-semibold tabular-nums text-jira-blue">{format(person.attributedStoryPoints)}</td>
             <td className="px-4 py-3 text-right tabular-nums" title={person.efficiency === null ? "No logged effort in the selected scope" : "Attributed Story Points divided by Logged Effort"}>{person.efficiency === null ? "N/A" : format(person.efficiency, 3)}</td>
@@ -74,5 +77,6 @@ export function ContributorSummary({ data, scopeLabel }: { data: ContributorMetr
       <span>{people.length ? currentPage * PAGE_SIZE + 1 : 0}–{Math.min((currentPage + 1) * PAGE_SIZE, people.length)} of {people.length} contributors · Totals include all matching pages</span>
       <div className="flex items-center gap-3"><button type="button" disabled={!currentPage} onClick={() => setPage(currentPage - 1)} className="rounded border border-jira-border px-3 py-1.5 disabled:opacity-40">Previous</button><span>{currentPage + 1} / {pages}</span><button type="button" disabled={currentPage >= pages - 1} onClick={() => setPage(currentPage + 1)} className="rounded border border-jira-border px-3 py-1.5 disabled:opacity-40">Next</button></div>
     </div>
+    {selectedPerson && <ContributorDetailsModal key={selectedPerson.name} person={selectedPerson} scopeLabel={scopeLabel} jiraDomain={jiraDomain} onClose={() => setSelectedName(null)} />}
   </section>;
 }
