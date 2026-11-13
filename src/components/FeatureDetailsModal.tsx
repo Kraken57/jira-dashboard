@@ -51,7 +51,9 @@ export function FeatureDetailsModal({ features, items, doneStatuses, jiraDomain,
           <thead className="sticky top-0 z-10 bg-slate-50"><tr>{["Key", "Summary", "Due date", "Story points", "Hours", "Status"].map((label) => <th key={label} className="px-2 py-3 border-b font-semibold">{label}</th>)}</tr></thead>
           <tbody>{visibleRows.map(({ feature, detail, status }) => {
             const stories = detail?.stories ?? [];
-            const completed = detail?.completed ?? 0;
+            const completedStoryPoints = stories
+              .filter((story) => doneStatuses.includes(story.status))
+              .reduce((sum, story) => sum + (story.storyPoints || 0), 0);
             const hours = detail?.hours ?? 0;
             return <tr key={feature.key} className="border-b hover:bg-slate-50 [&>td]:px-2 [&>td]:py-3">
               <td><JiraWorkLink issueKey={feature.key} jiraDomain={jiraDomain}>{feature.key}</JiraWorkLink></td>
@@ -59,7 +61,7 @@ export function FeatureDetailsModal({ features, items, doneStatuses, jiraDomain,
               <td className="whitespace-nowrap tabular-nums">{feature.dueDate?.slice(0, 10) || "No due date"}</td>
               <td className="tabular-nums">{detail?.storyPoints ?? 0}</td><td className="tabular-nums">{hours}</td>
               <td className={`font-semibold ${status === "Past Due Date" ? "text-red-600" : status === "Delivered" ? "text-green-700" : "text-slate-600"}`}>
-                {status} <span className="font-normal tabular-nums">({detail?.completedStoryPoints ?? 0}/{detail?.storyPoints ?? 0} SP)</span>
+                {status} <span className="font-normal tabular-nums">({completedStoryPoints}/{detail?.storyPoints ?? 0} SP)</span>
               </td>
             </tr>;
           })}</tbody>
