@@ -587,7 +587,8 @@ The Status filter applies to the cards and the bottom table.
 
 The **Contribution & Efficiency** table sits between the four cards
 and Contributor Slippage & Root Causes. It has name search, efficiency/name/points
-sorting (Name A–Z by default), and 20 contributors per page. The footer covers all matching pages and
+sorting (Name A–Z by default), and 20 contributors per page. Clicking anywhere on
+a contributor row opens their detail. The footer covers all matching pages and
 uses total attributed SP divided by total logged hours (never an average of ratios).
 
 Subtask Count, Original Estimates and Logged Effort reuse the Capacity View values
@@ -602,14 +603,17 @@ Parent-story estimates and ownership do not allocate points. A person's multiple
 subtask shares are summed without rounding until display. The denominator always
 uses the full fetched story breakdown, not just children matching an individual
 person or sprint filter. Missing estimates receive no arbitrary share; stories
-without subtasks or a positive total estimate are excluded from allocation and
-reported in a concise note. Unassigned shares are reported separately.
+without subtasks or a positive total estimate are excluded from attribution.
+Unassigned shares remain unassigned.
 
 Efficiency uses attributed SP divided by the displayed Logged Effort, with N/A for
 zero logged effort. The hour columns include all selected work, while attributed
 points require a completed parent story. If a child belonged to an earlier sprint,
 its owner can receive completed-story credit now with no work hours in the selected
 sprint; the table preserves that credit and shows N/A when the scoped hours are zero.
+An open story can therefore have estimates and logged effort but still show zero
+attributed SP and zero efficiency until the story is completed. N/A means no logged
+effort exists in the selected work scope.
 Only fetched Jira items can participate; incomplete configured JQL limits the result.
 
 This addition makes no new API requests. Local and Forge raw feeds use the same

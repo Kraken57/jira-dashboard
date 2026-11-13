@@ -5,6 +5,7 @@ import type { ContributorMetrics } from "@/lib/jira/contributorMetrics";
 import { ContributorDetailsModal } from "./ContributorDetailsModal";
 
 const format = (value: number, digits = 2) => value.toLocaleString(undefined, { maximumFractionDigits: digits });
+const rate = (value: number) => value.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
 const PAGE_SIZE = 20;
 
 export function ContributorSummary({ data, scopeLabel, jiraDomain }: { data: ContributorMetrics; scopeLabel: string; jiraDomain?: string }) {
@@ -32,13 +33,7 @@ export function ContributorSummary({ data, scopeLabel, jiraDomain }: { data: Con
     <div className="border-b border-jira-border px-5 py-4">
       <h3 className="text-sm font-bold text-jira-text">Contribution & Efficiency</h3>
       <p className="mt-1 text-xs text-jira-text-muted">{scopeLabel} · {data.people.length} contributors</p>
-      <p className="mt-2 text-xs text-jira-text-muted">Subtask counts and hours use the same selected work as Capacity View. Attributed points come from completed stories in their completion sprint, split by each person’s share of subtask Original Estimates.</p>
-      <p className="mt-1 text-xs text-jira-text-muted">Efficiency = Attributed Story Points ÷ Logged Effort shown here. Logged Effort uses Jira’s work-item totals grouped by current assignee, as in Capacity View.</p>
-      {(data.storiesWithoutSubtasks > 0 || data.storiesWithoutEstimates > 0 || data.subtasksWithoutEstimates > 0 || data.unassignedStoryPoints > 0) && <p className="mt-2 text-xs text-jira-amber">
-        {data.storiesWithoutSubtasks} completed stories without subtasks and {data.storiesWithoutEstimates} without positive subtask estimates excluded from attribution.
-        {data.subtasksWithoutEstimates > 0 && ` ${data.subtasksWithoutEstimates} subtasks without a positive estimate receive no points.`}
-        {data.unassignedStoryPoints > 0 && ` ${format(data.unassignedStoryPoints)} SP belong to unassigned subtasks.`}
-      </p>}
+      <p className="mt-2 text-xs text-jira-text-muted">Attributed Story Points are awarded when a story is completed, based on each contributor’s share of its subtask Original Estimates. Efficiency = Attributed Story Points ÷ Logged Effort.</p>
     </div>
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-jira-border px-5 py-3">
       <input type="search" value={search} onChange={(event) => { setSearch(event.target.value); setPage(0); }} placeholder="Search contributors…" aria-label="Search contributors" className="min-w-48 rounded border border-jira-border px-3 py-2 text-xs" />
@@ -59,11 +54,15 @@ export function ContributorSummary({ data, scopeLabel, jiraDomain }: { data: Con
         </tr></thead>
         <tbody className="divide-y divide-jira-border">
           {!people.length && <tr><td colSpan={6} className="px-4 py-8 text-center text-jira-text-muted">No contributors match this selection.</td></tr>}
-          {people.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE).map((person) => <tr key={person.name} className="hover:bg-jira-bg/40">
-            <td className="px-4 py-3 font-semibold text-jira-text"><button type="button" onClick={() => setSelectedName(person.name)} aria-haspopup="dialog" aria-label={`View contribution details for ${person.name}`} className="cursor-pointer text-left text-jira-blue hover:underline focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-jira-blue">{person.name}</button></td><td className="px-4 py-3 text-right tabular-nums">{person.subtaskCount}</td>
+          {people.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE).map((person) => <tr key={person.name}
+            role="button" tabIndex={0} aria-haspopup="dialog" aria-label={`View contribution details for ${person.name}`}
+            onClick={() => setSelectedName(person.name)}
+            onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedName(person.name); } }}
+            className="cursor-pointer hover:bg-jira-bg/40 focus-visible:bg-blue-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-jira-blue">
+            <td className="px-4 py-3 font-semibold text-jira-blue">{person.name}</td><td className="px-4 py-3 text-right tabular-nums">{person.subtaskCount}</td>
             <td className="px-4 py-3 text-right tabular-nums">{format(person.originalEstimateHours)}</td><td className="px-4 py-3 text-right tabular-nums">{format(person.loggedEffortHours)}</td>
             <td className="px-4 py-3 text-right font-semibold tabular-nums text-jira-blue">{format(person.attributedStoryPoints)}</td>
-            <td className="px-4 py-3 text-right tabular-nums" title={person.efficiency === null ? "No logged effort in the selected scope" : "Attributed Story Points divided by Logged Effort"}>{person.efficiency === null ? "N/A" : format(person.efficiency, 3)}</td>
+            <td className="px-4 py-3 text-right tabular-nums" title={person.efficiency === null ? "No logged effort in the selected scope" : person.attributedStoryPoints === 0 ? "No attributed points from completed stories in this scope; logged effort is present" : "Attributed Story Points divided by Logged Effort"}>{person.efficiency === null ? "N/A" : rate(person.efficiency)}</td>
           </tr>)}
         </tbody>
         <tfoot className="border-t-2 border-jira-border bg-jira-bg/60 font-semibold"><tr>

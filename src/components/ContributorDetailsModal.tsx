@@ -6,6 +6,7 @@ import { JiraWorkLink } from "./JiraWorkLink";
 import type { IndividualContribution } from "@/lib/jira/contributorMetrics";
 
 const number = (value: number, digits = 2) => value.toLocaleString(undefined, { maximumFractionDigits: digits });
+const rate = (value: number) => value.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
 const date = (value: string) => new Date(value).toLocaleDateString("en-US", {
   month: "short", day: "numeric", year: "numeric", timeZone: "UTC",
 }).toUpperCase();
@@ -31,7 +32,7 @@ export function ContributorDetailsModal({ person, scopeLabel, jiraDomain, onClos
     <div className="space-y-4 p-4 sm:p-5">
       <div className="rounded-lg border border-jira-border bg-slate-50 px-4 py-3 text-xs text-jira-text-muted">
         <p className="font-semibold text-jira-text">Overall · selected filters</p>
-        <p className="mt-1">{person.subtaskCount} subtasks · {number(person.originalEstimateHours)} hrs Original Estimates · {number(person.loggedEffortHours)} hrs Logged Effort · <strong>{number(person.attributedStoryPoints)} attributed SP</strong> · Efficiency: <strong>{person.efficiency === null ? "N/A" : `${number(person.efficiency, 3)} SP/hour`}</strong></p>
+        <p className="mt-1">{person.subtaskCount} subtasks · {number(person.originalEstimateHours)} hrs Original Estimates · {number(person.loggedEffortHours)} hrs Logged Effort · <strong>{number(person.attributedStoryPoints)} attributed SP</strong> · Efficiency: <strong>{person.efficiency === null ? "N/A" : `${rate(person.efficiency)} SP/hour`}</strong></p>
       </div>
       {!card ? <p className="rounded border border-jira-border p-5 text-sm text-jira-text-muted">No sprint breakdown is available for this contributor in the selected filters.</p> : <>
         <nav aria-label="Contributor sprint cards" className="sticky top-0 z-10 flex flex-wrap items-center gap-2 bg-white py-2">
@@ -61,17 +62,17 @@ export function ContributorDetailsModal({ person, scopeLabel, jiraDomain, onClos
                 ["Original Estimates", `${number(card.originalEstimateHours)} hrs`],
                 ["Logged Effort", `${number(card.loggedEffortHours)} hrs`],
                 ["Attributed Story Points", number(card.attributedStoryPoints)],
-                ["Efficiency", card.efficiency === null ? "N/A" : `${number(card.efficiency, 3)} SP/hour`],
+                ["Efficiency", card.efficiency === null ? "N/A" : `${rate(card.efficiency)} SP/hour`],
               ].map(([label, value]) => <div key={label} className="rounded-lg border border-jira-border bg-slate-50 px-3 py-3"><p className="text-[11px] text-jira-text-muted">{label}</p><p className="mt-1 text-sm font-bold tabular-nums text-jira-text">{value}</p></div>)}
             </div>
             <div className="space-y-4 px-4 pb-4">
               <div className="rounded-lg bg-blue-50 px-3 py-3 text-xs leading-relaxed text-jira-text-muted">
-                <p><strong>Efficiency:</strong> {number(card.attributedStoryPoints)} attributed SP ÷ {number(card.loggedEffortHours)} hrs Logged Effort = {card.efficiency === null ? "N/A (no logged effort)" : `${number(card.efficiency, 3)} SP/hour`}.</p>
-                <p className="mt-1">Story points are credited only in the completion sprint. Estimates and logged hours follow assigned work in this sprint, as in Capacity View.</p>
+                <p><strong>Efficiency:</strong> {number(card.attributedStoryPoints)} attributed SP ÷ {number(card.loggedEffortHours)} hrs Logged Effort = {card.efficiency === null ? "N/A (no logged effort in this selected work)" : `${rate(card.efficiency)} SP/hour`}.</p>
+                <p className="mt-1">Attributed points are credited only when a parent story is completed. Work on an open story can have Original Estimates and Logged Effort but still show 0 attributed points and 0 efficiency until the story is completed. Estimates and logged hours follow assigned work in this sprint, as in Capacity View.</p>
               </div>
               <section aria-label="Story point calculations">
                 <h5 className="mb-2 text-xs font-bold text-jira-text">Story point calculations · {card.allocations.length} completed stories</h5>
-                {!card.allocations.length && <p className="rounded-lg border border-jira-border p-3 text-xs text-jira-text-muted">No estimate-based story-point credit in this sprint. Assigned work and logged effort are listed below.</p>}
+                {!card.allocations.length && <p className="rounded-lg border border-jira-border p-3 text-xs text-jira-text-muted">No completed story has allocated points to this contributor in this sprint. Open stories do not receive attributed points until completion. Assigned work and logged effort are listed below.</p>}
                 <div className="space-y-2">{card.allocations.map((allocation) => <details key={allocation.storyKey} className="rounded-lg border border-jira-border bg-white">
                   <summary className="cursor-pointer px-3 py-3 text-xs focus-visible:outline-jira-blue">
                     <span className="font-semibold text-jira-text">{allocation.storyKey}</span> · {number(allocation.attributedStoryPoints)} attributed SP

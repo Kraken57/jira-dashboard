@@ -98,6 +98,18 @@ test('shared filters: completion sprint receives credit once; earlier sprint and
   assert.equal(compute({ podId: 'DTR' }).diagnosis.individualContribution.people.length, 0);
 });
 
+test('open stories can have estimates and logged hours but correctly earn zero points until completed', () => {
+  const openStory = { ...completed, status: 'In Progress', sprints: [current], resolutionDate: undefined };
+  const openChildren = children.map((row) => ({ ...row, sprints: [current] }));
+  const data = computeDashboardData([openStory, ...openChildren], { podId: 'all', quarterId: 'all', sprintId: 'all' }, metadata, config);
+  const qa = data.diagnosis.individualContribution.people.find((person) => person.name === 'QA');
+  assert.ok(qa.originalEstimateHours > 0);
+  assert.ok(qa.loggedEffortHours > 0);
+  assert.equal(qa.attributedStoryPoints, 0);
+  assert.equal(qa.efficiency, 0);
+  assert.equal(qa.sprintDetails[0].allocations.length, 0);
+});
+
 test('counts and hour totals match Capacity View for the same filters', () => {
   const data = compute();
   for (const dev of data.developers) {
@@ -124,7 +136,7 @@ test('summary renders only 20 of 81 names while totaling all 81 contributors', (
 });
 
 
-test('summary defaults to alphabetical names with accessible detail buttons', () => {
+test('summary defaults to alphabetical names and makes contributor rows keyboard accessible', () => {
   const React = require('react');
   const { renderToStaticMarkup } = require('react-dom/server');
   const { ContributorSummary } = loadTs('src/components/ContributorSummary.tsx');
@@ -132,11 +144,13 @@ test('summary defaults to alphabetical names with accessible detail buttons', ()
   const data = buildContributorMetrics(people, [story], children);
   const html = renderToStaticMarkup(React.createElement(ContributorSummary, { data, scopeLabel: 'All work' }));
   const body = html.split('<tbody')[1].split('</tbody>')[0];
-  assert.ok(body.indexOf('>BA</button>') < body.indexOf('>Dev 1</button>'));
-  assert.ok(body.indexOf('>Dev 1</button>') < body.indexOf('>Dev 2</button>'));
-  assert.ok(body.indexOf('>Dev 2</button>') < body.indexOf('>QA</button>'));
+  assert.ok(body.indexOf('>BA</td>') < body.indexOf('>Dev 1</td>'));
+  assert.ok(body.indexOf('>Dev 1</td>') < body.indexOf('>Dev 2</td>'));
+  assert.ok(body.indexOf('>Dev 2</td>') < body.indexOf('>QA</td>'));
   assert.match(html, /Name: A–Z<\/option>/);
   assert.match(html, /View contribution details for QA/);
+  assert.match(html, /role="button" tabindex="0" aria-haspopup="dialog" aria-label="View contribution details for BA"/);
+  assert.doesNotMatch(html, /completed stories without subtasks/);
 });
 
 for (const path of ['src/lib/jira/contributorMetrics.ts', 'forge/src/contributorMetrics.ts']) {
