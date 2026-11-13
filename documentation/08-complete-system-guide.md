@@ -585,53 +585,6 @@ page.
 
 The Status filter applies to the cards and the bottom table.
 
-#### Individual Contribution: step 1 data preparation
-
-Delivery Diagnosis now places **Individual Contribution · Data Check** between the
-four slippage cards and Contributor Slippage & Root Causes. This is a validation
-surface for the next phase; it does not allocate points, calculate efficiency, or
-change Capacity View.
-
-- Sources are completed Stories in the shared Pod/Quarter/Sprint/Sprint Status
-  scope, using the existing completion-sprint rule. Historical membership does not
-  give a completed story credit in several sprints. The slippage Status filter
-  continues to apply to unfinished work; the new section always checks completed stories.
-- The raw feed requests Jira's `subtasks` list and assignee account IDs. All fetched
-  children of a scoped story are considered before any contributor/sprint filtering.
-  Canceled work is excluded. Missing children outside the configured JQL are shown
-  explicitly. An absent child-list field is not treated as proof of no children.
-- Subtask original estimates are totaled separately from the parent estimate.
-  Positive estimates and identifiable subtask assignees are needed for later point allocation.
-  Stories with no eligible subtasks are excluded; missing child data or unconfirmed
-  completion dates are flagged for verification rather than declared ready.
-- **Check worklogs** requests author-level worklogs for the story and its known
-  subtasks. It runs only on request, with at most three issue workers. Each local
-  API/Forge invocation reads one page (100 entries maximum), after checking the key
-  against the configured dashboard JQL. There are no detached backend promises.
-  All pages must succeed; changing totals, duplicate IDs, malformed pages and access
-  errors cannot turn into successful partial totals. Stop/retry controls are available.
-- Worklog author account ID, display name, `started` timestamp (including offset),
-  and `timeSpentSeconds` are retained. The worklog author is never inferred from the
-  issue assignee. Missing author IDs/dates and differences from the feed's `timespent`
-  total are visible. Worklogs reflect the reading account/app's visibility; these
-  are not claimed to include restricted Tempo-only entries.
-- Local transport: `/api/jira?worklogs=1&issueKey=ERP-123&startAt=0`. Forge transport:
-  `getContributionWorklogs`. Both return the same compact page contract. Worklog
-  data is held only in the current section's memory; a feed refresh resets it.
-  Browser/local-disk/Forge raw-feed cache versions were bumped for the added fields.
-
-Validation: select one pod and one closed sprint, expand a completed story, compare
-its child keys and estimates with Jira, then use Check worklogs to compare authors,
-entry dates and actual durations. Verify that a story completed in Sprint 3 is not
-listed when selecting its earlier Sprint 2. No-subtask, missing-child, missing-date,
-and denied-worklog cases must show explicit messages. Local and Forge results may
-differ if the user and app have different visibility; surface that difference.
-
-Run the focused preparation regression checks with
-`node scripts/contribution-preparation.test.mjs`.
-The worklog API contract and visibility rules are documented by
-[Atlassian](https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-worklogs/).
-
 ### 7.7 Executive charts (`TrendsCharts`)
 
 The Executive Summary shows four charts in a two-column grid:

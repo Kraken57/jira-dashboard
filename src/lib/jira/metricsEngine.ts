@@ -1,4 +1,3 @@
-import { prepareContributionSources } from "./contributionPreparation";
 import { featureDelivery } from "./featureDelivery";
 import {
   ContributorSlippage,
@@ -1752,32 +1751,6 @@ export function computeDashboardData(
     },
   };
 
-  // Contribution preparation uses the completion sprint, not every historical membership.
-  const contributionStories = activeItems.filter((item) => {
-    if (!/^story$/i.test(item.workType) || !DONE_STATUSES.has(item.status)) return false;
-    const completion = completionSprintFor(item);
-    if (!completion) return allSprintsSelected && isAllSelection(quarterId)
-      && (!filters.sprintStatus || filters.sprintStatus === "all");
-    return matchesSprintQuarter(completion) && (allSprintsSelected || selectedSprints.includes(completion));
-  });
-  const contributionSources = prepareContributionSources(contributionStories, items, (story) => {
-    const completionSprint = completionSprintFor(story);
-    const original = originalItemByKey.get(story.key) || story;
-    const names = original.sprints.filter((name) => (commonized.aliases.get(name) || name) === completionSprint);
-    const resolvedAt = Date.parse(story.resolutionDate || "");
-    return {
-      completionSprint,
-      completionSprintLabel: names.join(", ") || "No completion sprint",
-      completionDateConfirmed: names.some((name) => {
-        const start = Date.parse(sprintMeta[name]?.startDate || "");
-        let end = Date.parse(sprintMeta[name]?.endDate || "");
-        if (/^\d{4}-\d{2}-\d{2}$/.test(sprintMeta[name]?.endDate || "")) end += DAY_MS - 1;
-        return Number.isFinite(resolvedAt) && Number.isFinite(start) && Number.isFinite(end)
-          && resolvedAt >= start && resolvedAt <= end;
-      }),
-    };
-  });
-
   // 12. Delivery Diagnosis & Root Cause Analysis
   const unfinishedItems = activeItems.filter((it) => !DONE_STATUSES.has(it.status));
 
@@ -2221,7 +2194,7 @@ export function computeDashboardData(
     zephyr,
     predictability,
     trends,
-    diagnosis: { ...diagnosis, contributionSources },
+    diagnosis,
     issueList,
     developerIssueList,
     podFeatureList,

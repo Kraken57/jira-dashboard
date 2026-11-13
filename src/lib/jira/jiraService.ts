@@ -163,7 +163,6 @@ async function fetchAllLiveJiraIssues(jqlOverride?: string, queryLabel = "dashbo
         "created",
         "resolutiondate",
         "duedate",
-        "subtasks",
         "timeoriginalestimate",
         "timetracking",
         "timespent",
@@ -314,10 +313,6 @@ async function fetchAllLiveJiraIssues(jqlOverride?: string, queryLabel = "dashbo
       status: status.name || "To Do",
       priority: priorityObj?.name || "Unspecified",
       assignee: assigneeObj?.displayName || "Unassigned",
-      assigneeAccountId: (fields.assignee as { accountId?: string } | undefined)?.accountId,
-      subtaskKeys: Array.isArray(fields.subtasks)
-        ? fields.subtasks.map((child: { key?: string }) => child.key).filter((key: unknown): key is string => typeof key === "string")
-        : undefined,
       quarter:
         sprints.length > 0
           ? quarterFromSprint(sprints[sprints.length - 1])
@@ -395,7 +390,7 @@ function getFeedQueryFingerprint(): string {
     .update(`${JIRA_CONFIG.host}\n${JIRA_CONFIG.email}\n${JIRA_CONFIG.apiToken}`)
     .digest("hex");
   return createHash("sha256")
-    .update(`contribution-source-v15\n${process.env.JIRA_AHA_URL_FIELD || "customfield_10280"}\n${mainJql}\n${defectJql}\n${uatDefectJql}\n${leakageDefectJql}\n${authFingerprint}`)
+    .update(`sprint-details-v14\n${process.env.JIRA_AHA_URL_FIELD || "customfield_10280"}\n${mainJql}\n${defectJql}\n${uatDefectJql}\n${leakageDefectJql}\n${authFingerprint}`)
     .digest("hex");
 }
 

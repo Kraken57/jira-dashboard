@@ -4,41 +4,7 @@ import {
   DashboardLoadFailure,
   RawFeedPayload,
   ZephyrData,
-  ContributionWorklogPage,
 } from "./jira/types";
-import { normalizeContributionWorklogPage, validateWorklogRequest } from "./jira/contributionPreparation";
-
-/** Optional, paginated author-level worklogs; never part of initial dashboard loading. */
-export async function fetchContributionWorklogPage(issueKey: string, startAt: number): Promise<ContributionWorklogPage> {
-  validateWorklogRequest(issueKey, startAt);
-  let body: unknown;
-  if (window.self !== window.top) {
-    const { invoke } = await import("@forge/bridge");
-    body = unwrapBody(await invoke("getContributionWorklogs", { issueKey, startAt }));
-  } else {
-    const params = new URLSearchParams({ worklogs: "1", issueKey, startAt: String(startAt) });
-    const response = await fetch(`${BASE_URL.replace(/\/+$/, "")}/api/jira?${params}`, {
-      cache: "no-store", signal: AbortSignal.timeout(20000),
-    });
-    body = await response.json();
-    if (!response.ok) {
-      const failure = body as { details?: string; error?: string };
-      throw new Error(failure.details || failure.error || `Jira worklogs returned ${response.status}`);
-    }
-  }
-  if (body && typeof body === "object" && "error" in body) throw new Error(String(body.error));
-  const page = body as ContributionWorklogPage;
-  if (page?.issueKey !== issueKey || page.startAt !== startAt || !Array.isArray(page.worklogs)) {
-    throw new Error("The worklog response did not match the requested work item/page");
-  }
-  return normalizeContributionWorklogPage(issueKey, {
-    ...page,
-    worklogs: page.worklogs.map((row) => ({
-      ...row,
-      author: { accountId: row.authorAccountId, displayName: row.authorName },
-    })),
-  });
-}
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "";
 
@@ -199,7 +165,7 @@ export async function fetchDashboardData(filters: DashboardFilters): Promise<Das
 // ---- Raw feed (fetch once per TTL window, browser computes the filters) ----
 
 // v4: invalidate browser snapshots from before optional UAT/leakage feeds existed.
-const RAW_SESSION_KEY = "jira-raw-feed-v13";
+const RAW_SESSION_KEY = "jira-raw-feed-v12";
 const RAW_FRESH_MS = 5 * 60 * 1000;
 const RAW_STALE_OK_MS = 30 * 60 * 1000;
 

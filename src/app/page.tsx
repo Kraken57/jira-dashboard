@@ -525,8 +525,6 @@ export default function DashboardPage() {
               podName={selectedPodName}
               jiraDomain={dashboardData.jiraBaseUrl}
               statusFilter={filters.status}
-              scopeLabel={scopeLabel}
-              snapshotKey={`${dashboardData.jiraBaseUrl}:${feed?.fetchedAt}`}
             />
           )}
 

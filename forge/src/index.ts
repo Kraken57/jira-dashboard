@@ -10,7 +10,6 @@ import { kvs } from "./kvsClient";
 import zlib from "node:zlib";
 import { createHash } from "node:crypto";
 import { JiraClient } from "./api/jiraClient";
-import { getContributionWorklogs, validateWorklogRequest } from "./api/contributionWorklogs";
 
 const resolver = new Resolver();
 const jiraClient = new JiraClient();
@@ -332,10 +331,6 @@ function mapIssueToWorkItem(
     status: status.name || "To Do",
     priority: priorityObj?.name || "Unspecified",
     assignee: assigneeObj?.displayName || "Unassigned",
-    assigneeAccountId: (fields.assignee as { accountId?: string } | undefined)?.accountId,
-    subtaskKeys: Array.isArray(fields.subtasks)
-      ? fields.subtasks.map((child: { key?: string }) => child.key).filter((key: unknown): key is string => typeof key === "string")
-      : undefined,
       quarter: sprints.length > 0 ? quarterFromSprint(sprints[0]) : "All",
     sprints,
     storyPoints,
@@ -1755,8 +1750,8 @@ function calculateKPIs(
  * is fresh enough, refreshed on demand otherwise. Values are zlib-deflated
  * and chunked because KVS caps individual values.
  */
-const FEED_META_KEY = "raw-feed-v13-meta";
-const FEED_PART_KEY = "raw-feed-v13-part-";
+const FEED_META_KEY = "raw-feed-v12-meta";
+const FEED_PART_KEY = "raw-feed-v12-part-";
 // Legacy @forge/api storage caps a single persisted value at ~128 KB raw.
 // 90 KB compressed -> ~120 KB base64, under the cap; a 930-item feed still
 // needs a single part. Raise to ~175 KB after the @forge/kvs flip (240 KiB).
@@ -1875,7 +1870,6 @@ async function fetchAndStoreFeed(): Promise<FeedEnvelope> {
     "created",
     "resolutiondate",
     "duedate",
-    "subtasks",
     "timeoriginalestimate",
         "timetracking",
     "timespent",
@@ -2008,7 +2002,6 @@ resolver.define("getDashboardData", async (req) => {
       "created",
       "resolutiondate",
       "duedate",
-      "subtasks",
       "timeoriginalestimate",
         "timetracking",
       "timespent",
@@ -2182,18 +2175,6 @@ resolver.define("getZephyrData", async (req) => {
     const message = error instanceof Error ? error.message : "Zephyr data could not be loaded.";
     console.error("[ZEPHYR_FETCH] Forge resolver failed", message);
     return { available: false, message } satisfies ZephyrData;
-  }
-});
-
-resolver.define("getContributionWorklogs", async (req) => {
-  try {
-    const { issueKey, startAt = 0 } = req.payload || {};
-    validateWorklogRequest(issueKey, startAt);
-    const savedJql = await kvs.get("jira_jql");
-    const jql = typeof savedJql === "string" && savedJql.trim() ? savedJql : process.env.JIRA_JQL || "project in (DTR)";
-    return await getContributionWorklogs(issueKey, startAt, jql);
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : "Jira worklogs could not be read" };
   }
 });
 

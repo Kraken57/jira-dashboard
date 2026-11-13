@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDashboardData, getRawFeed, getZephyrData } from "@/lib/jira/jiraService";
-import { getContributionWorklogs } from "@/lib/jira/contributionWorklogs";
 
 /**
  * Localhost / standalone mode only.
@@ -15,11 +14,6 @@ export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-
-    if (searchParams.get("worklogs") === "1") {
-      const page = await getContributionWorklogs(searchParams.get("issueKey") || "", Number(searchParams.get("startAt") || "0"));
-      return NextResponse.json(page, { headers: { "Cache-Control": "no-store" } });
-    }
 
     if (searchParams.get("zephyr") === "1") {
       const zephyr = await getZephyrData(searchParams.get("refresh") === "1");
