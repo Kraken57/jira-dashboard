@@ -2133,6 +2133,7 @@ export function computeDashboardData(
       ? isSubtaskDoneStatus(it.status)
       : DONE_STATUSES.has(it.status),
     originalEstimateHours: estimateHours(it.originalEstimateSeconds),
+    loggedEffortHours: estimateHours(it.timeSpentSeconds),
     isSubtask: /^sub-?task$/i.test(it.workType),
   }));
 

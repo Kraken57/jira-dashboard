@@ -969,7 +969,11 @@ Other fields:
 Issues tab.
 
 `developerIssueList` is the Story + Sub-task subset used by Developer View. It includes
-`originalEstimateHours` and `isSubtask`, and is the only list that keeps subtasks.
+`originalEstimateHours`, logged Jira time as `loggedEffortHours`, and `isSubtask`, and is
+the only list that keeps subtasks. A selected developer's work-item popup omits the
+Assignee column (the developer is already identified in the popup title) and shows
+Original Estimate and Logged Effort separately before Sprint. Logged Effort comes from
+Jira's `timespent` field; it is independent of the original estimate.
 
 ---
 

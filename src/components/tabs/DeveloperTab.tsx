@@ -324,6 +324,7 @@ export function DeveloperTab({
           subtitle={modal.subtitle}
           issues={modal.issues}
           jiraDomain={jiraDomain}
+          developerEffortColumns={Boolean(focusedDeveloper)}
           overview={focusedDeveloper && (
             <div className="border-b border-jira-border bg-slate-50 p-4">
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

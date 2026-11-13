@@ -14,10 +14,20 @@ interface IssuesModalProps {
   onClose: () => void;
   emptyText?: string;
   insight?: MetricInsight;
+  /** Use original and logged effort columns, hiding the redundant assignee. */
+  developerEffortColumns?: boolean;
 }
 
 type StateFilter = "all" | "open" | "done";
-type SortOrder = "default" | "sp-desc" | "sp-asc" | "hrs-desc" | "hrs-asc" | "key";
+type SortOrder =
+  | "default"
+  | "sp-desc"
+  | "sp-asc"
+  | "hrs-desc"
+  | "hrs-asc"
+  | "logged-desc"
+  | "logged-asc"
+  | "key";
 
 const UNIT_LABEL: Record<"pp" | "%" | "SP", string> = {
   pp: "percentage points",
@@ -45,6 +55,7 @@ export function IssuesModal({
   emptyText,
   insight,
   overview,
+  developerEffortColumns = false,
 }: IssuesModalProps) {
   const tableViewportRef = useRef<HTMLDivElement>(null);
   const pinnedScrollbarRef = useRef<HTMLDivElement>(null);
@@ -92,11 +103,11 @@ export function IssuesModal({
       if (state === "open" && issue.isDone) return false;
       if (status !== "all" && issue.status !== status) return false;
       if (workType !== "all" && issue.workType !== workType) return false;
-      if (assignee !== "all" && issue.assignee !== assignee) return false;
+      if (!developerEffortColumns && assignee !== "all" && issue.assignee !== assignee) return false;
       if (sprint !== "all" && !sprintNames(issue.sprint).includes(sprint)) return false;
       if (reason !== "all" && (issue.reason || "") !== reason) return false;
       if (q) {
-        const haystack = `${issue.key} ${issue.summary} ${issue.assignee} ${issue.status}`.toLowerCase();
+        const haystack = `${issue.key} ${issue.summary} ${developerEffortColumns ? "" : issue.assignee} ${issue.status}`.toLowerCase();
         if (!haystack.includes(q)) return false;
       }
       return true;
@@ -112,9 +123,17 @@ export function IssuesModal({
       return [...result].sort(
         (a, b) => (a.originalEstimateHours || 0) - (b.originalEstimateHours || 0)
       );
+    if (sort === "logged-desc")
+      return [...result].sort(
+        (a, b) => (b.loggedEffortHours || 0) - (a.loggedEffortHours || 0)
+      );
+    if (sort === "logged-asc")
+      return [...result].sort(
+        (a, b) => (a.loggedEffortHours || 0) - (b.loggedEffortHours || 0)
+      );
     if (sort === "key") return [...result].sort((a, b) => a.key.localeCompare(b.key));
     return result;
-  }, [issues, search, state, status, workType, assignee, sprint, reason, sort]);
+  }, [issues, search, state, status, workType, assignee, sprint, reason, sort, developerEffortColumns]);
 
   const filteredSP = filtered.reduce((a, i) => a + (i.storyPoints || 0), 0);
   const filteredHours = Math.round(
@@ -137,7 +156,7 @@ export function IssuesModal({
     observer.observe(viewport);
     observer.observe(table);
     return () => observer.disconnect();
-  }, [filtered, hasDueDate, hasHours, hasReason]);
+  }, [filtered, hasDueDate, hasHours, hasReason, developerEffortColumns]);
 
   const syncPinnedScrollbar = () => {
     const viewport = tableViewportRef.current;
@@ -455,7 +474,7 @@ export function IssuesModal({
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search key, summary, assignee…"
+            placeholder={developerEffortColumns ? "Search key or summary…" : "Search key, summary, assignee…"}
             aria-label="Search work items"
             className="flex-1 min-w-[180px] text-xs border border-jira-border rounded-md px-2.5 py-1.5 focus:outline-none focus:border-jira-blue"
           />
@@ -495,19 +514,19 @@ export function IssuesModal({
               </option>
             ))}
           </select>
-          <select
-            value={assignee}
-            onChange={(e) => setAssignee(e.target.value)}
-            aria-label="Filter by assignee"
-            className="text-xs border border-jira-border rounded-md px-2 py-1.5 bg-white focus:outline-none focus:border-jira-blue"
-          >
-            <option value="all">All assignees</option>
-            {assignees.map((a) => (
-              <option key={a} value={a}>
-                {a}
-              </option>
-            ))}
-          </select>
+          {!developerEffortColumns && (
+            <select
+              value={assignee}
+              onChange={(e) => setAssignee(e.target.value)}
+              aria-label="Filter by assignee"
+              className="text-xs border border-jira-border rounded-md px-2 py-1.5 bg-white focus:outline-none focus:border-jira-blue"
+            >
+              <option value="all">All assignees</option>
+              {assignees.map((a) => (
+                <option key={a} value={a}>{a}</option>
+              ))}
+            </select>
+          )}
           <select
             value={sprint}
             onChange={(e) => setSprint(e.target.value)}
@@ -545,8 +564,10 @@ export function IssuesModal({
             <option value="default">Sort order</option>
             <option value="sp-desc">SP high → low</option>
             <option value="sp-asc">SP low → high</option>
-            {hasHours && <option value="hrs-desc">Hours high → low</option>}
-            {hasHours && <option value="hrs-asc">Hours low → high</option>}
+            {hasHours && <option value="hrs-desc">{developerEffortColumns ? "Estimate" : "Hours"} high → low</option>}
+            {hasHours && <option value="hrs-asc">{developerEffortColumns ? "Estimate" : "Hours"} low → high</option>}
+            {developerEffortColumns && <option value="logged-desc">Logged effort high → low</option>}
+            {developerEffortColumns && <option value="logged-asc">Logged effort low → high</option>}
             <option value="key">Key A → Z</option>
           </select>
           {hasFilters && (
@@ -583,9 +604,11 @@ export function IssuesModal({
               <th className="px-4 py-2.5">Summary</th>
               <th className="px-4 py-2.5">Status</th>
               <th className="px-4 py-2.5 text-center">SP</th>
+              {developerEffortColumns && <th className="px-4 py-2.5 text-center">Original Estimate</th>}
+              {developerEffortColumns && <th className="px-4 py-2.5 text-center">Logged Effort</th>}
               {hasDueDate && <th className="px-4 py-2.5">Due Date</th>}
-              {hasHours && <th className="px-4 py-2.5 text-center">Hours</th>}
-              <th className="px-4 py-2.5">Assignee</th>
+              {!developerEffortColumns && hasHours && <th className="px-4 py-2.5 text-center">Hours</th>}
+              {!developerEffortColumns && <th className="px-4 py-2.5">Assignee</th>}
               <th className="px-4 py-2.5">Sprint</th>
               {hasReason && <th className="px-4 py-2.5">Reason</th>}
             </tr>
@@ -594,7 +617,7 @@ export function IssuesModal({
             {filtered.length === 0 ? (
               <tr>
                 <td
-                  colSpan={7 + (hasHours ? 1 : 0) + (hasReason ? 1 : 0) + (hasDueDate ? 1 : 0)}
+                  colSpan={7 + (developerEffortColumns ? 1 : 0) + (!developerEffortColumns && hasHours ? 1 : 0) + (hasReason ? 1 : 0) + (hasDueDate ? 1 : 0)}
                   className="px-5 py-10 text-center text-jira-text-muted"
                 >
                   {hasFilters
@@ -636,12 +659,22 @@ export function IssuesModal({
                     </span>
                   </td>
                   <td className="px-4 py-2.5 text-center text-xs font-bold">{issue.storyPoints}</td>
+                  {developerEffortColumns && (
+                    <>
+                      <td className="px-4 py-2.5 text-center text-xs whitespace-nowrap">
+                        {issue.originalEstimateHours ?? 0} hrs
+                      </td>
+                      <td className="px-4 py-2.5 text-center text-xs whitespace-nowrap">
+                        {issue.loggedEffortHours ?? 0} hrs
+                      </td>
+                    </>
+                  )}
                   {hasDueDate && (
                     <td className="px-4 py-2.5 text-xs whitespace-nowrap text-jira-text-muted">
                       {issue.dueDate ? new Date(issue.dueDate).toLocaleDateString() : "—"}
                     </td>
                   )}
-                  {hasHours && (
+                  {!developerEffortColumns && hasHours && (
                     <td className="px-4 py-2.5 text-center text-xs whitespace-nowrap">
                       <span className="font-bold text-jira-text">
                         {issue.originalEstimateHours || 0} hrs
@@ -651,7 +684,7 @@ export function IssuesModal({
                       </span>
                     </td>
                   )}
-                  <td className="px-4 py-2.5 text-xs whitespace-nowrap" title={issue.assignee}>{issue.assignee}</td>
+                  {!developerEffortColumns && <td className="px-4 py-2.5 text-xs whitespace-nowrap" title={issue.assignee}>{issue.assignee}</td>}
                   <td className="max-w-56 px-4 py-2.5 text-xs text-jira-text-muted">
                     <span className="block max-w-56 truncate" title={issue.sprint}>{issue.sprint}</span>
                   </td>
