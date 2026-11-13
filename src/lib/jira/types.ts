@@ -146,8 +146,6 @@ export interface DeveloperStat {
   team: string;
   assignedIssues: number;
   completedIssues: number;
-  assignedTasks?: number;
-  completedTasks?: number;
   loggedHours?: number;
   capacityHours: number;
   utilizationPct: number;

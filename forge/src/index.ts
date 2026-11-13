@@ -1453,7 +1453,7 @@ function calculateKPIs(
   const estimateHours = (seconds: any) =>
     Math.round(((Number(seconds) || 0) / 3600) * 10) / 10;
   const devItems = developerSource.filter((i: any) =>
-    /^(story|task|sub-?task)$/i.test(i.workType)
+    /^(story|sub-?task)$/i.test(i.workType)
   );
   const devMap = new Map<string, any>();
   for (const it of devItems) {
@@ -1492,8 +1492,6 @@ function calculateKPIs(
     .map((stat) => ({
       name: stat.name,
       team: [...new Set(devItems.filter((item: any) => (item.assignee || "Unassigned") === stat.name).map((item: any) => item.podName || item.team))].join(", "),
-      assignedTasks: devItems.filter((item: any) => (item.assignee || "Unassigned") === stat.name && /^task$/i.test(item.workType)).length,
-      completedTasks: devItems.filter((item: any) => (item.assignee || "Unassigned") === stat.name && /^task$/i.test(item.workType) && isDoneStatus(item.status)).length,
       loggedHours: estimateHours(devItems.filter((item: any) => (item.assignee || "Unassigned") === stat.name).reduce((sum: number, item: any) => sum + (item.timeSpentSeconds || 0), 0)),
       unestimatedIssues: devItems.filter((item: any) => (item.assignee || "Unassigned") === stat.name && !(item.hasOriginalEstimate ?? ((item.originalEstimateSeconds || 0) > 0))).length,
       assignedIssues: stat.assigned,

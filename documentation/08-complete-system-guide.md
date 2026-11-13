@@ -512,7 +512,7 @@ the table:
 | Total Delivered | completed Story + Sub-task items |
 | Table row | Story + Sub-task items assigned to that developer |
 
-The table counts **Story + Task + Sub-task** and shows the split in each cell.
+The table counts **Story + Sub-task** and shows the split in each cell. Other work types are excluded from Capacity View.
 The table now has separate **Story Points** (`Delivered / Assigned`) and **Hours**
 (`Completed / Original estimate`) columns, plus a team-total footer. Hours come from
 Jira’s `timeoriginalestimate` or `timetracking.originalEstimateSeconds`, both in seconds, divided by 3600. The Jira display text (for example, `1d 2h`) is not parsed, so the site’s hours-per-day configuration is respected. Logged hours use `timespent`; completed estimate hours are not actual logged hours. Missing estimates are counted separately. Completion rate is completed items ÷ assigned items.

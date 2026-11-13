@@ -41,8 +41,6 @@ export function DeveloperTab({
   const totalAssigned = developers.reduce((acc, d) => acc + d.assignedIssues, 0);
   const totalCompleted = developers.reduce((acc, d) => acc + d.completedIssues, 0);
   const totalAssignedStories = developers.reduce((acc, d) => acc + d.assignedStories, 0);
-  const totalAssignedTasks = developers.reduce((acc, d) => acc + (d.assignedTasks || 0), 0);
-  const totalCompletedTasks = developers.reduce((acc, d) => acc + (d.completedTasks || 0), 0);
   const totalAssignedSubtasks = developers.reduce((acc, d) => acc + d.assignedSubtasks, 0);
   const totalCompletedStories = developers.reduce((acc, d) => acc + d.completedStories, 0);
   const totalCompletedSubtasks = developers.reduce((acc, d) => acc + d.completedSubtasks, 0);
@@ -82,7 +80,7 @@ export function DeveloperTab({
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <button
           type="button"
-          onClick={() => open("Active Contributors", `${podName} · all assigned story, task and sub-task work`, scopedIssues)}
+          onClick={() => open("Active Contributors", `${podName} · all assigned story and sub-task work`, scopedIssues)}
           className="text-left bg-white border border-jira-border rounded-lg p-4 shadow-sm hover:border-jira-blue/50 transition"
         >
           <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Active Contributors</p>
@@ -176,13 +174,13 @@ export function DeveloperTab({
                 <th className="px-6 py-3 text-center">
                   <span className="block">Assigned Work</span>
                   <span className="block text-[10px] font-medium normal-case tracking-normal text-jira-text-light">
-                    Story / Task / Sub-Task
+                    Story / Sub-Task
                   </span>
                 </th>
                 <th className="px-6 py-3 text-center">
                   <span className="block">Completed</span>
                   <span className="block text-[10px] font-medium normal-case tracking-normal text-jira-text-light">
-                    Story / Task / Sub-Task completed
+                    Story / Sub-Task completed
                   </span>
                 </th>
                 <th className="px-6 py-3 text-right">
@@ -216,7 +214,7 @@ export function DeveloperTab({
                   onClick={() =>
                     open(
                       `Work items · ${dev.name}`,
-                      `${dev.assignedIssues} story/task/sub-task items · ${dev.completedIssues} completed · ${dev.deliveredSP} SP delivered`,
+                      `${dev.assignedIssues} story/sub-task items · ${dev.completedIssues} completed · ${dev.deliveredSP} SP delivered`,
                       issues.filter((i) => i.assignee === dev.name)
                     )
                   }
@@ -233,7 +231,6 @@ export function DeveloperTab({
                     <p className="text-sm font-semibold text-jira-text">{dev.assignedIssues}</p>
                     <p className="text-[11px] text-jira-text-muted mt-0.5">
                       <span className="font-semibold text-jira-blue">{dev.assignedStories}</span> stories ·{" "}
-                      <span>{dev.assignedTasks ?? 0} tasks · </span>
                       <span className="font-semibold text-jira-amber">{dev.assignedSubtasks}</span> sub-tasks
                     </p>
                   </td>
@@ -241,7 +238,6 @@ export function DeveloperTab({
                     <p className="text-sm font-semibold text-jira-green">{dev.completedIssues}</p>
                     <p className="text-[11px] text-jira-text-muted mt-0.5">
                       <span className="font-semibold text-jira-green">{dev.completedStories}</span> stories ·{" "}
-                      <span>{dev.completedTasks ?? 0} tasks · </span>
                       <span className="font-semibold text-jira-green">{dev.completedSubtasks}</span> sub-tasks
                     </p>
                   </td>
@@ -294,13 +290,13 @@ export function DeveloperTab({
                 <td className="px-6 py-3 text-center">
                   {totalAssigned}
                   <p className="text-[11px] font-normal text-jira-text-muted mt-0.5">
-                    {totalAssignedStories} stories · {totalAssignedTasks} tasks · {totalAssignedSubtasks} sub-tasks
+                    {totalAssignedStories} stories · {totalAssignedSubtasks} sub-tasks
                   </p>
                 </td>
                 <td className="px-6 py-3 text-center text-jira-green">
                   {totalCompleted}
                   <p className="text-[11px] font-normal text-jira-text-muted mt-0.5">
-                    {totalCompletedStories} stories · {totalCompletedTasks} tasks · {totalCompletedSubtasks} sub-tasks
+                    {totalCompletedStories} stories · {totalCompletedSubtasks} sub-tasks
                   </p>
                 </td>
                 <td className="px-6 py-3 text-right text-jira-blue">
@@ -342,7 +338,7 @@ export function DeveloperTab({
                   ["Items without estimate", String(focusedDeveloper.unestimatedIssues ?? 0)],
                 ].map(([label, value]) => <div key={label} className="rounded border border-jira-border bg-white p-3"><p className="text-xs text-jira-text-muted">{label}</p><p className="mt-1 font-semibold text-jira-text">{value}</p></div>)}
               </div>
-              <p className="mt-3 text-xs text-jira-text-muted">{focusedDeveloper.team} · Stories, tasks and subtasks in the selected filters. Utilization is Jira time logged divided by available sprint hours, using 6 effective hours × 10 weekdays (60 hours) for each selected sprint. A missing worklog counts as 0 logged hours.</p>
+              <p className="mt-3 text-xs text-jira-text-muted">{focusedDeveloper.team} · Stories and subtasks in the selected filters. Utilization is Jira time logged divided by available sprint hours, using 6 effective hours × 10 weekdays (60 hours) for each selected sprint. A missing worklog counts as 0 logged hours.</p>
             </div>
           )}
           onClose={() => setModal(null)}

@@ -868,7 +868,7 @@ export function computeDashboardData(
   const developerItems = commonized.items
     .map(withParentContext)
     .filter((item) => {
-      if (!/^(story|task|sub-?task)$/i.test(item.workType)) return false;
+      if (!/^(story|sub-?task)$/i.test(item.workType)) return false;
       if (!matchesSelection(item.podKey, podId)) return false;
       if (!matchesItemQuarter(item)) return false;
       if (filters.sprintStatus && filters.sprintStatus !== "all" && !item.sprints.some(matchesSprintQuarter)) return false;
@@ -1539,8 +1539,6 @@ export function computeDashboardData(
     .map(([name, stat]) => ({
       name,
       team: [...new Set(developerItems.filter((item) => (item.assignee || "Unassigned") === name).map((item) => item.podName || item.team))].join(", "),
-      assignedTasks: developerItems.filter((item) => (item.assignee || "Unassigned") === name && /^task$/i.test(item.workType)).length,
-      completedTasks: developerItems.filter((item) => (item.assignee || "Unassigned") === name && /^task$/i.test(item.workType) && DONE_STATUSES.has(item.status)).length,
       loggedHours: estimateHours(stat.loggedSeconds),
       capacityHours: windowNames.length * 60,
       utilizationPct: windowNames.length > 0
@@ -1815,8 +1813,6 @@ export function computeDashboardData(
       return {
         name,
         team: [...new Set(developerItems.filter((item) => (item.assignee || "Unassigned") === name).map((item) => item.podName || item.team))].join(", "),
-      assignedTasks: developerItems.filter((item) => (item.assignee || "Unassigned") === name && /^task$/i.test(item.workType)).length,
-      completedTasks: developerItems.filter((item) => (item.assignee || "Unassigned") === name && /^task$/i.test(item.workType) && DONE_STATUSES.has(item.status)).length,
       loggedHours: estimateHours(developerItems.filter((item) => (item.assignee || "Unassigned") === name).reduce((sum, item) => sum + (item.timeSpentSeconds || 0), 0)),
       unestimatedIssues: developerItems.filter((item) => (item.assignee || "Unassigned") === name && !(item.hasOriginalEstimate ?? ((item.originalEstimateSeconds || 0) > 0))).length,
         incompleteSP: Math.round(stat.incompleteSP),
