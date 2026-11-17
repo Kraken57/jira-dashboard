@@ -70,6 +70,9 @@ export function MetricCard({
   const isFlat = trendDirection === 0;
   const isGood = trendDirection > 0;
   const Icon = ICONS[title];
+  const velocityValue = title === "Velocity" && typeof value === "string"
+    ? value.match(/^(.*?)\s+(\(avg .*\/sprint\))$/)
+    : null;
 
   return (
     <button
@@ -87,7 +90,14 @@ export function MetricCard({
         <h3 className="text-sm font-bold text-jira-text-muted uppercase tracking-wider">{title}</h3>
       </div>
       <div className="flex items-center justify-between mb-3">
-        <p className="text-2xl font-bold text-jira-text">{value}</p>
+        <p className="flex flex-wrap items-baseline gap-x-1.5 text-2xl font-bold text-jira-text">
+          {velocityValue ? (
+            <>
+              <span>{velocityValue[1]}</span>
+              <span className="text-xs font-semibold text-jira-text-muted">{velocityValue[2]}</span>
+            </>
+          ) : value}
+        </p>
         {Icon && <Icon className={`w-7 h-7 ${c.text}`} />}
       </div>
       <p className="text-xs text-jira-text-muted mb-3">{subtitle}</p>
