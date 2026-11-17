@@ -94,7 +94,7 @@ export function MetricCard({
           {velocityValue ? (
             <>
               <span>{velocityValue[1]}</span>
-              <span className="text-xs font-semibold text-jira-text-muted">{velocityValue[2]}</span>
+              <span className={`text-sm font-bold ${c.text}`}>{velocityValue[2]}</span>
             </>
           ) : value}
         </p>

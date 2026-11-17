@@ -1464,7 +1464,7 @@ export function computeDashboardData(
     },
     {
       title: "Velocity",
-      value: `${currentVelocity} pts${windowNames.length > 1 ? ` (avg ${averageSelectedSprintVelocity}/sprint)` : ""}`,
+      value: `${currentVelocity} SP${windowNames.length > 1 ? ` (avg ${averageSelectedSprintVelocity} SP/sprint)` : ""}`,
       subtitle:
         velocityUsesPodAverage
           ? "Average of each pod’s average completed SP per sprint"
