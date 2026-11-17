@@ -5,7 +5,9 @@ import type { ContributorMetrics } from "@/lib/jira/contributorMetrics";
 import { ContributorDetailsModal } from "./ContributorDetailsModal";
 
 const format = (value: number, digits = 2) => value.toLocaleString(undefined, { maximumFractionDigits: digits });
-const rate = (value: number) => value.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+const hoursPerPoint = (storyPointsPerHour: number | null) => storyPointsPerHour && storyPointsPerHour > 0
+  ? (1 / storyPointsPerHour).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 })
+  : "N/A";
 const PAGE_SIZE = 20;
 
 export function ContributorSummary({ data, scopeLabel, jiraDomain }: { data: ContributorMetrics; scopeLabel: string; jiraDomain?: string }) {
@@ -33,14 +35,14 @@ export function ContributorSummary({ data, scopeLabel, jiraDomain }: { data: Con
     <div className="border-b border-jira-border px-5 py-4">
       <h3 className="text-sm font-bold text-jira-text">Contribution & Efficiency</h3>
       <p className="mt-1 text-xs text-jira-text-muted">{scopeLabel} · {data.people.length} contributors</p>
-      <p className="mt-2 text-xs text-jira-text-muted">Attributed Story Points are awarded when a story is completed, based on each contributor’s share of its subtask Original Estimates. Efficiency = Attributed Story Points ÷ Logged Effort.</p>
+      <p className="mt-2 text-xs text-jira-text-muted">Attributed Story Points are awarded when a story is completed, based on each contributor’s share of its subtask Original Estimates. Efficiency = Logged Effort ÷ Attributed Story Points (hours per story point).</p>
     </div>
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-jira-border px-5 py-3">
       <input type="search" value={search} onChange={(event) => { setSearch(event.target.value); setPage(0); }} placeholder="Search contributors…" aria-label="Search contributors" className="min-w-48 rounded border border-jira-border px-3 py-2 text-xs" />
       <select value={sort} aria-label="Sort contributors" className="rounded border border-jira-border bg-white px-3 py-2 text-xs" onChange={(event) => { setSort(event.target.value); setPage(0); }}>
         <option value="name">Name: A–Z</option>
-        <option value="efficiency-desc">Efficiency: highest first</option>
-        <option value="efficiency-asc">Efficiency: lowest first</option>
+        <option value="efficiency-desc">Hours per point: fewest first</option>
+        <option value="efficiency-asc">Hours per point: most first</option>
         <option value="points">Attributed SP: highest first</option>
       </select>
     </div>
@@ -50,7 +52,7 @@ export function ContributorSummary({ data, scopeLabel, jiraDomain }: { data: Con
           <th className="px-4 py-3">Contributor</th><th className="px-4 py-3 text-right">Subtask Count</th>
           <th className="px-4 py-3 text-right">Original Estimates<span className="block font-normal">Hours</span></th>
           <th className="px-4 py-3 text-right">Logged Effort<span className="block font-normal">Hours</span></th>
-          <th className="px-4 py-3 text-right">Attributed Story Points</th><th className="px-4 py-3 text-right">Efficiency<span className="block font-normal">SP/hour</span></th>
+          <th className="px-4 py-3 text-right">Attributed Story Points</th><th className="px-4 py-3 text-right">Efficiency<span className="block font-normal">hours / story point</span></th>
         </tr></thead>
         <tbody className="divide-y divide-jira-border">
           {!people.length && <tr><td colSpan={6} className="px-4 py-8 text-center text-jira-text-muted">No contributors match this selection.</td></tr>}
@@ -62,13 +64,13 @@ export function ContributorSummary({ data, scopeLabel, jiraDomain }: { data: Con
             <td className="px-4 py-3 font-semibold text-jira-blue">{person.name}</td><td className="px-4 py-3 text-right tabular-nums">{person.subtaskCount}</td>
             <td className="px-4 py-3 text-right tabular-nums">{format(person.originalEstimateHours)}</td><td className="px-4 py-3 text-right tabular-nums">{format(person.loggedEffortHours)}</td>
             <td className="px-4 py-3 text-right font-semibold tabular-nums text-jira-blue">{format(person.attributedStoryPoints)}</td>
-            <td className={`px-4 py-3 text-right tabular-nums font-semibold ${person.efficiency === null || person.efficiency < 0.125 ? "text-red-700" : "text-green-700"}`} title={person.efficiency === null ? "No logged effort in the selected scope" : person.attributedStoryPoints === 0 ? "No attributed points from completed stories in this scope; logged effort is present" : "Attributed Story Points divided by Logged Effort"}>{person.efficiency === null ? "N/A" : rate(person.efficiency)}</td>
+            <td className={`px-4 py-3 text-right tabular-nums font-semibold ${person.efficiency === null || person.efficiency < 0.125 ? "text-red-700" : "text-green-700"}`} title={person.efficiency === null ? "No logged effort in the selected scope" : person.attributedStoryPoints === 0 ? "No attributed points from completed stories in this scope; logged effort is present" : "Logged Effort divided by Attributed Story Points"}>{hoursPerPoint(person.efficiency)}</td>
           </tr>)}
         </tbody>
         <tfoot className="border-t-2 border-jira-border bg-jira-bg/60 font-semibold"><tr>
           <td className="px-4 py-3">{search.trim() ? "Matching contributors total" : "Overall total"}</td><td className="px-4 py-3 text-right tabular-nums">{total.subtasks}</td>
           <td className="px-4 py-3 text-right tabular-nums">{format(total.estimate)}</td><td className="px-4 py-3 text-right tabular-nums">{format(total.logged)}</td>
-          <td className="px-4 py-3 text-right tabular-nums">{format(total.points)}</td><td className={`px-4 py-3 text-right tabular-nums font-semibold ${total.logged <= 0 || total.points / total.logged < 0.125 ? "text-red-700" : "text-green-700"}`}>{total.logged > 0 ? format(total.points / total.logged, 3) : "N/A"}</td>
+          <td className="px-4 py-3 text-right tabular-nums">{format(total.points)}</td><td className={`px-4 py-3 text-right tabular-nums font-semibold ${total.logged <= 0 || total.points <= 0 || total.logged / total.points > 8 ? "text-red-700" : "text-green-700"}`}>{total.points > 0 ? format(total.logged / total.points, 2) : "N/A"}</td>
         </tr></tfoot>
       </table>
     </div>

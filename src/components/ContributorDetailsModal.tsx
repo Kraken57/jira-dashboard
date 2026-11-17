@@ -6,7 +6,9 @@ import { JiraWorkLink } from "./JiraWorkLink";
 import type { IndividualContribution } from "@/lib/jira/contributorMetrics";
 
 const number = (value: number, digits = 2) => value.toLocaleString(undefined, { maximumFractionDigits: digits });
-const rate = (value: number) => value.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+const hoursPerPoint = (storyPointsPerHour: number | null) => storyPointsPerHour && storyPointsPerHour > 0
+  ? number(1 / storyPointsPerHour)
+  : "N/A";
 const date = (value: string) => new Date(value).toLocaleDateString("en-US", {
   month: "short", day: "numeric", year: "numeric", timeZone: "UTC",
 }).toUpperCase();
@@ -32,7 +34,7 @@ export function ContributorDetailsModal({ person, scopeLabel, jiraDomain, onClos
     <div className="space-y-4 p-4 sm:p-5">
       <div className="rounded-lg border border-jira-border bg-slate-50 px-4 py-3 text-xs text-jira-text-muted">
         <p className="font-semibold text-jira-text">Overall · selected filters</p>
-        <p className="mt-1">{person.subtaskCount} subtasks · {number(person.originalEstimateHours)} hrs Original Estimates · {number(person.loggedEffortHours)} hrs Logged Effort · <strong>{number(person.attributedStoryPoints)} attributed SP</strong> · Efficiency: <strong>{person.efficiency === null ? "N/A" : `${rate(person.efficiency)} SP/hour`}</strong></p>
+        <p className="mt-1">{person.subtaskCount} subtasks · {number(person.originalEstimateHours)} hrs Original Estimates · {number(person.loggedEffortHours)} hrs Logged Effort · <strong>{number(person.attributedStoryPoints)} attributed SP</strong> · Efficiency: <strong>{hoursPerPoint(person.efficiency)} hours / story point</strong></p>
       </div>
       {!card ? <p className="rounded border border-jira-border p-5 text-sm text-jira-text-muted">No sprint breakdown is available for this contributor in the selected filters.</p> : <>
         <nav aria-label="Contributor sprint cards" className="sticky top-0 z-10 flex flex-wrap items-center gap-2 bg-white py-2">
@@ -62,7 +64,7 @@ export function ContributorDetailsModal({ person, scopeLabel, jiraDomain, onClos
                 ["Original Estimates", `${number(card.originalEstimateHours)} hrs`],
                 ["Logged Effort", `${number(card.loggedEffortHours)} hrs`],
                 ["Attributed Story Points", number(card.attributedStoryPoints)],
-                ["Efficiency", card.efficiency === null ? "N/A" : `${rate(card.efficiency)} SP/hour`],
+                ["Efficiency", `${hoursPerPoint(card.efficiency)} hours / story point`],
               ].map(([label, value]) => {
                 const isEfficiency = label === "Efficiency";
                 const efficiencyBand = !isEfficiency
@@ -81,8 +83,8 @@ export function ContributorDetailsModal({ person, scopeLabel, jiraDomain, onClos
             </div>
             <div className="space-y-4 px-4 pb-4">
               <div className="rounded-lg bg-blue-50 px-3 py-3 text-xs leading-relaxed text-jira-text-muted">
-                <p><strong>Efficiency:</strong> {number(card.attributedStoryPoints)} attributed SP ÷ {number(card.loggedEffortHours)} hrs Logged Effort = {card.efficiency === null ? "N/A (no logged effort in this selected work)" : `${rate(card.efficiency)} SP/hour`}.</p>
-                <p className="mt-1">Attributed points are credited only when a parent story is completed. Work on an open story can have Original Estimates and Logged Effort but still show 0 attributed points and 0 efficiency until the story is completed. Estimates and logged hours follow assigned work in this sprint, as in Capacity View.</p>
+                <p><strong>Efficiency:</strong> {number(card.loggedEffortHours)} hrs Logged Effort ÷ {number(card.attributedStoryPoints)} attributed SP = {hoursPerPoint(card.efficiency)} hours per story point.</p>
+                <p className="mt-1">Attributed points are credited only when a parent story is completed. Work on an open story can have Original Estimates and Logged Effort but still show 0 attributed points and N/A efficiency until the story is completed. More than 8 hours per story point is red; 8 or fewer is green. Estimates and logged hours follow assigned work in this sprint, as in Capacity View.</p>
               </div>
               <section aria-label="Story point calculations">
                 <h5 className="mb-2 text-xs font-bold text-jira-text">Story point calculations · {card.allocations.length} completed stories</h5>
