@@ -579,7 +579,8 @@ page.
 The first four cards summarize the selected contributor scope: total contributors,
 average logged effort, average attributed story points, and average efficiency.
 Each average excludes zero and unavailable values; efficiency is the mean of
-nonzero individual efficiencies. The unfinished-work
+nonzero individual efficiencies, displayed as hours per story point. The Average
+Efficiency card notes that it is based only on logged effort. The unfinished-work
 Status filter applies to the contributor slippage table and bottom table, not these
 filter-scoped contributor summaries.
 
@@ -1633,4 +1634,4 @@ If full Forge parity is required, port the logic from `metricsEngine.ts` into
 
 ### Audit checks and Aha URL
 
-Audit cards are grouped under Feature related issues, Story related issues, and Subtask related issues. “Stories without subtasks linked” is grouped with story checks and counts scoped Stories with no active linked sub-task. Stories Without Estimates counts zero-point stories except Pending Approval. The Orphan Feature card uses an empty/null Aha! URL field, not absence of child stories; only its label changed. The Aha! URL field is discovered by name using Jira field metadata; `JIRA_AHA_URL_FIELD` optionally overrides discovery. Field IDs can differ by site. Unknown mapping appears as Unavailable, and partial field coverage is marked with + rather than a misleading zero. Unknown/not-returned field values are not treated as empty. Equivalent Jira JQL for this field is `issuetype = Feature AND cf[10280] IS EMPTY`, additionally scoped by project/pod. Counts only cover the fetched raw feed; restrictive base JQL or Jira access can limit coverage. Audit items are deduplicated by key, exclude canceled work, and use the current shared pod/quarter/sprint scope.
+Audit cards are grouped under Feature related issues, Story related issues, Subtask related issues, and Defect related issues. “Stories without subtasks” counts scoped stories with no active sub-task. “Subtasks without original estimate” counts scoped sub-tasks whose parent story is In Progress and whose Jira original estimate is zero or missing. Stories Without Estimates counts zero-point stories except Pending Approval. The Orphan Feature card uses an empty/null Aha! URL field, not absence of child stories; only its label changed. The Aha! URL field is discovered by name using Jira field metadata; `JIRA_AHA_URL_FIELD` optionally overrides discovery. Field IDs can differ by site. Unknown mapping appears as Unavailable, and partial field coverage is marked with + rather than a misleading zero. Unknown/not-returned field values are not treated as empty. Equivalent Jira JQL for this field is `issuetype = Feature AND cf[10280] IS EMPTY`, additionally scoped by project/pod. Counts only cover the fetched raw feed; restrictive base JQL or Jira access can limit coverage. Audit items are deduplicated by key, exclude canceled work, and use the current shared pod/quarter/sprint scope.

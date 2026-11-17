@@ -89,6 +89,13 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
       const normalized = status.trim().toLowerCase().replace(/[\s_-]+/g, " ");
       return normalized === "pending approval";
     };
+    const hasNoOriginalEstimate = (item: JiraWorkItem) => !(Number(item.originalEstimateSeconds) > 0);
+    const isSubtaskOfInProgressStory = (item: JiraWorkItem) => {
+      if (!subtaskType.test(item.workType) || !item.parentKey) return false;
+      const parent = byKey.get(item.parentKey);
+      const parentType = item.parentWorkType || parent?.workType || "";
+      return storyType.test(parentType) && parent?.status.trim().toLowerCase() === "in progress";
+    };
     return [
       {
         title: "Features without Aha link",
@@ -126,11 +133,18 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
         tone: "orange",
       },
       {
-        title: "Stories without subtasks linked",
-        note: "Stories with no linked sub-tasks",
-        explanation: "A story is counted when no active sub-task in the fetched Jira data links to it.",
+        title: "Stories without subtasks",
+        note: "Stories with no sub-tasks",
+        explanation: "A story is counted when no active sub-task in the fetched Jira data has it as its parent.",
         issues: scopedAuditItems.filter((item) => storyType.test(item.workType) && !storiesWithSubtasks.has(item.key)),
         tone: "blue",
+      },
+      {
+        title: "Subtasks without original estimate",
+        note: "Subtasks under In Progress stories with no original estimate",
+        explanation: "A sub-task is counted when its parent is an In Progress Story and it has no positive original estimate in Jira.",
+        issues: scopedAuditItems.filter((item) => isSubtaskOfInProgressStory(item) && hasNoOriginalEstimate(item)),
+        tone: "teal",
       },
       {
         title: "Stories Without Estimates",
@@ -198,7 +212,8 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
           {[
             { title: "Feature related issues", cards: auditCards.filter((card) => card.title.startsWith("Features without")) },
             { title: "Story related issues", cards: auditCards.filter((card) => card.title.startsWith("Stories without")) },
-            { title: "Subtask related issues", cards: auditCards.filter((card) => card.title.startsWith("Defects without")) },
+            { title: "Subtask related issues", cards: auditCards.filter((card) => card.title.startsWith("Subtasks without")) },
+            { title: "Defect related issues", cards: auditCards.filter((card) => card.title.startsWith("Defects without")) },
           ].map((group) => (
             <section key={group.title}>
               <h3 className="mb-3 text-sm font-semibold text-slate-700">{group.title}</h3>
