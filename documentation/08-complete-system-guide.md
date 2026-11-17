@@ -886,8 +886,8 @@ completes in only one source sprint.
 
 | Card | Formula |
 |---|---|
-| Say/Do Ratio | One sprint: completed SP / committed SP × 100. Multiple selected sprints: average each sprint's completed-SP percentage. |
-| Sprint Carry Over | One sprint: SP left incomplete in an ended source sprint and assigned to a later sprint / committed SP × 100. Multiple selected sprints: average each sprint's carry-over percentage. |
+| Say/Do Ratio | Closed sprints only. One sprint: completed SP / committed SP × 100. Multiple selected sprints: average each closed sprint's completed-SP percentage. No closed sprint in scope displays 0%. |
+| Sprint Carry Over | Closed sprints only. One sprint: SP left incomplete in an ended source sprint and assigned to a later sprint / committed SP × 100. Multiple selected sprints: average each closed sprint's carry-over percentage. No closed sprint in scope displays 0%. |
 | Velocity | Normally, SP completed across the selected scope; when multiple sprints are selected, also show average completed SP per selected sprint. When All Pods, All Quarters / PIs, and All Sprints are selected, the main value remains each pod's average completed SP per sprint, then those pod averages are averaged equally. |
 | Feature Predictability | Uses the selected features and ancestors of selected work, with story delivery/due-date rules from `featureDelivery.ts` |
 
