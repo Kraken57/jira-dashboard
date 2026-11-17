@@ -87,8 +87,8 @@ export function DiagnosisTab({ data, podName, jiraDomain, statusFilter, scopeLab
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { title: "Total contributors", value: String(contributorMetrics.length), detail: "Unique people in the selected filters" },
-          { title: "Average logged efforts", value: averageLoggedEffort === null ? "N/A" : `${oneDecimal(averageLoggedEffort)} h`, detail: "Average for contributors with logged time" },
-          { title: "Average attributed story points", value: averageAttributedPoints === null ? "N/A" : `${oneDecimal(averageAttributedPoints)} SP`, detail: "Average for contributors with attributed points" },
+          { title: "Average logged efforts", value: averageLoggedEffort === null ? "N/A" : `${oneDecimal(averageLoggedEffort)} h`, detail: "Total logged hours ÷ contributors with logged time" },
+          { title: "Average attributed story points", value: averageAttributedPoints === null ? "N/A" : `${oneDecimal(averageAttributedPoints)} SP`, detail: "Total attributed SP ÷ contributors with attributed points" },
           { title: "Average efficiency", value: hoursPerStoryPoint === null ? "N/A" : `1 SP in ${oneDecimal(hoursPerStoryPoint)} hrs`, detail: "Based only on logged effort" },
         ].map((card) => (
           <div key={card.title} className="min-w-0 rounded-lg border border-jira-border bg-white p-4 shadow-sm">
