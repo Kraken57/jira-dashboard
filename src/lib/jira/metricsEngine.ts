@@ -1173,8 +1173,24 @@ export function computeDashboardData(
     .reduce((sum, item) => sum + (item.storyPoints || 0), 0);
   const scopeCarriedSP = scopeItems.filter((item) => carriedScopeKeys.has(item.key))
     .reduce((sum, item) => sum + (item.storyPoints || 0), 0);
-  const sayDoRatio = scopeCommittedSP > 0 ? Math.round(scopeDoneSP / scopeCommittedSP * 100) : 0;
-  const carryOver = scopeCommittedSP > 0 ? Math.round(scopeCarriedSP / scopeCommittedSP * 100) : 0;
+  const averagePerSprintPercent = (numerator: (sprint: (typeof sprintStats)[number]) => number) => {
+    const ratios = sprintStats
+      .filter((sprint) => sprint.committed > 0)
+      .map((sprint) => (numerator(sprint) / sprint.committed) * 100);
+    return ratios.length
+      ? Math.round(ratios.reduce((sum, ratio) => sum + ratio, 0) / ratios.length)
+      : 0;
+  };
+  const useSprintAverages = windowNames.length > 1;
+  const sayDoRatio = useSprintAverages
+    ? averagePerSprintPercent((sprint) => sprint.done)
+    : scopeCommittedSP > 0 ? Math.round(scopeDoneSP / scopeCommittedSP * 100) : 0;
+  const carryOver = useSprintAverages
+    ? averagePerSprintPercent((sprint) => sprint.carried)
+    : scopeCommittedSP > 0 ? Math.round(scopeCarriedSP / scopeCommittedSP * 100) : 0;
+  const averageSelectedSprintVelocity = sprintStats.length
+    ? Math.round((sprintStats.reduce((sum, sprint) => sum + sprint.done, 0) / sprintStats.length) * 10) / 10
+    : 0;
   const velocityUsesPodAverage = isAllSelection(podId)
     && isAllSelection(quarterId)
     && allSprintsSelected;
@@ -1410,7 +1426,9 @@ export function computeDashboardData(
     {
       title: "Say/Do Ratio",
       value: `${sayDoRatio}%`,
-      subtitle: "Completed committed SP ÷ committed SP",
+      subtitle: useSprintAverages
+        ? "Average Say/Do across selected sprints"
+        : "Completed committed SP ÷ committed SP",
       trend: sayDoTrend,
       trendLabel: trendLabelFor(),
       trendUnit: "pp",
@@ -1422,7 +1440,9 @@ export function computeDashboardData(
     {
       title: "Sprint Carry Over",
       value: `${carryOver}%`,
-      subtitle: "Spilled-over committed SP ÷ committed SP",
+      subtitle: useSprintAverages
+        ? "Average carry-over across selected sprints"
+        : "Spilled-over committed SP ÷ committed SP",
       trend: carryTrend,
       trendLabel: trendLabelFor(),
       trendUnit: "pp",
@@ -1433,7 +1453,7 @@ export function computeDashboardData(
     },
     {
       title: "Velocity",
-      value: `${currentVelocity} pts`,
+      value: `${currentVelocity} pts${windowNames.length > 1 ? ` (avg ${averageSelectedSprintVelocity}/sprint)` : ""}`,
       subtitle:
         velocityUsesPodAverage
           ? "Average of each pod’s average completed SP per sprint"
@@ -1927,8 +1947,12 @@ export function computeDashboardData(
     "Say/Do Ratio": {
       what:
         "Of all the story points committed in the selected scope, how much was actually completed.",
-      formula: "Done SP ÷ Committed SP × 100",
-      calculation: `${fmt(scopeDoneSP)} SP done ÷ ${fmt(scopeCommittedSP)} SP committed = ${sayDoRatio}%`,
+      formula: useSprintAverages
+        ? "Average of each selected sprint’s (Done SP ÷ Committed SP × 100)"
+        : "Done SP ÷ Committed SP × 100",
+      calculation: useSprintAverages
+        ? `Average Say/Do across ${sprintStats.length} selected sprints = ${sayDoRatio}%`
+        : `${fmt(scopeDoneSP)} SP done ÷ ${fmt(scopeCommittedSP)} SP committed = ${sayDoRatio}%`,
       howToCompare:
         "Compare against the 80% healthy target, the previous sprint, and other pods. A drop usually means scope was added late or work stalled mid-sprint.",
       target: {
@@ -1965,8 +1989,12 @@ export function computeDashboardData(
     "Sprint Carry Over": {
       what:
         "The share of committed story points that was not completed and spills into later work.",
-      formula: "Carried SP ÷ Committed SP × 100",
-      calculation: `${fmt(scopeCarriedSP)} SP carried ÷ ${fmt(scopeCommittedSP)} SP committed = ${carryOver}%`,
+      formula: useSprintAverages
+        ? "Average of each selected sprint’s (Carried SP ÷ Committed SP × 100)"
+        : "Carried SP ÷ Committed SP × 100",
+      calculation: useSprintAverages
+        ? `Average carry-over across ${sprintStats.length} selected sprints = ${carryOver}%`
+        : `${fmt(scopeCarriedSP)} SP carried ÷ ${fmt(scopeCommittedSP)} SP committed = ${carryOver}%`,
       howToCompare:
         "Lower is better. Compare with the 18% target, the previous sprint, and the Delivery Diagnosis tab to see which reasons drive the carry-over.",
       target: {
