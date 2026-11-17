@@ -29,8 +29,10 @@ export function FeatureDetailsModal({ features, items, doneStatuses, jiraDomain,
   const [statusFilter, setStatusFilter] = useState<FeatureStatusFilter>("All");
   const [projectTypeFilter, setProjectTypeFilter] = useState<ProjectType>("All");
   const rows = useMemo(() => features.map((feature) => {
-    const detail = byKey.get(feature.key) ? featureDelivery(byKey.get(feature.key)!, items, doneStatuses) : null;
-    return { feature, detail, status: detail?.status ?? "No stories", projectType: getProjectType(feature.fixVersions) };
+    const sourceFeature = byKey.get(feature.key);
+    const detail = sourceFeature ? featureDelivery(sourceFeature, items, doneStatuses) : null;
+    const fixVersions = feature.fixVersions?.length ? feature.fixVersions : sourceFeature?.fixVersions;
+    return { feature: { ...feature, fixVersions }, detail, status: detail?.status ?? "No stories", projectType: getProjectType(fixVersions) };
   }), [features, items, doneStatuses]);
   const counts = rows.reduce((result, row) => {
     const key = row.status === "Delivered" ? "completed" : row.status === "In Progress" ? "inProgress" : row.status === "Past Due Date" ? "pastDue" : "noStories";
@@ -86,7 +88,7 @@ export function FeatureDetailsModal({ features, items, doneStatuses, jiraDomain,
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs text-jira-text-muted">{counts.noStories} features have no child stories</p>
           <div className="flex flex-wrap gap-3">
-            <label className="flex items-center gap-2 text-xs font-medium text-jira-text-muted">Status
+            <label className="flex items-center gap-2 text-xs font-medium text-jira-text-muted">Filter status
               <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as FeatureStatusFilter)} className="rounded border border-jira-border bg-white px-2 py-1.5 text-jira-text">
                 {(["All", "Delivered", "In Progress", "Past Due Date", "No stories"] as FeatureStatusFilter[]).map((status) => <option key={status} value={status}>{status}</option>)}
               </select>

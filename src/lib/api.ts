@@ -164,8 +164,8 @@ export async function fetchDashboardData(filters: DashboardFilters): Promise<Das
 
 // ---- Raw feed (fetch once per TTL window, browser computes the filters) ----
 
-// v4: invalidate browser snapshots from before optional UAT/leakage feeds existed.
-const RAW_SESSION_KEY = "jira-raw-feed-v12";
+// v13: invalidate browser snapshots from before Jira Fix Version values were included.
+const RAW_SESSION_KEY = "jira-raw-feed-v13";
 const RAW_FRESH_MS = 5 * 60 * 1000;
 const RAW_STALE_OK_MS = 30 * 60 * 1000;
 

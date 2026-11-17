@@ -1549,6 +1549,7 @@ function calculateKPIs(
       priority: i.priority || "Medium",
       createdDate: i.createdDate || "",
       dueDate: i.dueDate || "",
+      fixVersions: i.fixVersions || [],
       isDone: isDoneStatus(i.status),
       completionSprint: completionSprintFor(i) || undefined,
       resolutionDate: i.resolutionDate || undefined,
@@ -2129,7 +2130,7 @@ resolver.define("getRawFeed", async (req) => {
       const ageMs = Date.now() - meta.fetchedAt;
       if (ageMs <= FEED_TTL_MS) {
         const envelope = await assembleFeed(meta);
-        if (envelope && Array.isArray(envelope.qaDefects)) {
+        if (envelope && Array.isArray(envelope.qaDefects) && envelope.items.every((item) => Array.isArray(item.fixVersions))) {
           // Older cached envelopes may contain Zephyr data. Keep the raw Jira
           // resolver response small and let the Quality tab request Zephyr.
           const { zephyr: _legacyZephyr, ...jiraEnvelope } = envelope;
@@ -2139,7 +2140,7 @@ resolver.define("getRawFeed", async (req) => {
         // # ponytail: Forge may cut post-response promises; if it does, the
         // next open pays the refresh instead of this user (still never both).
         const envelope = await assembleFeed(meta);
-        if (envelope && Array.isArray(envelope.qaDefects)) {
+        if (envelope && Array.isArray(envelope.qaDefects) && envelope.items.every((item) => Array.isArray(item.fixVersions))) {
           const { zephyr: _legacyZephyr, ...jiraEnvelope } = envelope;
           void fetchAndStoreFeed().catch((err: unknown) =>
             console.warn("[feed] background refresh failed:", err)
