@@ -65,6 +65,16 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
     const isFeature = (item: JiraWorkItem) => /^feature$/i.test(item.workType) ||
       (/^epic$/i.test(item.workType) && !projectsWithFeatures.has(item.projectKey));
     const storyType = /^story$/i;
+    const storiesWithoutSubtasksStatuses = new Set([
+      "development",
+      "continue",
+      "completed",
+      "in progress",
+      "in review",
+      "test case review",
+      "test completed",
+      "in test",
+    ]);
     const bugType = /^(bug|defect)$/i;
     const subtaskType = /^sub-?task$/i;
     const byKey = new Map(auditItems.map((item) => [item.key, item]));
@@ -88,6 +98,10 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
     const isInEstimateExcludedStatus = (status: string) => {
       const normalized = status.trim().toLowerCase().replace(/[\s_-]+/g, " ");
       return normalized === "pending approval";
+    };
+    const isStoryWithoutSubtasksAuditStatus = (status: string) => {
+      const normalized = status.trim().toLowerCase().replace(/[\s_-]+/g, " ");
+      return storiesWithoutSubtasksStatuses.has(normalized);
     };
     const hasNoOriginalEstimate = (item: JiraWorkItem) => !(Number(item.originalEstimateSeconds) > 0);
     const isSubtaskOfInProgressStory = (item: JiraWorkItem) => {
@@ -134,9 +148,13 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
       },
       {
         title: "Stories without subtasks",
-        note: "Stories with no sub-tasks",
-        explanation: "A story is counted when no active sub-task in the fetched Jira data has it as its parent.",
-        issues: scopedAuditItems.filter((item) => storyType.test(item.workType) && !storiesWithSubtasks.has(item.key)),
+        note: "In-progress and testing stories with no sub-tasks",
+        explanation: "Only stories in Development, Continue, Completed, In Progress, In Review, Test Case Review, Test Completed, or In Test are counted, and only when no active sub-task in the fetched Jira data has them as its parent.",
+        issues: scopedAuditItems.filter((item) =>
+          storyType.test(item.workType) &&
+          isStoryWithoutSubtasksAuditStatus(item.status) &&
+          !storiesWithSubtasks.has(item.key)
+        ),
         tone: "blue",
       },
       {
