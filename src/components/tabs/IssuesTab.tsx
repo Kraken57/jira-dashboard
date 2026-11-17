@@ -68,6 +68,10 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
     const bugType = /^(bug|defect)$/i;
     const subtaskType = /^sub-?task$/i;
     const byKey = new Map(auditItems.map((item) => [item.key, item]));
+    const storiesWithSubtasks = new Set(auditItems
+      .filter((item) => subtaskType.test(item.workType) && !/^cancel{1,2}ed$/i.test(item.status.trim()))
+      .map((item) => item.parentKey?.trim())
+      .filter((key): key is string => Boolean(key)));
     const resolvedParentType = (item: JiraWorkItem) => {
       const parent = item.parentKey ? byKey.get(item.parentKey) : undefined;
       return { type: item.parentWorkType || parent?.workType || "", projectKey: parent?.projectKey || item.projectKey };
@@ -81,7 +85,6 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
     };
     const isFeatureParent = (type: string, projectKey?: string) => /^feature$/i.test(type) ||
       (/^epic$/i.test(type) && !projectsWithFeatures.has(projectKey));
-    const isStoryParent = (type: string) => /^story$/i.test(type);
     const isInEstimateExcludedStatus = (status: string) => {
       const normalized = status.trim().toLowerCase().replace(/[\s_-]+/g, " ");
       return normalized === "pending approval";
@@ -123,10 +126,10 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
         tone: "orange",
       },
       {
-        title: "Subtasks without Story links",
-        note: "Sub-tasks missing a linked Story parent",
-        explanation: "A sub-task is counted when it has no parent, or the fetched parent issue is not a Story.",
-        issues: scopedAuditItems.filter((item) => subtaskType.test(item.workType) && isOrphanedFrom(item, isStoryParent)),
+        title: "Stories without subtasks linked",
+        note: "Stories with no linked sub-tasks",
+        explanation: "A story is counted when no active sub-task in the fetched Jira data links to it.",
+        issues: scopedAuditItems.filter((item) => storyType.test(item.workType) && !storiesWithSubtasks.has(item.key)),
         tone: "blue",
       },
       {
@@ -195,7 +198,7 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
           {[
             { title: "Feature related issues", cards: auditCards.filter((card) => card.title.startsWith("Features without")) },
             { title: "Story related issues", cards: auditCards.filter((card) => card.title.startsWith("Stories without")) },
-            { title: "Subtask related issues", cards: auditCards.filter((card) => card.title.startsWith("Subtasks without") || card.title.startsWith("Defects without")) },
+            { title: "Subtask related issues", cards: auditCards.filter((card) => card.title.startsWith("Defects without")) },
           ].map((group) => (
             <section key={group.title}>
               <h3 className="mb-3 text-sm font-semibold text-slate-700">{group.title}</h3>

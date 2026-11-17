@@ -576,18 +576,14 @@ page.
 
 ### 7.6 Delivery Diagnosis (`DiagnosisTab`)
 
-| Element | Popup |
-|---|---|
-| Slippage Volume | unfinished issues (status-filtered) |
-| Primary Driver | unfinished issues whose computed `reason` equals the driver |
-| Contributors with Spillover | unfinished issues (status-filtered) |
-| Unfinished Work Items | unfinished issues (status-filtered) |
-| Contributor row | custom popup listing that contributor's unfinished issues + reason |
-| Bottom table | full status-filtered unfinished list |
+The first four cards summarize the selected contributor scope: total contributors,
+average logged effort, average attributed story points, and average efficiency.
+Effort and points are averaged across contributors; efficiency is the mean of
+individual efficiencies for contributors with logged effort. The unfinished-work
+Status filter applies to the contributor slippage table and bottom table, not these
+filter-scoped contributor summaries.
 
-The Status filter applies to the cards and the bottom table.
-
-The **Contribution & Efficiency** table sits between the four cards
+The **Contribution & Efficiency** table sits between the four summary cards
 and Contributor Slippage & Root Causes. It has name search, efficiency/name/points
 sorting (Name A–Z by default), and 20 contributors per page. Clicking anywhere on
 a contributor row opens their detail. The footer covers all matching pages and
@@ -1637,4 +1633,4 @@ If full Forge parity is required, port the logic from `metricsEngine.ts` into
 
 ### Audit checks and Aha URL
 
-Audit cards share one grid, ordered by Features, Stories, Subtasks, then Defects. Stories Without Estimates counts zero-point stories except Pending Approval. The Orphan Feature card uses an empty/null Aha! URL field, not absence of child stories; only its label changed. The Aha! URL field is discovered by name using Jira field metadata; `JIRA_AHA_URL_FIELD` optionally overrides discovery. Field IDs can differ by site. Unknown mapping appears as Unavailable, and partial field coverage is marked with + rather than a misleading zero. Unknown/not-returned field values are not treated as empty. Equivalent Jira JQL for this field is `issuetype = Feature AND cf[10280] IS EMPTY`, additionally scoped by project/pod. Counts only cover the fetched raw feed; restrictive base JQL or Jira access can limit coverage. Audit items are deduplicated by key, exclude canceled work, and use the current shared pod/quarter/sprint scope.
+Audit cards are grouped under Feature related issues, Story related issues, and Subtask related issues. “Stories without subtasks linked” is grouped with story checks and counts scoped Stories with no active linked sub-task. Stories Without Estimates counts zero-point stories except Pending Approval. The Orphan Feature card uses an empty/null Aha! URL field, not absence of child stories; only its label changed. The Aha! URL field is discovered by name using Jira field metadata; `JIRA_AHA_URL_FIELD` optionally overrides discovery. Field IDs can differ by site. Unknown mapping appears as Unavailable, and partial field coverage is marked with + rather than a misleading zero. Unknown/not-returned field values are not treated as empty. Equivalent Jira JQL for this field is `issuetype = Feature AND cf[10280] IS EMPTY`, additionally scoped by project/pod. Counts only cover the fetched raw feed; restrictive base JQL or Jira access can limit coverage. Audit items are deduplicated by key, exclude canceled work, and use the current shared pod/quarter/sprint scope.

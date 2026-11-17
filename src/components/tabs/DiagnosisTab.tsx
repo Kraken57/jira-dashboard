@@ -16,11 +16,6 @@ interface DiagnosisTabProps {
 
 export function DiagnosisTab({ data, podName, jiraDomain, statusFilter, scopeLabel }: DiagnosisTabProps) {
   const [selectedContributor, setSelectedContributor] = useState<string | null>(null);
-  const [cardModal, setCardModal] = useState<{
-    title: string;
-    subtitle: string;
-    issues: IssueRow[];
-  } | null>(null);
 
   const asRows = (list: UnfinishedIssue[]): IssueRow[] =>
     list.map((i) => ({
@@ -69,75 +64,35 @@ export function DiagnosisTab({ data, podName, jiraDomain, statusFilter, scopeLab
       `Most common reason: ${contributorTopReason}.`,
     ],
   };
+  const contributorMetrics = (data.individualContribution?.people ?? [])
+    .filter((person) => person.name !== "Unassigned");
+  const averageOf = (values: number[]) => values.length
+    ? values.reduce((sum, value) => sum + value, 0) / values.length
+    : null;
+  const averageLoggedEffort = averageOf(contributorMetrics.map((person) => person.loggedEffortHours));
+  const averageAttributedPoints = averageOf(contributorMetrics.map((person) => person.attributedStoryPoints));
+  const efficiencyValues = contributorMetrics
+    .map((person) => person.efficiency)
+    .filter((efficiency): efficiency is number => efficiency !== null && Number.isFinite(efficiency));
+  const averageEfficiency = averageOf(efficiencyValues);
+  const oneDecimal = (value: number | null) => value === null ? "N/A" : value.toFixed(1);
 
   return (
     <div className="space-y-6">
-      {/* KPI Cards */}
+      {/* Filter-scoped contributor metrics */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <button
-          type="button"
-          onClick={() =>
-            setCardModal({
-              title: "Slippage Volume",
-              subtitle: `${data.slippageSP} SP · ${data.slippagePct}% of planned commitments`,
-              issues: asRows(byStatus),
-            })
-          }
-          className="text-left bg-white border border-jira-border rounded-lg p-4 shadow-sm hover:border-jira-red/50 transition"
-        >
-          <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Slippage Volume</p>
-          <p className="text-2xl font-bold text-jira-red mt-1">{data.slippageSP} SP</p>
-          <p className="text-xs text-jira-text-light mt-1">{data.slippagePct}% of planned commitments</p>
-        </button>
-        <button
-          type="button"
-          onClick={() =>
-            setCardModal({
-              title: `Primary Driver · ${data.primaryDriver}`,
-              subtitle: "Unfinished work items contributing to this driver",
-              issues: asRows(
-                byStatus.filter((i) => i.reason === data.primaryDriver)
-              ),
-            })
-          }
-          className="text-left bg-white border border-jira-border rounded-lg p-4 shadow-sm hover:border-jira-amber/50 transition"
-        >
-          <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Primary Driver</p>
-          <p className="text-xl font-bold text-jira-text mt-1 truncate" title={data.primaryDriver}>
-            {data.primaryDriver}
-          </p>
-          <p className="text-xs text-jira-text-light mt-1">Main cause of sprint drag</p>
-        </button>
-        <button
-          type="button"
-          onClick={() =>
-            setCardModal({
-              title: "Contributors with Spillover",
-              subtitle: `${data.atRiskContributorsCount} contributors carrying incomplete items`,
-              issues: asRows(byStatus),
-            })
-          }
-          className="text-left bg-white border border-jira-border rounded-lg p-4 shadow-sm hover:border-jira-amber/50 transition"
-        >
-          <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Contributors with Spillover</p>
-          <p className="text-2xl font-bold text-jira-amber mt-1">{data.atRiskContributorsCount}</p>
-          <p className="text-xs text-jira-text-light mt-1">Developers carrying incomplete items</p>
-        </button>
-        <button
-          type="button"
-          onClick={() =>
-            setCardModal({
-              title: "Unfinished Work Items",
-              subtitle: "Open issues needing resolution",
-              issues: asRows(byStatus),
-            })
-          }
-          className="text-left bg-white border border-jira-border rounded-lg p-4 shadow-sm hover:border-jira-blue/50 transition"
-        >
-          <p className="text-xs uppercase text-jira-text-muted font-bold tracking-wider">Unfinished Work Items</p>
-          <p className="text-2xl font-bold text-jira-text mt-1">{data.unfinishedIssues.length}</p>
-          <p className="text-xs text-jira-text-light mt-1">Open issues needing resolution</p>
-        </button>
+        {[
+          { title: "Total contributors", value: String(contributorMetrics.length), detail: "People with work in the selected filters" },
+          { title: "Average logged efforts", value: averageLoggedEffort === null ? "N/A" : `${oneDecimal(averageLoggedEffort)} h`, detail: "Average logged hours per contributor" },
+          { title: "Average attributed story points", value: averageAttributedPoints === null ? "N/A" : `${oneDecimal(averageAttributedPoints)} SP`, detail: "Average attributed points per contributor" },
+          { title: "Average efficiency", value: averageEfficiency === null ? "N/A" : `${oneDecimal(averageEfficiency)} SP/h`, detail: `Mean of ${efficiencyValues.length} contributors with logged effort` },
+        ].map((card) => (
+          <div key={card.title} className="min-w-0 rounded-lg border border-jira-border bg-white p-4 shadow-sm">
+            <p className="text-xs font-bold uppercase tracking-wider text-jira-text-muted">{card.title}</p>
+            <p className="mt-1 text-2xl font-bold tabular-nums text-jira-text">{card.value}</p>
+            <p className="mt-1 text-xs text-jira-text-light">{card.detail}</p>
+          </div>
+        ))}
       </div>
 
       {data.individualContribution && <ContributorSummary key={scopeLabel || podName} data={data.individualContribution} scopeLabel={scopeLabel || podName} jiraDomain={jiraDomain} />}
@@ -341,15 +296,6 @@ export function DiagnosisTab({ data, podName, jiraDomain, statusFilter, scopeLab
         />
       )}
 
-      {cardModal && (
-        <IssuesModal
-          title={cardModal.title}
-          subtitle={cardModal.subtitle}
-          issues={cardModal.issues}
-          jiraDomain={jiraDomain}
-          onClose={() => setCardModal(null)}
-        />
-      )}
     </div>
   );
 }
