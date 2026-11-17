@@ -2172,6 +2172,7 @@ export function computeDashboardData(
     createdDate: it.createdDate || "",
     resolutionDate: it.resolutionDate || undefined,
     dueDate: it.dueDate || "",
+    fixVersions: it.fixVersions || [],
     isDone: DONE_STATUSES.has(it.status),
     completionSprint: completionSprintFor(it) ?? undefined,
     completedInScope: completedScopeKeys.has(it.key),

@@ -895,6 +895,13 @@ completes in only one source sprint.
 | Velocity | Normally, SP completed across the selected scope; when multiple sprints are selected, also show average completed SP per selected sprint. When All Pods, All Quarters / PIs, and All Sprints are selected, the main value remains each pod's average completed SP per sprint, then those pod averages are averaged equally. |
 | Feature Predictability | Uses the selected features and ancestors of selected work, with story delivery/due-date rules from `featureDelivery.ts` |
 
+The Feature Predictability popup classifies each feature from Jira Fix Versions:
+`ENH` for `Enhancements- Enterprise Services`, `None` when no Fix Version is set,
+and `PRJ` for any other Fix Version. Its Enhancement and Project effort cards
+average child-story story points and logged hours across delivered features of
+the matching type. These labels and averages use the same selected feature scope
+as the popup.
+
 A future or active source sprint contributes assigned work, but no carryover
 until the source sprint has ended and the item is assigned to a later sprint.
 Carryover is attributed to the sprint the work was left in; work moved from a

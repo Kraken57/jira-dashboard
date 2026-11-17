@@ -347,6 +347,9 @@ function mapIssueToWorkItem(
     createdDate: String(fields.created || ""),
     resolutionDate: fields.resolutiondate ? String(fields.resolutiondate) : undefined,
     dueDate: fields.duedate ? String(fields.duedate) : undefined,
+    fixVersions: Array.isArray(fields.fixVersions)
+      ? fields.fixVersions.map((version: any) => String(version?.name || "").trim()).filter(Boolean)
+      : [],
     originalEstimateSeconds: Number(fields.timeoriginalestimate ?? (fields.timetracking as { originalEstimateSeconds?: number } | undefined)?.originalEstimateSeconds) || 0,
     timeSpentSeconds: Number(fields.timespent) || 0,
       hasOriginalEstimate: fields.timeoriginalestimate != null || (fields.timetracking as { originalEstimateSeconds?: number } | undefined)?.originalEstimateSeconds != null,
@@ -1893,6 +1896,7 @@ async function fetchAndStoreFeed(): Promise<FeedEnvelope> {
     "created",
     "resolutiondate",
     "duedate",
+    "fixVersions",
     "timeoriginalestimate",
         "timetracking",
     "timespent",
@@ -2025,6 +2029,7 @@ resolver.define("getDashboardData", async (req) => {
       "created",
       "resolutiondate",
       "duedate",
+      "fixVersions",
       "timeoriginalestimate",
         "timetracking",
       "timespent",

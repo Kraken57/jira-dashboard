@@ -303,6 +303,7 @@ export interface IssueRow {
   createdDate: string;
   resolutionDate?: string;
   dueDate?: string;
+  fixVersions?: string[];
   isDone: boolean;
   /** Sprint in which Jira resolved this issue, inferred from resolution/sprint dates. */
   completionSprint?: string;
@@ -411,6 +412,7 @@ export interface JiraWorkItem {
   resolutionDate?: string;
   createdDate?: string;
   dueDate?: string;
+  fixVersions?: string[];
   originalEstimateSeconds?: number;
   timeSpentSeconds?: number;
   hasOriginalEstimate?: boolean;

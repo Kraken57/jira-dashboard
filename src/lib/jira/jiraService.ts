@@ -163,6 +163,7 @@ async function fetchAllLiveJiraIssues(jqlOverride?: string, queryLabel = "dashbo
         "created",
         "resolutiondate",
         "duedate",
+        "fixVersions",
         "timeoriginalestimate",
         "timetracking",
         "timespent",
@@ -333,6 +334,9 @@ async function fetchAllLiveJiraIssues(jqlOverride?: string, queryLabel = "dashbo
         ? String(fields.resolutiondate)
         : undefined,
       dueDate: fields.duedate ? String(fields.duedate) : undefined,
+      fixVersions: Array.isArray(fields.fixVersions)
+        ? fields.fixVersions.map((version) => String((version as { name?: string })?.name || "").trim()).filter(Boolean)
+        : [],
       originalEstimateSeconds: Number(fields.timeoriginalestimate ?? (fields.timetracking as { originalEstimateSeconds?: number } | undefined)?.originalEstimateSeconds) || 0,
       timeSpentSeconds: Number(fields.timespent) || 0,
       hasOriginalEstimate: fields.timeoriginalestimate != null || (fields.timetracking as { originalEstimateSeconds?: number } | undefined)?.originalEstimateSeconds != null,
