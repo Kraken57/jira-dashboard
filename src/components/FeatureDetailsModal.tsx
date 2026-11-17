@@ -74,7 +74,11 @@ export function FeatureDetailsModal({ features, items, doneStatuses, jiraDomain,
             return <div key={label as string} className="rounded-md border border-jira-border bg-white px-3 py-2.5">
               <div className="text-[11px] font-semibold text-jira-text-muted">{label as string}</div>
               <div className="mt-1 text-base font-semibold tabular-nums text-jira-text">
-                {value.count ? `${value.storyPoints} SP · ${value.hours} h` : "N/A"}
+                {value.count ? <>
+                  {Math.round(value.storyPoints ?? 0)} <span className="text-xs font-medium text-jira-text-muted">SP</span>
+                  <span className="mx-1 text-sm text-jira-text-muted">/</span>
+                  {Math.round(value.hours ?? 0)} <span className="text-xs font-medium text-jira-text-muted">hrs</span>
+                </> : "N/A"}
               </div>
               <div className="mt-0.5 text-[10px] text-jira-text-muted">
                 Average story points and logged hours per delivered feature · {value.count} features
