@@ -66,14 +66,17 @@ export function DiagnosisTab({ data, podName, jiraDomain, statusFilter, scopeLab
   };
   const contributorMetrics = (data.individualContribution?.people ?? [])
     .filter((person) => person.name !== "Unassigned");
-  const averageOf = (values: number[]) => values.length
-    ? values.reduce((sum, value) => sum + value, 0) / values.length
+  const averageOf = (values: number[]) => {
+    const included = values.filter((value) => Number.isFinite(value) && value > 0);
+    return included.length
+    ? included.reduce((sum, value) => sum + value, 0) / included.length
     : null;
+  };
   const averageLoggedEffort = averageOf(contributorMetrics.map((person) => person.loggedEffortHours));
   const averageAttributedPoints = averageOf(contributorMetrics.map((person) => person.attributedStoryPoints));
   const efficiencyValues = contributorMetrics
     .map((person) => person.efficiency)
-    .filter((efficiency): efficiency is number => efficiency !== null && Number.isFinite(efficiency));
+    .filter((efficiency): efficiency is number => efficiency !== null && Number.isFinite(efficiency) && efficiency > 0);
   const averageEfficiency = averageOf(efficiencyValues);
   const oneDecimal = (value: number | null) => value === null ? "N/A" : value.toFixed(1);
 
@@ -83,9 +86,9 @@ export function DiagnosisTab({ data, podName, jiraDomain, statusFilter, scopeLab
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { title: "Total contributors", value: String(contributorMetrics.length), detail: "People with work in the selected filters" },
-          { title: "Average logged efforts", value: averageLoggedEffort === null ? "N/A" : `${oneDecimal(averageLoggedEffort)} h`, detail: "Average logged hours per contributor" },
-          { title: "Average attributed story points", value: averageAttributedPoints === null ? "N/A" : `${oneDecimal(averageAttributedPoints)} SP`, detail: "Average attributed points per contributor" },
-          { title: "Average efficiency", value: averageEfficiency === null ? "N/A" : `${oneDecimal(averageEfficiency)} SP/h`, detail: `Mean of ${efficiencyValues.length} contributors with logged effort` },
+          { title: "Average logged efforts", value: averageLoggedEffort === null ? "N/A" : `${oneDecimal(averageLoggedEffort)} h`, detail: "Average of contributors with logged hours" },
+          { title: "Average attributed story points", value: averageAttributedPoints === null ? "N/A" : `${oneDecimal(averageAttributedPoints)} SP`, detail: "Average of contributors with attributed points" },
+          { title: "Average efficiency", value: averageEfficiency === null ? "N/A" : `${oneDecimal(averageEfficiency)} SP/h`, detail: `Mean of ${efficiencyValues.length} contributors with non-zero efficiency` },
         ].map((card) => (
           <div key={card.title} className="min-w-0 rounded-lg border border-jira-border bg-white p-4 shadow-sm">
             <p className="text-xs font-bold uppercase tracking-wider text-jira-text-muted">{card.title}</p>

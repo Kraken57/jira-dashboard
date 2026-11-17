@@ -578,8 +578,8 @@ page.
 
 The first four cards summarize the selected contributor scope: total contributors,
 average logged effort, average attributed story points, and average efficiency.
-Effort and points are averaged across contributors; efficiency is the mean of
-individual efficiencies for contributors with logged effort. The unfinished-work
+Each average excludes zero and unavailable values; efficiency is the mean of
+nonzero individual efficiencies. The unfinished-work
 Status filter applies to the contributor slippage table and bottom table, not these
 filter-scoped contributor summaries.
 
