@@ -8,6 +8,9 @@ const format = (value: number, digits = 2) => value.toLocaleString(undefined, { 
 const hoursPerPoint = (storyPointsPerHour: number | null) => storyPointsPerHour && storyPointsPerHour > 0
   ? (1 / storyPointsPerHour).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 })
   : "N/A";
+const efficiencyHours = (storyPointsPerHour: number | null) => storyPointsPerHour && storyPointsPerHour > 0
+  ? 1 / storyPointsPerHour
+  : null;
 const PAGE_SIZE = 20;
 
 export function ContributorSummary({ data, scopeLabel, jiraDomain }: { data: ContributorMetrics; scopeLabel: string; jiraDomain?: string }) {
@@ -18,8 +21,13 @@ export function ContributorSummary({ data, scopeLabel, jiraDomain }: { data: Con
   const people = data.people.filter((person) => person.name.toLowerCase().includes(search.trim().toLowerCase())).sort((a, b) => {
     if (sort === "name") return a.name.localeCompare(b.name);
     if (sort === "points") return b.attributedStoryPoints - a.attributedStoryPoints || a.name.localeCompare(b.name);
-    if (a.efficiency === null || b.efficiency === null) return a.efficiency === b.efficiency ? a.name.localeCompare(b.name) : a.efficiency === null ? 1 : -1;
-    return (sort === "efficiency-asc" ? a.efficiency - b.efficiency : b.efficiency - a.efficiency) || a.name.localeCompare(b.name);
+    const aHoursPerPoint = efficiencyHours(a.efficiency);
+    const bHoursPerPoint = efficiencyHours(b.efficiency);
+    if (aHoursPerPoint === null || bHoursPerPoint === null) {
+      return aHoursPerPoint === bHoursPerPoint ? a.name.localeCompare(b.name) : aHoursPerPoint === null ? 1 : -1;
+    }
+    // Highest efficiency means fewer logged hours for each attributed point.
+    return (sort === "efficiency-asc" ? bHoursPerPoint - aHoursPerPoint : aHoursPerPoint - bHoursPerPoint) || a.name.localeCompare(b.name);
   });
   const pages = Math.max(1, Math.ceil(people.length / PAGE_SIZE));
   const currentPage = Math.min(page, pages - 1);
@@ -41,8 +49,8 @@ export function ContributorSummary({ data, scopeLabel, jiraDomain }: { data: Con
       <input type="search" value={search} onChange={(event) => { setSearch(event.target.value); setPage(0); }} placeholder="Search contributors…" aria-label="Search contributors" className="min-w-48 rounded border border-jira-border px-3 py-2 text-xs" />
       <select value={sort} aria-label="Sort contributors" className="rounded border border-jira-border bg-white px-3 py-2 text-xs" onChange={(event) => { setSort(event.target.value); setPage(0); }}>
         <option value="name">Name: A–Z</option>
-        <option value="efficiency-desc">Hours per point: fewest first</option>
-        <option value="efficiency-asc">Hours per point: most first</option>
+        <option value="efficiency-desc">Efficiency: highest first (fewest hours / point)</option>
+        <option value="efficiency-asc">Efficiency: lowest first (most hours / point)</option>
         <option value="points">Attributed SP: highest first</option>
       </select>
     </div>
