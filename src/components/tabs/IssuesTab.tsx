@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { computeDashboardData } from "@/lib/jira/metricsEngine";
-import { DetailModal } from "@/components/DetailModal";
+import { AuditIssuesModal } from "@/components/AuditIssuesModal";
 import { JiraWorkLink } from "@/components/JiraWorkLink";
 import { DashboardFilters, IssueRow, JiraWorkItem, SprintMeta } from "@/lib/jira/types";
 
@@ -463,39 +463,13 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
         )}
       </div>
 
-      {auditModal && (
-        <DetailModal title={auditModal.title} subtitle={`${auditModal.issues.length} matching issues in the current scope`} onClose={() => setAuditModal(null)} wide>
-          <div className="border-b border-jira-border bg-jira-bg/40 px-5 py-4 text-sm text-jira-text">{auditModal.explanation}</div>
-          {auditModal.issues.length === 0 ? (
-            <p className="p-8 text-center text-sm text-slate-500">No matching issues found in the current scope.</p>
-          ) : (
-            <div className="divide-y divide-slate-100">
-              {auditModal.issues.map((issue) => (
-                <article key={issue.key} className="p-4 sm:px-5">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <JiraWorkLink issueKey={issue.key} jiraDomain={jiraDomain}>{issue.key}</JiraWorkLink>
-                      <h3 className="mt-1 text-sm font-semibold text-slate-900" title={issue.summary}>{issue.summary}</h3>
-                    </div>
-                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-700">{issue.status}</span>
-                  </div>
-                  <div className="mt-3 grid gap-x-5 gap-y-1.5 text-xs text-slate-600 sm:grid-cols-2 lg:grid-cols-3">
-                    <p><b>Type:</b> {issue.workType}</p>
-                    <p><b>Story points:</b> {issue.storyPoints}</p>
-                    <p><b>Parent:</b> {issue.parentKey || "None"}{issue.parentWorkType ? ` · ${issue.parentWorkType}` : ""}</p>
-                    <p><b>Pod:</b> {issue.podName || issue.projectName || issue.projectKey || "Unknown"}</p>
-                    <p><b>PI:</b> {issue.quarter === "All" ? "Not tagged" : issue.quarter}</p>
-                    <p title={issue.sprints.join(", ") || "Backlog"}><b>Sprint:</b> {issue.sprints.join(", ") || "Backlog"}</p>
-                    <p><b>Due date:</b> {issue.dueDate || "None"}</p>
-                    <p><b>Aha URL:</b> {issue.ahaUrl === undefined ? "Not returned" : issue.ahaUrl || "Empty"}</p>
-                    <p><b>Assignee:</b> {issue.assignee || "Unassigned"}</p>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </DetailModal>
-      )}
+      {auditModal && <AuditIssuesModal
+        title={auditModal.title}
+        explanation={auditModal.explanation}
+        issues={auditModal.issues}
+        jiraDomain={jiraDomain}
+        onClose={() => setAuditModal(null)}
+      />}
     </div>
   );
 }
