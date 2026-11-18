@@ -11,13 +11,11 @@ const hoursPerPoint = (storyPointsPerHour: number | null) => storyPointsPerHour 
 const efficiencyHours = (storyPointsPerHour: number | null) => storyPointsPerHour && storyPointsPerHour > 0
   ? 1 / storyPointsPerHour
   : null;
-const PAGE_SIZE = 20;
 
 export function ContributorSummary({ data, scopeLabel, jiraDomain }: { data: ContributorMetrics; scopeLabel: string; jiraDomain?: string }) {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState("name");
   const [selectedName, setSelectedName] = useState<string | null>(null);
-  const [page, setPage] = useState(0);
   const people = data.people.filter((person) => person.name.toLowerCase().includes(search.trim().toLowerCase())).sort((a, b) => {
     if (sort === "name") return a.name.localeCompare(b.name);
     if (sort === "points") return b.attributedStoryPoints - a.attributedStoryPoints || a.name.localeCompare(b.name);
@@ -29,8 +27,6 @@ export function ContributorSummary({ data, scopeLabel, jiraDomain }: { data: Con
     // Highest efficiency means fewer logged hours for each attributed point.
     return (sort === "efficiency-asc" ? bHoursPerPoint - aHoursPerPoint : aHoursPerPoint - bHoursPerPoint) || a.name.localeCompare(b.name);
   });
-  const pages = Math.max(1, Math.ceil(people.length / PAGE_SIZE));
-  const currentPage = Math.min(page, pages - 1);
   const total = people.reduce((sum, person) => ({
     subtasks: sum.subtasks + person.subtaskCount,
     estimate: sum.estimate + person.originalEstimateHours,
@@ -46,8 +42,8 @@ export function ContributorSummary({ data, scopeLabel, jiraDomain }: { data: Con
       <p className="mt-2 text-xs text-jira-text-muted">Attributed Story Points are awarded when a story is completed, based on each contributor’s share of its subtask Original Estimates. Efficiency = Logged Effort ÷ Attributed Story Points (hours per story point).</p>
     </div>
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-jira-border px-5 py-3">
-      <input type="search" value={search} onChange={(event) => { setSearch(event.target.value); setPage(0); }} placeholder="Search contributors…" aria-label="Search contributors" className="min-w-48 rounded border border-jira-border px-3 py-2 text-xs" />
-      <select value={sort} aria-label="Sort contributors" className="rounded border border-jira-border bg-white px-3 py-2 text-xs" onChange={(event) => { setSort(event.target.value); setPage(0); }}>
+      <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search contributors…" aria-label="Search contributors" className="min-w-48 rounded border border-jira-border px-3 py-2 text-xs" />
+      <select value={sort} aria-label="Sort contributors" className="rounded border border-jira-border bg-white px-3 py-2 text-xs" onChange={(event) => setSort(event.target.value)}>
         <option value="name">Name: A–Z</option>
         <option value="efficiency-desc">Efficiency: highest first (fewest hours / point)</option>
         <option value="efficiency-asc">Efficiency: lowest first (most hours / point)</option>
@@ -57,14 +53,14 @@ export function ContributorSummary({ data, scopeLabel, jiraDomain }: { data: Con
     <div className="overflow-x-auto">
       <table className="w-full text-left text-xs">
         <thead className="bg-jira-bg text-jira-text-muted"><tr>
-          <th className="px-4 py-3">Contributor</th><th className="px-4 py-3 text-right">Subtask Count</th>
+          <th className="px-4 py-3">Contributor</th><th className="px-4 py-3 text-right">Assigned Tasks</th>
           <th className="px-4 py-3 text-right">Original Estimates<span className="block font-normal">Hours</span></th>
           <th className="px-4 py-3 text-right">Logged Effort<span className="block font-normal">Hours</span></th>
           <th className="px-4 py-3 text-right">Attributed Story Points</th><th className="px-4 py-3 text-right">Efficiency<span className="block font-normal">hours / story point</span></th>
         </tr></thead>
         <tbody className="divide-y divide-jira-border">
           {!people.length && <tr><td colSpan={6} className="px-4 py-8 text-center text-jira-text-muted">No contributors match this selection.</td></tr>}
-          {people.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE).map((person) => <tr key={person.name}
+          {people.map((person) => <tr key={person.name}
             role="button" tabIndex={0} aria-haspopup="dialog" aria-label={`View contribution details for ${person.name}`}
             onClick={() => setSelectedName(person.name)}
             onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedName(person.name); } }}
@@ -82,9 +78,8 @@ export function ContributorSummary({ data, scopeLabel, jiraDomain }: { data: Con
         </tr></tfoot>
       </table>
     </div>
-    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-jira-border px-5 py-3 text-xs text-jira-text-muted">
-      <span>{people.length ? currentPage * PAGE_SIZE + 1 : 0}–{Math.min((currentPage + 1) * PAGE_SIZE, people.length)} of {people.length} contributors · Totals include all matching pages</span>
-      <div className="flex items-center gap-3"><button type="button" disabled={!currentPage} onClick={() => setPage(currentPage - 1)} className="rounded border border-jira-border px-3 py-1.5 disabled:opacity-40">Previous</button><span>{currentPage + 1} / {pages}</span><button type="button" disabled={currentPage >= pages - 1} onClick={() => setPage(currentPage + 1)} className="rounded border border-jira-border px-3 py-1.5 disabled:opacity-40">Next</button></div>
+    <div className="border-t border-jira-border px-5 py-3 text-xs text-jira-text-muted">
+      Showing all {people.length} matching contributors · Totals include all matching contributors
     </div>
     {selectedPerson && <ContributorDetailsModal key={selectedPerson.name} person={selectedPerson} scopeLabel={scopeLabel} jiraDomain={jiraDomain} onClose={() => setSelectedName(null)} />}
   </section>;

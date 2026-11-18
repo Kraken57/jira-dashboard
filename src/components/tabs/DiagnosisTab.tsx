@@ -4,7 +4,8 @@ import { useState } from "react";
 import { DiagnosisData, IssueRow, MetricInsight, UnfinishedIssue } from "@/lib/jira/types";
 import { IssuesModal } from "@/components/IssuesModal";
 import { ContributorSummary } from "@/components/ContributorSummary";
-import { JiraWorkLink } from "@/components/JiraWorkLink";
+// Kept for the hidden unresolved-issues box below, in case it is restored.
+// import { JiraWorkLink } from "@/components/JiraWorkLink";
 
 interface DiagnosisTabProps {
   data: DiagnosisData;
@@ -102,6 +103,7 @@ export function DiagnosisTab({ data, podName, jiraDomain, statusFilter, scopeLab
       {data.individualContribution && <ContributorSummary key={scopeLabel || podName} data={data.individualContribution} scopeLabel={scopeLabel || podName} jiraDomain={jiraDomain} />}
 
       {/* Contributor Slippage Section */}
+      {/* Hidden for now; preserve the box code for a future restore.
       <div className="bg-white border border-jira-border rounded-lg overflow-hidden shadow-sm">
         <div className="px-6 py-4 border-b border-jira-border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <div>
@@ -181,8 +183,10 @@ export function DiagnosisTab({ data, podName, jiraDomain, statusFilter, scopeLab
           </table>
         </div>
       </div>
+      */}
 
       {/* Unresolved Issues Table (The Root Issues) */}
+      {/* Hidden for now; preserve the box code for a future restore.
       <div className="bg-white border border-jira-border rounded-lg overflow-hidden shadow-sm">
         <div className="px-6 py-4 border-b border-jira-border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <div>
@@ -287,6 +291,7 @@ export function DiagnosisTab({ data, podName, jiraDomain, statusFilter, scopeLab
           </table>
         </div>
       </div>
+      */}
 
       {/* Contributor issues modal — no page jump, no scroll */}
       {selectedContributor && (
