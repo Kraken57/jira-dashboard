@@ -141,13 +141,6 @@ export function IssuesTab({ auditItems, filters, sprintMeta = {}, jiraDomain }: 
         tone: "violet",
       },
       {
-        title: "Features without Project and Enhancement Tagging",
-        note: "Features with no Fix Version project type",
-        explanation: "Features are classified using the same Project Type rules as Feature Predictability. A feature is included here when its Jira Fix Versions field is empty, which gives it the Project Type None.",
-        issues: scopedAuditItems.filter((item) => /^feature$/i.test(item.workType) && projectTypeFor(item.fixVersions) === "None"),
-        tone: "amber",
-      },
-      {
         title: "Stories without Feature links",
         note: "Stories without a linked Feature parent",
         explanation: "A story is counted when it has no parent, or its known parent is not a Feature (Epic is used for projects with no Feature issue type).",
@@ -167,6 +160,13 @@ export function IssuesTab({ auditItems, filters, sprintMeta = {}, jiraDomain }: 
         explanation: "PI tagging is derived from the feature's sprint name using the dashboard's quarter/PI mapping. Features with no recognized PI are included.",
         issues: scopedAuditItems.filter((item) => isFeature(item) && item.quarter === "All"),
         tone: "violet",
+      },
+      {
+        title: "Features without Project and Enhancement Tagging",
+        note: "Features with no Fix Version project type",
+        explanation: "Features are classified using the same Project Type rules as Feature Predictability. A feature is included here when its Jira Fix Versions field is empty, which gives it the Project Type None.",
+        issues: scopedAuditItems.filter((item) => /^feature$/i.test(item.workType) && projectTypeFor(item.fixVersions) === "None"),
+        tone: "amber",
       },
       {
         title: "Defects without parent links",
