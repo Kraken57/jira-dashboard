@@ -180,12 +180,14 @@ export function DeveloperTab({
                     Story / Sub-Task completed
                   </span>
                 </th>
+                {/* Story Points delivered / assigned column hidden for now. Uncomment to restore.
                 <th className="px-6 py-3 text-right">
                   <span className="block">Story Points</span>
                   <span className="block text-[10px] font-medium normal-case tracking-normal text-jira-text-light">
                     Delivered / Assigned
                   </span>
                 </th>
+                */}
                 <th className="px-6 py-3 text-right">
                   <span className="block">Hours</span>
                   <span className="block text-[10px] font-medium normal-case tracking-normal text-jira-text-light">
@@ -203,7 +205,7 @@ export function DeveloperTab({
             </thead>
             <tbody className="divide-y divide-jira-border/60">
               {developers.length === 0 && (
-                <tr><td colSpan={8} className="px-6 py-12 text-center"><p className="text-sm font-semibold text-slate-800">No developers match “{nameSearch || developerFilter}”</p><button type="button" onClick={() => setNameSearch("")} className="mt-2 text-xs font-semibold text-indigo-700 hover:text-indigo-900">Clear search</button></td></tr>
+                <tr><td colSpan={7} className="px-6 py-12 text-center"><p className="text-sm font-semibold text-slate-800">No developers match “{nameSearch || developerFilter}”</p><button type="button" onClick={() => setNameSearch("")} className="mt-2 text-xs font-semibold text-indigo-700 hover:text-indigo-900">Clear search</button></td></tr>
               )}
               {developers.map((dev, idx) => (
                 <tr
@@ -238,12 +240,14 @@ export function DeveloperTab({
                       <span className="font-semibold text-jira-green">{dev.completedSubtasks}</span> sub-tasks
                     </p>
                   </td>
+                  {/* Story Points delivered / assigned cells hidden for now. Uncomment to restore.
                   <td className="px-6 py-3 text-right">
                     <p className="text-sm font-bold text-jira-blue">{dev.deliveredSP} SP</p>
                     <p className="text-[11px] text-jira-text-muted mt-0.5">
                       of <span className="font-semibold text-jira-text">{dev.totalSP} SP</span> assigned
                     </p>
                   </td>
+                  */}
                   <td className="px-6 py-3 text-right">
                     <p className="text-sm font-bold text-jira-green">
                       {dev.loggedHours ?? 0} / {dev.originalEstimateHours} hrs
@@ -299,9 +303,11 @@ export function DeveloperTab({
                     {totalCompletedStories} stories · {totalCompletedSubtasks} sub-tasks
                   </p>
                 </td>
+                {/* Story Points delivered / assigned total hidden for now. Uncomment to restore.
                 <td className="px-6 py-3 text-right text-jira-blue">
                   {totalDelivered} / {totalAssignedSP} SP
                 </td>
+                */}
                 <td className="px-6 py-3 text-right text-jira-green">
                   {totalLoggedHours} / {totalOriginalHours} hrs
                 </td>
