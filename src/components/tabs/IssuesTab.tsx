@@ -67,13 +67,23 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
     const storyType = /^story$/i;
     const storiesWithoutSubtasksStatuses = new Set([
       "development",
+      "development complete",
+      "development completed",
       "continue",
       "completed",
+      "done",
+      "released",
       "in progress",
       "in review",
+      "in reviews",
+      "code review",
       "test case review",
+      "test cases review",
+      "test case reviews",
       "test completed",
       "in test",
+      "in testing",
+      "testing",
     ]);
     const bugType = /^(bug|defect)$/i;
     const subtaskType = /^sub-?task$/i;
@@ -148,8 +158,8 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
       },
       {
         title: "Stories without subtasks",
-        note: "In-progress and testing stories with no sub-tasks",
-        explanation: "Only stories in Development, Continue, Completed, In Progress, In Review, Test Case Review, Test Completed, or In Test are counted, and only when no active sub-task in the fetched Jira data has them as its parent.",
+        note: "Development, review, testing, and completed stories with no sub-tasks",
+        explanation: "Stories are counted only when their status is Development, Development Completed, Continue, Completed, Done, Released, In Progress, In Review, Code Review, Test Case Review, Test Cases Review, Test Completed, In Test, or Testing, and no active sub-task in the fetched Jira data has them as its parent. Pre-development, Pending Approval, and Accepted statuses are excluded.",
         issues: scopedAuditItems.filter((item) =>
           storyType.test(item.workType) &&
           isStoryWithoutSubtasksAuditStatus(item.status) &&
