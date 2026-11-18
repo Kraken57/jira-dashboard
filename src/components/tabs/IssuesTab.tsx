@@ -16,6 +16,41 @@ interface IssuesTabProps {
 
 const PAGE_SIZE = 25;
 const workTypeOrder = (type: string) => /^feature$|^epic$/i.test(type) ? 0 : /^story$/i.test(type) ? 1 : /^sub-?task$/i.test(type) ? 2 : 3;
+type AuditColumnId = "key" | "summary" | "status" | "pod" | "pi" | "sprint" | "dueDate" | "aha" | "parent" | "assignee" | "storyPoints" | "originalEstimate" | "priority";
+const auditColumnsFor = (title: string): { id: AuditColumnId; label: string }[] => {
+  const common: { id: AuditColumnId; label: string }[] = [
+    { id: "key", label: "Key" },
+    { id: "summary", label: "Summary" },
+    { id: "status", label: "Status" },
+  ];
+  const fields: Record<string, { id: AuditColumnId; label: string }[]> = {
+    "Features without Aha link": [
+      { id: "aha", label: "Aha link" }, { id: "pod", label: "Pod" }, { id: "pi", label: "PI" }, { id: "sprint", label: "Sprint" },
+    ],
+    "Stories without Feature links": [
+      { id: "parent", label: "Parent" }, { id: "assignee", label: "Assignee" }, { id: "pod", label: "Pod" }, { id: "sprint", label: "Sprint" },
+    ],
+    "Features without due date": [
+      { id: "dueDate", label: "Due date" }, { id: "assignee", label: "Owner" }, { id: "pod", label: "Pod" }, { id: "pi", label: "PI" },
+    ],
+    "Features without PI tagging": [
+      { id: "pi", label: "PI" }, { id: "pod", label: "Pod" }, { id: "sprint", label: "Sprint" }, { id: "dueDate", label: "Due date" },
+    ],
+    "Defects without parent links": [
+      { id: "parent", label: "Parent" }, { id: "priority", label: "Priority" }, { id: "assignee", label: "Assignee" }, { id: "pod", label: "Pod" }, { id: "sprint", label: "Sprint" },
+    ],
+    "Stories without subtasks": [
+      { id: "storyPoints", label: "Story points" }, { id: "assignee", label: "Assignee" }, { id: "pod", label: "Pod" }, { id: "sprint", label: "Sprint" },
+    ],
+    "Subtasks without original estimate": [
+      { id: "parent", label: "Parent story" }, { id: "originalEstimate", label: "Original estimate" }, { id: "assignee", label: "Assignee" }, { id: "pod", label: "Pod" }, { id: "sprint", label: "Sprint" },
+    ],
+    "Stories Without Estimates": [
+      { id: "storyPoints", label: "Story points" }, { id: "assignee", label: "Assignee" }, { id: "pod", label: "Pod" }, { id: "sprint", label: "Sprint" },
+    ],
+  };
+  return [...common, ...(fields[title] || [{ id: "pod", label: "Pod" }, { id: "sprint", label: "Sprint" }])];
+};
 
 export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDomain }: IssuesTabProps) {
   const [searchTerm, setSearchTerm] = useState("");
@@ -215,6 +250,25 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const pagedIssues = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const renderAuditCell = (issue: JiraWorkItem, column: AuditColumnId) => {
+    switch (column) {
+      case "key": return <JiraWorkLink issueKey={issue.key} jiraDomain={jiraDomain}>{issue.key}</JiraWorkLink>;
+      case "summary": return <span className="block max-w-[24rem] truncate font-medium text-slate-900" title={issue.summary}>{issue.summary || "No summary"}</span>;
+      case "status": return <span className="inline-flex rounded-full bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-700">{issue.status || "Unknown"}</span>;
+      case "pod": return issue.podName || issue.projectName || issue.projectKey || "Unknown";
+      case "pi": return issue.quarter === "All" ? "Not tagged" : issue.quarter;
+      case "sprint": return <span title={issue.sprints.join(", ") || "Backlog"}>{issue.sprints.join(", ") || "Backlog"}</span>;
+      case "dueDate": return issue.dueDate?.trim() || "Not set";
+      case "aha": return issue.ahaUrl === undefined ? "Not returned" : issue.ahaUrl.trim() ? "Present" : "Empty";
+      case "parent": return issue.parentKey?.trim()
+        ? <span><JiraWorkLink issueKey={issue.parentKey} jiraDomain={jiraDomain} />{issue.parentWorkType ? <span className="ml-1 text-slate-500">({issue.parentWorkType})</span> : null}</span>
+        : "No parent";
+      case "assignee": return issue.assignee?.trim() || "Unassigned";
+      case "storyPoints": return `${issue.storyPoints || 0} sp`;
+      case "originalEstimate": return Number(issue.originalEstimateSeconds) > 0 ? `${(Number(issue.originalEstimateSeconds) / 3600).toLocaleString(undefined, { maximumFractionDigits: 1 })} hrs` : "Missing";
+      case "priority": return issue.priority || "None";
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -465,33 +519,23 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
 
       {auditModal && (
         <DetailModal title={auditModal.title} subtitle={`${auditModal.issues.length} matching issues in the current scope`} onClose={() => setAuditModal(null)} wide>
-          <div className="border-b border-jira-border bg-jira-bg/40 px-5 py-4 text-sm text-jira-text">{auditModal.explanation}</div>
+          <div className="border-b border-jira-border bg-jira-bg/40 px-5 py-3 text-xs leading-relaxed text-jira-text">{auditModal.explanation}</div>
           {auditModal.issues.length === 0 ? (
             <p className="p-8 text-center text-sm text-slate-500">No matching issues found in the current scope.</p>
           ) : (
-            <div className="divide-y divide-slate-100">
-              {auditModal.issues.map((issue) => (
-                <article key={issue.key} className="p-4 sm:px-5">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <JiraWorkLink issueKey={issue.key} jiraDomain={jiraDomain}>{issue.key}</JiraWorkLink>
-                      <h3 className="mt-1 text-sm font-semibold text-slate-900" title={issue.summary}>{issue.summary}</h3>
-                    </div>
-                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-700">{issue.status}</span>
-                  </div>
-                  <div className="mt-3 grid gap-x-5 gap-y-1.5 text-xs text-slate-600 sm:grid-cols-2 lg:grid-cols-3">
-                    <p><b>Type:</b> {issue.workType}</p>
-                    <p><b>Story points:</b> {issue.storyPoints}</p>
-                    <p><b>Parent:</b> {issue.parentKey || "None"}{issue.parentWorkType ? ` · ${issue.parentWorkType}` : ""}</p>
-                    <p><b>Pod:</b> {issue.podName || issue.projectName || issue.projectKey || "Unknown"}</p>
-                    <p><b>PI:</b> {issue.quarter === "All" ? "Not tagged" : issue.quarter}</p>
-                    <p title={issue.sprints.join(", ") || "Backlog"}><b>Sprint:</b> {issue.sprints.join(", ") || "Backlog"}</p>
-                    <p><b>Due date:</b> {issue.dueDate || "None"}</p>
-                    <p><b>Aha URL:</b> {issue.ahaUrl === undefined ? "Not returned" : issue.ahaUrl || "Empty"}</p>
-                    <p><b>Assignee:</b> {issue.assignee || "Unassigned"}</p>
-                  </div>
-                </article>
-              ))}
+            <div className="max-h-[58vh] overflow-auto">
+              <table className="min-w-[760px] w-full text-left text-xs">
+                <thead className="sticky top-0 z-10 border-b border-jira-border bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
+                  <tr>{auditColumnsFor(auditModal.title).map((column) => <th key={column.id} className={`whitespace-nowrap px-3 py-2.5 font-semibold ${column.id === "storyPoints" || column.id === "originalEstimate" ? "text-right" : ""}`}>{column.label}</th>)}</tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {auditModal.issues.map((issue) => <tr key={issue.key} className="align-top hover:bg-slate-50">
+                    {auditColumnsFor(auditModal.title).map((column) => <td key={column.id} className={`max-w-64 px-3 py-2.5 text-slate-700 ${column.id === "storyPoints" || column.id === "originalEstimate" ? "whitespace-nowrap text-right tabular-nums" : ""}`}>
+                      {renderAuditCell(issue, column.id)}
+                    </td>)}
+                  </tr>)}
+                </tbody>
+              </table>
             </div>
           )}
         </DetailModal>
