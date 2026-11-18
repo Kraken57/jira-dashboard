@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 import { computeDashboardData } from "@/lib/jira/metricsEngine";
 import { AuditIssuesModal } from "@/components/AuditIssuesModal";
-import { JiraWorkLink } from "@/components/JiraWorkLink";
 import { DashboardFilters, IssueRow, JiraWorkItem, SprintMeta } from "@/lib/jira/types";
 
 interface IssuesTabProps {
@@ -14,14 +13,27 @@ interface IssuesTabProps {
   jiraDomain?: string;
 }
 
+/* Kept for the commented-out general Issues table below.
 const PAGE_SIZE = 25;
 const workTypeOrder = (type: string) => /^feature$|^epic$/i.test(type) ? 0 : /^story$/i.test(type) ? 1 : /^sub-?task$/i.test(type) ? 2 : 3;
+*/
 
-export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDomain }: IssuesTabProps) {
+const projectTypeFor = (fixVersions?: string[]): "ENH" | "PRJ" | "None" => {
+  const versions = (fixVersions || []).map((version) => version.trim()).filter(Boolean);
+  if (!versions.length) return "None";
+  const isEnhancement = versions.some((version) =>
+    version.toLocaleLowerCase().replace(/[\s-]/g, "") === "enhancementsenterpriseservices"
+  );
+  return isEnhancement ? "ENH" : "PRJ";
+};
+
+export function IssuesTab({ auditItems, filters, sprintMeta = {}, jiraDomain }: IssuesTabProps) {
+  /* State retained with the commented-out general Issues table.
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedType, setSelectedType] = useState("all");
   const [selectedStatus, setSelectedStatus] = useState("all");
   const [page, setPage] = useState(1);
+  */
   const [auditModal, setAuditModal] = useState<{ title: string; explanation: string; issues: JiraWorkItem[] } | null>(null);
 
   const scopedAuditItems = useMemo(() => {
@@ -129,6 +141,13 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
         tone: "violet",
       },
       {
+        title: "Features without Project and Enhancement Tagging",
+        note: "Features with no Fix Version project type",
+        explanation: "Features are classified using the same Project Type rules as Feature Predictability. A feature is included here when its Jira Fix Versions field is empty, which gives it the Project Type None.",
+        issues: scopedAuditItems.filter((item) => /^feature$/i.test(item.workType) && projectTypeFor(item.fixVersions) === "None"),
+        tone: "amber",
+      },
+      {
         title: "Stories without Feature links",
         note: "Stories without a linked Feature parent",
         explanation: "A story is counted when it has no parent, or its known parent is not a Feature (Epic is used for projects with no Feature issue type).",
@@ -188,6 +207,7 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
     ];
   }, [auditItems, scopedAuditItems]);
 
+  /* General Issues table filters retained for later reuse.
   // Available unique types and statuses
   const availableTypes = useMemo(() => {
     const set = new Set<string>();
@@ -225,6 +245,7 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const pagedIssues = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  */
 
   return (
     <div className="space-y-4">
@@ -274,7 +295,8 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
         </div>
       </section>
 
-      {/* Search and Filters Bar */}
+      {/*
+      Search and Filters Bar
       <div className="bg-white border border-jira-border rounded-lg p-4 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
         <div className="flex-1 w-full md:w-auto relative">
           <input
@@ -336,7 +358,7 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
         </div>
       </div>
 
-      {/* Issues Table */}
+      Issues Table
       <div className="bg-white border border-jira-border rounded-lg overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
@@ -441,7 +463,7 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
           </table>
         </div>
 
-        {/* Pagination footer */}
+        Pagination footer
         {totalPages > 1 && (
           <div className="px-6 py-3 border-t border-jira-border flex items-center justify-between text-xs text-jira-text-muted">
             <span>
@@ -472,6 +494,7 @@ export function IssuesTab({ issues, auditItems, filters, sprintMeta = {}, jiraDo
           </div>
         )}
       </div>
+      */}
 
       {auditModal && <AuditIssuesModal
         title={auditModal.title}

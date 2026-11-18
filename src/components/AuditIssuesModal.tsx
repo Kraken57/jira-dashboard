@@ -5,7 +5,7 @@ import { DetailModal } from "./DetailModal";
 import { JiraWorkLink } from "./JiraWorkLink";
 import type { JiraWorkItem } from "@/lib/jira/types";
 
-type ColumnId = "key" | "summary" | "status" | "pod" | "pi" | "sprint" | "dueDate" | "ahaUrl" | "parent" | "assignee" | "storyPoints" | "subtasks" | "estimate" | "priority";
+type ColumnId = "key" | "summary" | "status" | "pod" | "pi" | "sprint" | "dueDate" | "ahaUrl" | "parent" | "assignee" | "storyPoints" | "subtasks" | "estimate" | "priority" | "projectType" | "fixVersions";
 type Column = { id: ColumnId; label: string };
 
 const COMMON: Column[] = [
@@ -17,6 +17,9 @@ const columnsFor = (title: string): Column[] => {
   const cardColumns: Record<string, Column[]> = {
     "Features without Aha link": [
       { id: "ahaUrl", label: "Aha! URL" }, { id: "status", label: "Status" }, { id: "pod", label: "Pod" }, { id: "pi", label: "PI" },
+    ],
+    "Features without Project and Enhancement Tagging": [
+      { id: "projectType", label: "Project type" }, { id: "fixVersions", label: "Fix versions" }, { id: "status", label: "Status" }, { id: "pod", label: "Pod" }, { id: "pi", label: "PI" },
     ],
     "Stories without Feature links": [
       { id: "parent", label: "Current parent" }, { id: "status", label: "Status" }, { id: "assignee", label: "Assignee" }, { id: "pod", label: "Pod" },
@@ -61,6 +64,8 @@ const cellValue = (issue: JiraWorkItem, column: ColumnId) => {
       ? `${(Number(issue.originalEstimateSeconds) / 3600).toLocaleString(undefined, { maximumFractionDigits: 1 })} hrs`
       : "Not set";
     case "priority": return issue.priority || "None";
+    case "projectType": return "None";
+    case "fixVersions": return issue.fixVersions?.map((version) => version.trim()).filter(Boolean).join(", ") || "Not set";
   }
 };
 
