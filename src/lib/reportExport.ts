@@ -94,9 +94,7 @@ export async function exportReports(format:string,reports:Report[],scope:string)
       slide.addText(report.title,{x:.5,y:.3,w:12.3,h:.5,fontSize:24,bold:true,color:'17365D'});
       slide.addText(scope,{x:.5,y:.9,w:12.3,h:.6,fontSize:10,color:'475569'});
       slide.addText(table.title,{x:.5,y:1.6,w:12.3,h:.5,fontSize:16,bold:true,color:'17365D'});
-      // Rows and columns are already paginated above. PptxGenJS autoPage can
-      // recursively add an empty continuation table for wrapped content.
-      slide.addTable([table.columns.slice(column,column+6).map(text=>({text,options:{bold:true,color:'FFFFFF',fill:{color:'17365D'}}})),...table.rows.slice(row,row+8).map(r=>r.slice(column,column+6).map(text=>({text})))],{x:.5,y:2.2,w:12.3,fontSize:10,border:{pt:.5,color:'CBD5E1'},fill:{color:'FFFFFF'},color:'334155',margin:5,autoPage:false});
+      slide.addTable([table.columns.slice(column,column+6).map(text=>({text,options:{bold:true,color:'FFFFFF',fill:{color:'17365D'}}})),...table.rows.slice(row,row+8).map(r=>r.slice(column,column+6).map(text=>({text})))],{x:.5,y:2.2,w:12.3,fontSize:10,border:{pt:.5,color:'CBD5E1'},fill:{color:'FFFFFF'},color:'334155',margin:5,autoPage:true});
       slide.addText(`Generated ${generated}`,{x:.5,y:7,w:12,h:.2,fontSize:8,color:'64748B'});
     }
   }
