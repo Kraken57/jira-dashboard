@@ -11,6 +11,20 @@
 
 ## Table of contents
 
+### Downloadable reports
+
+The Download report button opens a section selector for PDF, PowerPoint (.pptx),
+and Excel (.xlsx). Reports use the loaded feed and shared pod, quarter, sprint,
+and sprint-status filters at download time. Filters and generation time appear
+in the outputs. Tab-local search and table sorting are not export filters.
+Excel uses a worksheet for each selected section. PDF and PowerPoint include
+delivery charts and paginated data tables. Audit results reuse `getAuditCards`
+in `src/lib/auditChecks.ts`, the same checks used by the Audit Issues tab.
+Generation runs in the browser; it does not send report data to an external service.
+Validate downloads in the deployed Forge iframe as well as locally, since browser
+download policies can differ. Quality reports contain the currently loaded quality
+and Zephyr summaries; unavailable Zephyr data is not refetched by export.
+
 1. [What this application is](#1-what-this-application-is)
 2. [The one-sentence mental model](#2-the-one-sentence-mental-model)
 3. [Quick start](#3-quick-start)

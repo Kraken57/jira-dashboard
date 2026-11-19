@@ -28,6 +28,8 @@ import { QualityTab } from "@/components/tabs/QualityTab";
 import { TrendsCharts } from "@/components/TrendsCharts";
 import { DiagnosisTab } from "@/components/tabs/DiagnosisTab";
 import { IssuesTab } from "@/components/tabs/IssuesTab";
+import { ReportExport } from "@/components/ReportExport";
+import { getAuditCards } from "@/lib/auditChecks";
 
 const TABS = [
   { id: "executive", label: "Executive Summary" },
@@ -424,6 +426,18 @@ export default function DashboardPage() {
         <DashboardLoadingOverlay stage={loadingStage} timedOut={loadingTimedOut} />
       )}
       <div className="dashboard-workspace space-y-6">
+        {feed && dashboardData && <ReportExport
+          tabs={TABS}
+          activeTab={activeTab}
+          getAuditResults={() => getAuditCards(feed.items, {podId:baseFilters.pod,quarterId:baseFilters.quarter,sprintId:baseFilters.sprint,sprintStatus:baseFilters.sprintStatus}, feed.sprintMeta).auditCards}
+          scope={`Pods: ${selectedPodName} | Quarters: ${selectedQuarterName} | Sprints: ${selectedSprintName} | Sprint status: ${baseFilters.sprintStatus}`}
+          getData={() => computeDashboardData(feed.items, {
+            podId: baseFilters.pod,
+            quarterId: baseFilters.quarter,
+            sprintId: baseFilters.sprint,
+            sprintStatus: baseFilters.sprintStatus,
+          }, feed.sprintMeta, feed.config, feed.zephyr)}
+        />}
         {loadFailure && (
           <DashboardLoadErrorPanel
             failure={loadFailure}

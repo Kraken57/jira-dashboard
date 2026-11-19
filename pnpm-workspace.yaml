@@ -1,4 +1,6 @@
 allowBuilds:
+  core-js: false
+  iframe-resizer: false
   unrs-resolver: true
 minimumReleaseAgeExclude:
   - '@next/env@16.4.2'
