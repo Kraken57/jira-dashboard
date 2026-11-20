@@ -28,6 +28,7 @@ import { QualityTab } from "@/components/tabs/QualityTab";
 import { TrendsCharts } from "@/components/TrendsCharts";
 import { DiagnosisTab } from "@/components/tabs/DiagnosisTab";
 import { IssuesTab } from "@/components/tabs/IssuesTab";
+import { DownloadReportButton } from "@/components/DownloadReportButton";
 
 const TABS = [
   { id: "executive", label: "Executive Summary" },
@@ -430,6 +431,13 @@ export default function DashboardPage() {
             onRetry={() => setReloadKey((key) => key + 1)}
           />
         )}
+
+        <div className="flex justify-end">
+          <DownloadReportButton
+            feed={feed}
+            disabled={isLoading}
+          />
+        </div>
 
         {/* Per-tab filters (Pod/Quarter/Sprint carry over between tabs) */}
         <TabFilters

@@ -141,7 +141,7 @@ function normalizedSprintRange(meta?: SprintMeta): { key: string; startDate: str
 }
 
 /** Unify board-specific names by shared Jira dates, quarter, and sprint ordinal. */
-function commonizeSprints(
+export function commonizeSprints(
   items: JiraWorkItem[],
   sprintMeta: Record<string, SprintMeta>,
   filters: DashboardFilters,
